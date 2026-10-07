@@ -33,6 +33,9 @@ const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA)\s*(?::([^\]]*))?\]\]/gi
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+/** Firma de sendWhatsAppText: se puede inyectar otra (p. ej. scripts/simulate-chat.ts) para probar sin llamar a Meta. */
+export type SendFn = (to: string, body: string) => Promise<string | undefined>
+
 /** El webhook lo llama tras guardar un mensaje del cliente que merece respuesta. */
 export async function markPendingReply(phone: string) {
   await redis().set(keys.replyPending(phone), '1', { ex: PENDING_SECONDS })
@@ -143,7 +146,11 @@ async function applyReserva(config: AppConfig, phone: string, payload: string): 
   }
 }
 
-async function replyOnce(phone: string) {
+/**
+ * Un turno de IA para un chat. Exportada (no solo de uso interno) para que
+ * scripts/simulate-chat.ts pueda correr la misma lógica inyectando un `send` falso.
+ */
+export async function replyOnce(phone: string, { send = sendWhatsAppText }: { send?: SendFn } = {}) {
   const chat = await getSummary(phone)
   if (!chat?.botActive) return
 
@@ -204,7 +211,7 @@ async function replyOnce(phone: string) {
 
   if (text) {
     try {
-      const waId = await sendWhatsAppText(phone, text)
+      const waId = await send(phone, text)
       await recordOutbound(phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now() })
     } catch (error) {
       console.error(`[autoreply] WhatsApp rechazó la respuesta a ${phone}:`, error)

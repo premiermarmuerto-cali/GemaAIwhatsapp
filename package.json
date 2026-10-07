@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "seed:agenda": "tsx scripts/seed-agenda.ts",
+    "simulate": "tsx scripts/simulate-chat.ts"
   },
   "dependencies": {
     "@upstash/redis": "^1.39.0",
@@ -19,6 +21,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.0"
   }
 }
