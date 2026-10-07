@@ -31,6 +31,9 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
  */
 const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA)\s*(?::([^\]]*))?\]\]/gi
 
+// Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
+const SOUNDS_BOOKED = /\b(te agend[eoé]|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** Firma de sendWhatsAppText: se puede inyectar otra (p. ej. scripts/simulate-chat.ts) para probar sin llamar a Meta. */
@@ -204,6 +207,13 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
     const applied = await applyReserva(config, phone, reserva.payload)
     text += applied.append
     if (applied.escalate) escalation = { kind: 'ASESOR', payload: applied.escalate }
+  }
+
+  // Red de seguridad: el modelo a veces "confirma" una cita en el texto sin emitir [[RESERVA]].
+  // Sin esto el cliente se queda creyendo que tiene un horario que el sistema nunca creó, y
+  // nadie se entera. Mejor escalar a una persona que dejar pasar una confirmación fantasma.
+  if (!reserva && !escalation && !chat.bookingId && SOUNDS_BOOKED.test(text)) {
+    escalation = { kind: 'ASESOR', payload: 'Gema pareció confirmar una cita sin generar la marca de reserva' }
   }
 
   // El cliente dice que pagó: el horario no se puede caer mientras el operador revisa.

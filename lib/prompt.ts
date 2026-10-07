@@ -124,7 +124,9 @@ ${locationsBlock(config)}
 ## Cobro de esta conversación
 ${paymentBlock(config, phone)}
 
-## Disponibilidad real (calculada ahora mismo — hoy es ${dayLabel(dayKey())})
+## Disponibilidad real (calculada ahora mismo — hoy es ${dayKey()}, ${dayLabel(dayKey())})
+Usa SIEMPRE ${dayKey().slice(0, 4)} como año en las fechas que escribas en [[RESERVA]]. Nunca
+un año distinto, aunque tu memoria de entrenamiento sugiera otro: hoy es exactamente ${dayKey()}.
 ${context.agenda}
 
 Cada rango es cabina libre continua. Para ofrecer una hora, la sesión completa tiene que caber
