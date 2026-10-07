@@ -1,0 +1,4 @@
+.sun, .moon { display: grid; place-items: center; }
+.moon { display: none; }
+:global(:root[data-theme='light']) .sun { display: none; }
+:global(:root[data-theme='light']) .moon { display: grid; }

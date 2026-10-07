@@ -1,0 +1,247 @@
+/* ==================================================================
+   Tokens de marca · Premier Mar Muerto Cali
+   Extraidos del sitio oficial premier-deadsea.com:
+     woodrush  #272e0f   marca oscura (texto y accion principal)
+     tan       #cea679   acento de marca
+     musgo     #7d8f3e   acento secundario
+     off-white #f9faf7   fondo de pagina
+     bordes #e5e1d8 · cuerpo #545454 · titulos suaves #8a7f6b
+   El sitio es light-first y usa radio de bordes 0, asi que el panel
+   tambien. El modo oscuro es la variante, no el valor por defecto.
+   Todo el panel lee de estas variables: cambialas solo aqui.
+   ================================================================== */
+:root {
+  --bg: #f9faf7;
+  --surface: #ffffff;
+  --surface-2: #f3f4ee;
+  --surface-3: #eaeae3;
+  --line: #e5e1d8;
+  --line-soft: #f0efe8;
+  --text: #272e0f;        /* woodrush */
+  --muted: #545454;
+  --faint: #8a7f6b;
+  /* El tan oficial solo alcanza 2.1:1 como texto sobre off-white, asi que --primary es
+     su version bronce (4.8:1) y --primary-bright guarda el tan literal para rellenos
+     grandes y el isotipo, donde si funciona. */
+  --primary: #8a6a3a;
+  --primary-hover: #6f5329;
+  --primary-ink: #ffffff;
+  --primary-bright: #cea679;
+  --primary-soft: rgba(206, 166, 121, .16);
+  --secondary: #7d8f3e;   /* musgo */
+  --secondary-text: #5c6b2a;
+  --secondary-soft: rgba(125, 143, 62, .14);
+  --secondary-dot: #7d8f3e;
+  --secondary-ink: #1b2008;
+  --danger: #cc0000;      /* rojo oficial */
+  --danger-soft: rgba(204, 0, 0, .08);
+
+  --dot-glow: 0 0 8px rgba(138, 106, 58, .4);
+  --field-bg: #ffffff;
+  --backdrop: rgba(39, 46, 15, .38);
+  --shadow-md: 0 12px 32px rgba(39, 46, 15, .1);
+  --shadow-lg: 0 30px 80px rgba(39, 46, 15, .16);
+
+  /* El sitio usa --button-border-radius: 0 y --input-border-radius: 0. */
+  --radius-sm: 0;
+  --radius: 0;
+  --radius-lg: 0;
+
+  /* Una sola tipografia, como el sitio: --heading-font-family y --text-font-family
+     son ambas Montserrat. --font-mono se mantiene por compatibilidad y para alinear
+     cifras y horas (ver .mono), pero apunta a la misma familia. */
+  --font-sans: var(--font-montserrat), Montserrat, system-ui, sans-serif;
+  --font-mono: var(--font-montserrat), Montserrat, system-ui, sans-serif;
+  --font-brand: var(--font-montserrat), Montserrat, system-ui, sans-serif;
+  --font-brand-mono: var(--font-montserrat), Montserrat, system-ui, sans-serif;
+
+  /* Reticula de cristal de sal: motivo mineral del Mar Muerto. Se usa como mascara para poder tenirlo. */
+  --pattern-crystal: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Cpath d='M20 0L40 20L20 40L0 20Z M0 0L20 20L0 40 M40 0L20 20L40 40' fill='none' stroke='%23000' stroke-width='1'/%3E%3C/svg%3E");
+
+  color-scheme: light;
+}
+
+/* Modo oscuro: woodrush profundo. Aqui el tan oficial si contrasta, asi que es el primario. */
+:root[data-theme='dark'] {
+  --bg: #14170b;
+  --surface: #1d2111;
+  --surface-2: #252a16;
+  --surface-3: #30361d;
+  --line: #3a4124;
+  --line-soft: #262b17;
+  --text: #f3f4ea;
+  --muted: #b5b8a4;
+  --faint: #8a8f78;
+  --primary: #cea679;     /* tan oficial */
+  --primary-hover: #dcbb95;
+  --primary-ink: #1a1d0e;
+  --primary-bright: #cea679;
+  --primary-soft: rgba(206, 166, 121, .12);
+  --secondary: #a3b85c;
+  --secondary-text: #bdd080;
+  --secondary-soft: rgba(163, 184, 92, .14);
+  --secondary-dot: #a3b85c;
+  --secondary-ink: #1b2008;
+  --danger: #e8766b;
+  --danger-soft: rgba(232, 118, 107, .12);
+
+  --dot-glow: 0 0 8px rgba(206, 166, 121, .5);
+  --field-bg: rgba(20, 23, 11, .85);
+  --backdrop: rgba(0, 0, 0, .7);
+  --shadow-md: 0 16px 40px rgba(0, 0, 0, .45);
+  --shadow-lg: 0 30px 90px rgba(0, 0, 0, .55);
+
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+/* iOS acerca la pagina al enfocar campos con letra menor a 16 px; en pantallas tactiles se fuerza ese minimo. */
+@media (pointer: coarse), (max-width: 899px) {
+  input:not([type='checkbox']):not([type='radio']), textarea, select { font-size: 16px !important; }
+}
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .45; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+* { scrollbar-width: thin; scrollbar-color: var(--surface-3) transparent; }
+
+/* Capa decorativa: el contenedor debe ser position: relative; el contenido va por encima con position: relative. */
+.gem-pattern {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-color: var(--text);
+  opacity: .045;
+  -webkit-mask: var(--pattern-crystal) 0 0 / 56px 56px repeat;
+  mask: var(--pattern-crystal) 0 0 / 56px 56px repeat;
+}
+
+/* Destello diagonal que recorre las lineas del patron cada 16 s. Va junto a .gem-pattern, en el mismo contenedor. */
+.gem-shine {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  -webkit-mask: var(--pattern-crystal) 0 0 / 56px 56px repeat;
+  mask: var(--pattern-crystal) 0 0 / 56px 56px repeat;
+}
+.gem-shine::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background: linear-gradient(135deg, transparent 44%, var(--primary-bright) 50%, transparent 56%);
+  opacity: .45;
+  transform: translate(-100%, -100%);
+  animation: gem-shine 16s ease-in-out infinite;
+}
+@keyframes gem-shine {
+  0% { transform: translate(-100%, -100%); }
+  30%, 100% { transform: translate(100%, 100%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gem-shine { display: none; }
+}
+
+/* Isotipo: la "P" caligrafica del logotipo oficial con su lazo. Se tine con currentColor
+   para seguir el tema, asi que el SVG es silueta solida sin color propio. Fijar solo la altura. */
+.brand-mark {
+  display: block;
+  flex: none;
+  /* Proporcion real del trazo oficial (122.46 / 70.52). Es ancho, no cuadrado. */
+  aspect-ratio: 122.46 / 70.52;
+  background-color: currentColor;
+  -webkit-mask: url('/brand/pm-mark.svg') center / contain no-repeat;
+  mask: url('/brand/pm-mark.svg') center / contain no-repeat;
+}
+
+/* Sin mono real: se alinean las cifras con numeros tabulares. */
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.eyebrow {
+  font: 500 10px/1.2 var(--font-sans);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* Botones: el sitio usa mayusculas, 13 px y letter-spacing .18em, con esquinas rectas. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color .15s, border-color .15s, color .15s;
+}
+.btn svg { width: 16px; height: 16px; flex: none; }
+.btn-primary { background: var(--primary); color: var(--primary-ink); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-secondary { border-color: var(--line); color: var(--text); }
+.btn-secondary:hover:not(:disabled) { border-color: var(--faint); background: var(--surface-2); }
+.btn-ghost { color: var(--muted); }
+.btn-ghost:hover:not(:disabled) { color: var(--text); background: var(--surface-2); }
+.btn-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: var(--danger-soft); }
+/* Los iconos sueltos no llevan tracking: solo cuadran. */
+.btn-icon { width: 38px; padding: 0; letter-spacing: 0; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 0;
+  font: 500 10px/1 var(--font-sans);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.badge-booked { background: var(--primary); color: var(--primary-ink); }
+.badge-archived { background: var(--surface-3); color: var(--muted); }
+/* El pais del cliente decide moneda y metodos de pago: se muestra siempre. */
+.badge-region { border: 1px solid var(--line); color: var(--muted); }
+.badge-agent { border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent); background: var(--primary-soft); color: var(--primary); }
+.badge-payment { border: 1px solid color-mix(in srgb, var(--secondary) 55%, transparent); background: var(--secondary-soft); color: var(--secondary-text); }
+
+/* Estados de cita. Cada uno tiene ademas su propio color de borde en la grilla. */
+.badge-status { border: 1px solid currentColor; background: color-mix(in srgb, currentColor 12%, transparent); }
+.badge-status[data-status='hold'] { color: var(--faint); }
+.badge-status[data-status='pending_payment'] { color: var(--primary); }
+.badge-status[data-status='confirmed'] { color: var(--secondary-text); }
+.badge-status[data-status='done'] { color: var(--muted); }
+.badge-status[data-status='no_show'] { color: var(--danger); }
+.badge-status[data-status='cancelled'] { color: var(--faint); }
+
+.dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--faint); }
+.dot-ai { background: var(--primary); box-shadow: var(--dot-glow); }
+.dot-human { background: var(--secondary-dot); }
+.dot-error { background: var(--danger); }
+.dot-agent { --dot-color: var(--primary); background: var(--dot-color); animation: dot-ping 1.6s ease-out infinite; }
+.dot-payment { --dot-color: var(--secondary-dot); }
+@keyframes dot-ping {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--dot-color) 65%, transparent); }
+  100% { box-shadow: 0 0 0 6px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot-agent { animation: none; box-shadow: var(--dot-glow); }
+}
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

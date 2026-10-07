@@ -1,0 +1,129 @@
+.screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100dvh;
+  overflow: hidden;
+  padding: 24px 16px;
+  background: var(--bg);
+}
+
+/* El patrón de cubos se desvanece hacia arriba, como en la pantalla móvil del Brand Chart. */
+.pattern {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, .55) 40%, transparent 75%);
+  mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, .55) 40%, transparent 75%);
+}
+.pattern :global(.gem-pattern) { opacity: .09; }
+
+.topbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 960px;
+}
+.topbarEnd { display: flex; align-items: center; gap: 10px; }
+
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 360px;
+  margin: auto 0;
+  padding: 40px 0;
+  text-align: center;
+}
+
+/* Aqui el isotipo es el heroe: 78 px de alto son 135 de ancho en un panel de 360. */
+.logo { height: 78px; color: var(--primary-bright); }
+
+/* Logotipo al estilo del sitio: Montserrat ligera, mayúsculas y tracking ancho. */
+.wordmark {
+  margin: 14px 0 0;
+  font-family: var(--font-brand);
+  font-size: 25px;
+  font-weight: 300;
+  letter-spacing: .26em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  /* El tracking añade espacio tras la última letra: se compensa para centrar ópticamente. */
+  margin-right: -.26em;
+}
+
+.tagline {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .5em;
+  margin: 16px 0 0;
+  font-family: var(--font-brand-mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.tagline span { color: var(--muted); }
+.tagline b { color: var(--primary); font-weight: 600; }
+.tagline span, .tagline b { margin-right: -.18em; }
+
+.form {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: 44px;
+  text-align: left;
+}
+
+.label {
+  margin-bottom: 8px;
+  color: var(--faint);
+  font: 500 10px/1.2 var(--font-sans);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.input {
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--field-bg);
+  font: 15px var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+  transition: border-color .15s;
+}
+.input::placeholder { color: var(--faint); }
+.input:focus { border-color: var(--primary); }
+.input[aria-invalid='true'] { border-color: var(--danger); }
+
+.submit {
+  justify-content: space-between;
+  height: 48px;
+  margin-top: 14px;
+  padding: 0 18px;
+  border-radius: var(--radius-sm);
+}
+
+.error {
+  min-height: 18px;
+  margin: 12px 0 0;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.footer {
+  position: relative;
+  display: flex;
+  gap: 22px;
+  color: var(--faint);
+  font-size: 12px;
+}

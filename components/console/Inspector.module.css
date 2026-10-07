@@ -1,0 +1,71 @@
+.inspector {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 22px 18px 0;
+  background: var(--surface);
+}
+
+.head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.head h2 { margin: 6px 0 0; font-size: 18px; letter-spacing: -.03em; }
+.live { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); font: 500 10px var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
+.live i { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); animation: pulse 2s ease-in-out infinite; }
+
+.metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 20px; }
+.metric { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: var(--radius); background: var(--surface-2); }
+.metric span { color: var(--faint); font: 500 9px var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
+.metric strong { font-size: 24px; font-weight: 600; letter-spacing: -.03em; line-height: 1; }
+.metric small { color: var(--faint); font-size: 11px; }
+.metric[data-accent] strong { color: var(--primary); }
+
+.section { display: flex; flex-direction: column; gap: 10px; margin-top: 24px; }
+.muted { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.5; }
+
+.facts { display: flex; flex-direction: column; margin: 0; border-radius: var(--radius); background: var(--surface-2); }
+.facts > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; }
+.facts > div + div { border-top: 1px solid var(--line-soft); }
+.facts dt { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.facts dd { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; text-align: right; }
+.facts dd[data-closed] { color: var(--danger); }
+
+.action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: left;
+}
+.action:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.action > span { display: grid; place-items: center; width: 30px; height: 30px; border-radius: var(--radius-sm); background: var(--surface-2); }
+.action > svg:last-child { margin-left: auto; color: var(--faint); }
+
+.signature {
+  position: relative;
+  min-height: 150px;
+  margin: auto -18px 0;
+  padding: 48px 18px 22px;
+  overflow: hidden;
+  flex: none;
+}
+.signature :global(.gem-pattern) { opacity: .07; }
+.signature :global(.gem-pattern), .signature :global(.gem-shine) {
+  -webkit-mask-image: var(--pattern-crystal), linear-gradient(to top, #000, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: var(--pattern-crystal), linear-gradient(to top, #000, transparent);
+  mask-composite: intersect;
+  -webkit-mask-size: 56px 56px, 100% 100%;
+  mask-size: 56px 56px, 100% 100%;
+  -webkit-mask-repeat: repeat, no-repeat;
+  mask-repeat: repeat, no-repeat;
+}
+.signature p { position: relative; margin: 0; color: var(--muted); font: 500 11px/1.7 var(--font-sans); letter-spacing: .2em; text-transform: uppercase; }
+.signature i { position: relative; display: block; width: 24px; height: 3px; margin-top: 12px; background: var(--primary); }
+
+@keyframes pulse { 50% { opacity: .35; } }
