@@ -31,8 +31,8 @@ export async function generateViewport(): Promise<Viewport> {
 // El tema se resuelve en el servidor desde la cookie: la primera pintura ya sale con el tema correcto.
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es" data-theme={await currentTheme()} className={montserrat.variable}>
-      <body>{children}</body>
+    <html lang="es" data-theme={await currentTheme()} className={montserrat.variable} suppressHydrationWarning>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   )
 }
