@@ -1,28 +1,41 @@
 import { NextResponse } from 'next/server'
-import { getSummary, recordOutbound } from '@/lib/chats'
+import { deleteChat, getChat, updateChat } from '@/lib/chats'
 import { HttpError, jsonBody, phoneFrom, route, type PhoneParams } from '@/lib/http'
-import type { Message } from '@/lib/types'
-import { isWindowOpen } from '@/lib/window'
-import { sendWhatsAppText } from '@/lib/whatsapp'
+import type { ChatPatch, Stage } from '@/lib/types'
 
-export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-const MAX_LENGTH = 4096
+/** Detalle del chat con sus últimos mensajes. Lo marca como leído al abrirlo. */
+export const GET = route(async (_request: Request, context: PhoneParams) => {
+  const phone = await phoneFrom(context)
+  const chat = await getChat(phone)
+  if (!chat) throw new HttpError(404, 'Conversación no encontrada.')
+  return NextResponse.json(chat)
+})
 
-/** Envío manual del operador: sale por WhatsApp y pausa la IA del chat. */
-export const POST = route(async (request: Request, context: PhoneParams) => {
+const STAGES: Stage[] = ['open', 'booked']
+
+/** Pausar/reanudar a Gema, marcar agendado, archivar/desarchivar, o quitar la alerta de asesor. */
+export const PATCH = route(async (request: Request, context: PhoneParams) => {
   const phone = await phoneFrom(context)
   const body = await jsonBody(request)
-  const text = typeof body.text === 'string' ? body.text.trim() : ''
-  if (!text) throw new HttpError(400, 'El mensaje está vacío.')
-  if (text.length > MAX_LENGTH) throw new HttpError(400, `El mensaje supera ${MAX_LENGTH} caracteres.`)
 
-  const chat = await getSummary(phone)
-  if (!chat) throw new HttpError(404, 'Conversación no encontrada.')
-  if (!isWindowOpen(chat)) throw new HttpError(409, 'Pasaron más de 24 h desde el último mensaje del cliente: WhatsApp solo permite plantillas aprobadas.')
+  const patch: ChatPatch = {}
+  if (typeof body.botActive === 'boolean') patch.botActive = body.botActive
+  if (typeof body.archived === 'boolean') patch.archived = body.archived
+  if (typeof body.stage === 'string') {
+    if (!STAGES.includes(body.stage as Stage)) throw new HttpError(400, 'Estado inválido.')
+    patch.stage = body.stage as Stage
+  }
+  if (body.needsAgent === false) patch.needsAgent = false
 
-  const waId = await sendWhatsAppText(phone, text)
-  const message: Message = { id: waId ?? crypto.randomUUID(), sender: 'human', text, at: Date.now() }
-  await recordOutbound(phone, message)
-  return NextResponse.json({ message, chat: await getSummary(phone) })
+  const updated = await updateChat(phone, patch)
+  if (!updated) throw new HttpError(404, 'Conversación no encontrada.')
+  return NextResponse.json(updated)
+})
+
+export const DELETE = route(async (_request: Request, context: PhoneParams) => {
+  const phone = await phoneFrom(context)
+  await deleteChat(phone)
+  return NextResponse.json({ ok: true })
 })
