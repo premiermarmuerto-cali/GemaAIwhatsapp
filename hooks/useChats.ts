@@ -7,8 +7,11 @@ import type { ChatDetail, ChatLists, ChatSummary, Message, Stage } from '@/lib/t
 import { usePolling } from './usePolling'
 import type { ShowToast } from './useToast'
 
-const LIST_POLL_MS = 5000
-const DETAIL_POLL_MS = 3000
+// Cada poll es un viaje redondo a Upstash (HTTP, no conexión persistente); el webhook ya
+// empuja los mensajes nuevos en cuanto llegan, así que esto es solo respaldo de sincronía,
+// no necesita ser tan agresivo. Menos frecuencia = menos carga sin que se sienta "no vivo".
+const LIST_POLL_MS = 8000
+const DETAIL_POLL_MS = 4000
 
 const byRecent = (a: ChatSummary, b: ChatSummary) => b.lastAt - a.lastAt
 

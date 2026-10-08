@@ -225,7 +225,10 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
       await recordOutbound(phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now() })
     } catch (error) {
       console.error(`[autoreply] WhatsApp rechazó la respuesta a ${phone}:`, error)
-      return requestAgent(phone, 'WhatsApp no aceptó la respuesta de Gema')
+      // El motivo real (token vencido, número no autorizado en modo desarrollo, etc.) se
+      // muestra en el panel: así el operador no depende de revisar logs del servidor.
+      const detail = error instanceof Error ? error.message : String(error)
+      return requestAgent(phone, `WhatsApp rechazó el envío: ${detail}`)
     }
   }
   if (escalation) await requestAgent(phone, escalation.payload, escalation.kind === 'PAGO' ? 'payment' : 'help')

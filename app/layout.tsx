@@ -5,10 +5,11 @@ import { parseTheme, THEME_COLOR, THEME_COOKIE } from '@/lib/theme'
 import './globals.css'
 
 // Una sola familia, igual que premier-deadsea.com: alli --heading-font-family y
-// --text-font-family son ambas Montserrat. Se cargan los pesos que usa el panel.
+// --text-font-family son ambas Montserrat. Solo los 4 pesos que el CSS usa de verdad
+// (300/400/500/600): cada peso de más es otro archivo de fuente que descargar.
 const montserrat = Montserrat({
   subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700'],
+  weight: ['300', '400', '500', '600'],
   variable: '--font-montserrat',
   display: 'swap',
 })
