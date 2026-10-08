@@ -9,6 +9,8 @@ import { verifyMetaSignature } from '@/lib/whatsapp'
 
 export const runtime = 'nodejs'
 // Tras el 200 corren el análisis de archivos y la respuesta de Gema (espera de ráfaga + modelo + envío).
+// En el plan Hobby de Vercel esto se recorta silenciosamente a mucho menos de 60s (por eso
+// lib/autoreply.ts acortó sus propios tiempos); este valor queda listo para cuando se suba de plan.
 export const maxDuration = 60
 
 const SEEN_TTL_SECONDS = 60 * 60 * 24

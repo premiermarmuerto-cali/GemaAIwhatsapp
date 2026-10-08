@@ -13,10 +13,20 @@ import { sendWhatsAppText } from './whatsapp'
 import type { AppConfig, Location } from './types'
 
 const HISTORY_FOR_MODEL = 30
+// Mitigación para el plan Hobby de Vercel: el after() del webhook corre en segundo plano
+// con un presupuesto de tiempo mucho menor al maxDuration declarado en el route (la
+// plataforma lo recorta silenciosamente, sin lanzar ningún error atrapable). Estos tres
+// valores se acortaron a propósito para que la cadena completa (espera + IA + envío) quepa
+// dentro de esa ventana. Si se sube a un plan con más presupuesto, se pueden volver a subir.
 // Espera a que el cliente termine de escribir: varios mensajes seguidos reciben una sola respuesta (cada envío se cobra).
-const DEBOUNCE_MS = 4000
-const MEDIA_WAIT_MS = 30_000
-const LOCK_SECONDS = 90
+const DEBOUNCE_MS = 1200
+// Solo aplica si llega una foto o audio junto al texto; para texto puro cuesta ~0ms.
+const MEDIA_WAIT_MS = 8_000
+// Si la función muere a mitad de camino (timeout de la plataforma), el `finally` que
+// libera este candado NO llega a correr: el chat queda bloqueado el resto del TTL sin
+// que nada lo explique. Antes eran 90s de silencio total; con menos tiempo de ejecución
+// real por mensaje, no hace falta tanto margen.
+const LOCK_SECONDS = 20
 const MAX_TURNS = 3
 const PENDING_SECONDS = 600
 const PER_PHONE_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_PHONE) || 15 // por cada 10 min
