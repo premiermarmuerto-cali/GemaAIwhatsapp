@@ -60,7 +60,8 @@ export async function POST(request: NextRequest) {
   let event: BoldEvent
   try { event = JSON.parse(rawBody) } catch { return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 }) }
 
-  const signature = checkSignature(rawBody, request.headers.get('x-bold-signature'))
+  const signatureHeader = request.headers.get('x-bold-signature')
+  const signature = checkSignature(rawBody, signatureHeader)
   const eventId = event.id ?? event.data?.payment_id ?? crypto.randomUUID()
 
   try {
@@ -78,6 +79,10 @@ export async function POST(request: NextRequest) {
       amount: event.data?.amount?.total ?? null,
       paymentMethod: event.data?.payment_method ?? '',
       signature,
+      // Se guarda la firma recibida y los nombres de los encabezados para confirmar el esquema
+      // de firma de Bold con eventos reales; no contienen secretos.
+      signatureHeader: signatureHeader?.slice(0, 200) ?? null,
+      headerNames: [...request.headers.keys()],
       raw: rawBody.slice(0, 4000),
     }
     await db.multi()
