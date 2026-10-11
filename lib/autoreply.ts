@@ -3,7 +3,8 @@ import { createBooking, markDepositClaimed } from './booking'
 import { dayLabel, isClock, isDayKey } from './calendar'
 import { isLocation, LOCATION_LABEL } from './clinic'
 import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead } from './chats'
-import { getConfig, paymentFor, serviceById } from './config'
+import { generarLinkPagoBold } from './bold'
+import { depositAmount, getConfig, paymentFor, serviceById } from './config'
 import { mediaBusy } from './media'
 import { regionOf } from './phone'
 import { buildPromptContext, buildSystemPrompt } from './prompt'
@@ -28,6 +29,7 @@ const MEDIA_WAIT_MS = 8_000
 // real por mensaje, no hace falta tanto margen.
 const LOCK_SECONDS = 20
 const MAX_TURNS = 3
+const BOLD_TIMEOUT_MS = 5_000
 const PENDING_SECONDS = 600
 const PER_PHONE_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_PHONE) || 15 // por cada 10 min
 const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
@@ -43,6 +45,8 @@ const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA)\s*(?::([^\]]*))?\]\]/gi
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
 const SOUNDS_BOOKED = /\b(te agend[eoé]|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
+// Si en el mismo mensaje pide el nombre, todavía no está reservando: le faltan datos, y eso es correcto.
+const ASKS_FOR_NAME = /\b(tu|su)\s+nombre\b/i
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -150,10 +154,31 @@ async function applyReserva(config: AppConfig, phone: string, payload: string): 
   }
 
   const deposit = booking.deposit ? ` de ${booking.deposit}` : ''
+  const amount = depositAmount(config, booking.price)
+
+  // Link único de Bold con el id de la cita como referencia: así el webhook sabe qué cita
+  // confirmar cuando llega el pago. Timeout corto porque esto corre dentro del after() del
+  // webhook de WhatsApp, que en el plan Hobby tiene poco margen (ver lib/autoreply.ts arriba).
+  const boldUrl = payment.bold && amount
+    ? await generarLinkPagoBold(amount, `Anticipo ${booking.serviceLabel}`, booking.id, { timeoutMs: BOLD_TIMEOUT_MS })
+    : null
+  if (boldUrl) {
+    return {
+      append: `\n\nPara dejarla reservada necesitamos el anticipo${deposit}. Puedes pagarlo aquí con tarjeta, PSE o Nequi:\n${boldUrl}\nTu horario queda apartado ${config.holdMinutes} minutos y apenas se confirme el pago te aviso por aquí 💛`,
+    }
+  }
+
+  // Sin link de Bold (no aplica, o Bold falló): datos fijos de la configuración, con comprobante.
   const how = [
     config.payLink && `Link de pago: ${config.payLink}`,
     payment.instructions,
   ].filter(Boolean).join('\n')
+  if (!how) {
+    return {
+      append: '\n\nNo pude generar tu link de pago en este momento; una asesora te lo envía en breve.',
+      escalate: `Cita ${booking.id} apartada, pero no se pudo generar el link de Bold y no hay datos de cobro de respaldo`,
+    }
+  }
   return {
     append: `\n\nPara dejarla reservada necesitamos el anticipo${deposit}.\n${how}\nTu horario queda apartado ${config.holdMinutes} minutos. Cuando pagues, envíame el comprobante por aquí 💛`,
   }
@@ -222,7 +247,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // Red de seguridad: el modelo a veces "confirma" una cita en el texto sin emitir [[RESERVA]].
   // Sin esto el cliente se queda creyendo que tiene un horario que el sistema nunca creó, y
   // nadie se entera. Mejor escalar a una persona que dejar pasar una confirmación fantasma.
-  if (!reserva && !escalation && !chat.bookingId && SOUNDS_BOOKED.test(text)) {
+  if (!reserva && !escalation && !chat.bookingId && SOUNDS_BOOKED.test(text) && !ASKS_FOR_NAME.test(text)) {
     escalation = { kind: 'ASESOR', payload: 'Gema pareció confirmar una cita sin generar la marca de reserva' }
   }
 

@@ -7,7 +7,7 @@ import { dayLabel, toClock, toMinutes } from '@/lib/calendar'
 import { LOCATION_LABEL } from '@/lib/clinic'
 import { formatPhone } from '@/lib/phone'
 import type { Booking, BookingStatus } from '@/lib/types'
-import { ACTION_LABEL, holdCountdown, NEXT_STATUSES, STATUS_LABEL } from './labels'
+import { ACTION_LABEL, holdCountdown, NEXT_STATUSES, PAYMENT_METHOD_LABEL, STATUS_LABEL } from './labels'
 import styles from './Agenda.module.css'
 
 type Props = {
@@ -63,7 +63,9 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate }: P
         {booking.holdUntil > 0 && (
           <div><dt>Apartado</dt><dd>se libera en {holdCountdown(booking.holdUntil)}</dd></div>
         )}
-        {booking.paidAt > 0 && (
+        {booking.paymentRef ? (
+          <div><dt>Anticipo</dt><dd>Pagado por Bold · {PAYMENT_METHOD_LABEL[booking.paymentMethod] ?? booking.paymentMethod} · {new Date(booking.paidAt).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}</dd></div>
+        ) : booking.paidAt > 0 && (
           <div><dt>Comprobante</dt><dd>el cliente dice haber pagado{booking.confirmedAt ? ' · validado' : ' · pendiente de validar'}</dd></div>
         )}
       </dl>

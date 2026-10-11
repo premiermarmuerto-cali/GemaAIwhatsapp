@@ -35,6 +35,8 @@ function toSummary(phone: string, raw: Record<string, string>): ChatSummary {
       location: isLocation(raw.leadLocation) ? raw.leadLocation : '',
     },
     bookingId: raw.bookingId ?? '',
+    paymentNotice: raw.paymentNotice ?? '',
+    paymentNoticeAt: Number(raw.paymentNoticeAt ?? 0),
   }
 }
 
@@ -198,6 +200,20 @@ export async function updateChat(phone: string, patch: ChatPatch): Promise<ChatS
 
   await tx.exec()
   return getSummary(phone)
+}
+
+/**
+ * Bold confirmó un pago de este chat: deja el aviso para el panel y, si el chat esperaba que
+ * alguien validara un comprobante, da esa alerta por atendida (Bold ya lo validó).
+ */
+export async function notePayment(phone: string, notice: string) {
+  const current = await getSummary(phone)
+  if (!current) return
+  await redis().hset(keys.chat(phone), {
+    paymentNotice: notice.slice(0, 200),
+    paymentNoticeAt: String(Date.now()),
+    ...(current.needsAgent && current.agentKind === 'payment' ? { needsAgent: '0' } : {}),
+  })
 }
 
 /** Pausa a Gema y marca el chat para que una persona lo atienda. */

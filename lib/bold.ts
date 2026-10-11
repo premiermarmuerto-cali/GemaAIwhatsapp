@@ -47,7 +47,12 @@ function errorText(data: LinkResponse | null, status: number): string {
  * No envía expiration_date: la documentación dice que va en nanosegundos, pero su propio
  * ejemplo trae milisegundos. Hasta confirmar la unidad con Bold, el link usa la vigencia por defecto.
  */
-export async function generarLinkPagoBold(monto: number, descripcion: string, referenciaCliente: string | number): Promise<string | null> {
+export async function generarLinkPagoBold(
+  monto: number,
+  descripcion: string,
+  referenciaCliente: string | number,
+  { timeoutMs = REQUEST_TIMEOUT_MS }: { timeoutMs?: number } = {},
+): Promise<string | null> {
   const apiKey = process.env.BOLD_API_KEY
   if (!apiKey) {
     console.error('[bold] Falta BOLD_API_KEY: no se puede generar el link de pago.')
@@ -75,7 +80,7 @@ export async function generarLinkPagoBold(monto: number, descripcion: string, re
         reference: boldReference(referenciaCliente),
         description,
       }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     const data = await response.json().catch(() => null) as LinkResponse | null
 

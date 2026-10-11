@@ -74,6 +74,8 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     holdUntil: Number(raw.holdUntil ?? 0),
     paidAt: Number(raw.paidAt ?? 0),
     confirmedAt: Number(raw.confirmedAt ?? 0),
+    paymentMethod: raw.paymentMethod ?? '',
+    paymentRef: raw.paymentRef ?? '',
   }
 }
 
@@ -227,6 +229,8 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     holdUntil: HOLD_STATUSES.includes(status) ? now + config.holdMinutes * 60_000 : 0,
     paidAt: 0,
     confirmedAt: status === 'confirmed' ? now : 0,
+    paymentMethod: '',
+    paymentRef: '',
   }
 
   const tx = db.multi()
@@ -348,6 +352,19 @@ export async function bookingsOfPhone(phone: string, count = 10): Promise<Bookin
 export async function liveBookingOf(phone: string): Promise<Booking | null> {
   const recent = await bookingsOfPhone(phone, 5)
   return recent.find((booking) => LIVE_STATUSES.includes(booking.status) && booking.startTs > Date.now()) ?? null
+}
+
+/**
+ * Bold confirmó el pago del anticipo: la cita pasa a confirmada sin operador y queda registrado
+ * cómo se pagó. Idempotente: si ya no está apartada (confirmada, cancelada…), no hace nada.
+ */
+export async function confirmPaidByBold(id: string, payment: { method: string; paymentRef: string }): Promise<Booking | null> {
+  const booking = await getBooking(id)
+  if (!booking || !HOLD_STATUSES.includes(booking.status)) return null
+  const moved = await moveBooking(id, 'confirmed')
+  if (!moved || 'error' in moved) return null
+  await redis().hset(keys.booking(id), { paymentMethod: payment.method, paymentRef: payment.paymentRef })
+  return { ...moved, paymentMethod: payment.method, paymentRef: payment.paymentRef }
 }
 
 /** Marca que el cliente dice haber pagado. No confirma nada: eso lo hace el operador. */

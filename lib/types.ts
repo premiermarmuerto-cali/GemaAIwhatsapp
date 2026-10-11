@@ -56,6 +56,9 @@ export type ChatSummary = {
   lead: Lead
   /** Cita viva de este chat (hold, pendiente de pago o confirmada), si existe. */
   bookingId: string
+  /** Último pago confirmado por Bold, para el aviso emergente del panel. */
+  paymentNotice: string
+  paymentNoticeAt: number
 }
 
 export type ChatDetail = ChatSummary & { messages: Message[] }
@@ -133,6 +136,10 @@ export type Booking = {
   holdUntil: number
   paidAt: number
   confirmedAt: number
+  /** Medio con el que se pagó el anticipo por Bold (PSE, CREDIT_CARD, NEQUI). Vacío si lo validó un operador. */
+  paymentMethod: string
+  /** payment_id de Bold. Vacío si el anticipo no pasó por Bold. */
+  paymentRef: string
 }
 
 /** Rango continuo de cabina libre dentro de un día. */

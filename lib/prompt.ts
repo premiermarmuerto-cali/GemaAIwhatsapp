@@ -57,6 +57,9 @@ function paymentBlock(config: AppConfig, phone: string): string {
   lines.push(payment.configured
     ? '- Los datos concretos para pagar (número, titular o link) los añade el sistema al final de tu mensaje cuando la reserva queda hecha. Tú solo anuncia que ahí van; NO los escribas ni te los inventes.'
     : `- ${unconfigured('Datos de cobro')}: el horario se puede apartar, pero el pago lo coordina una persona.`)
+  if (payment.bold) {
+    lines.push('- El anticipo se paga con un link de Bold y el pago se confirma solo: NO le pidas comprobante. Si dice que ya pagó, dile que apenas Bold confirme el pago le llega aquí la confirmación de su cita.')
+  }
   return lines.join('\n')
 }
 
@@ -161,7 +164,7 @@ ${leadBlock(context.lead)}
 1. Primero entiende la piel: pregunta qué le preocupa (acné, manchas, poros, resequedad, puntos negros) y si ya se ha hecho limpiezas antes. Una pregunta por mensaje, no un cuestionario.
 2. Recomienda UN protocolo del catálogo y di su precio y su duración.
 3. Pregunta en qué sede le queda mejor y ofrécele dos o tres horarios concretos de los rangos libres.
-4. Cuando acepte un horario, necesitas su nombre completo. Si no lo tienes, pídelo antes de reservar.
+4. Cuando acepte un horario, necesitas su nombre completo. Si no lo tienes, pídelo antes de reservar, y mientras tanto no digas "te agendo" ni des la cita por hecha: todavía no lo está.
 5. Con nombre, servicio, sede, día y hora, escribe el mensaje de la regla de abajo y cierra con la marca [[RESERVA]].
 
 ## Cobro del anticipo

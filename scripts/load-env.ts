@@ -1,5 +1,5 @@
 /**
- * Carga .env.local a mano para los scripts sueltos de esta carpeta.
+ * Carga .env.local y .env a mano para los scripts sueltos de esta carpeta.
  * Next.js lo hace solo para `next dev`/`next build`, pero un script ejecutado
  * con `tsx` corre fuera de ese proceso y no lo ve. No añade una dependencia
  * (dotenv) para algo tan simple: KEY=VALUE por línea, sin interpolación.
@@ -7,12 +7,18 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
+/** .env.local primero y .env después, con el mismo orden de prioridad que Next.js. */
 export function loadEnvLocal() {
+  loadFile('.env.local')
+  loadFile('.env')
+}
+
+function loadFile(name: string) {
   let raw: string
   try {
-    raw = readFileSync(resolve(process.cwd(), '.env.local'), 'utf8')
+    raw = readFileSync(resolve(process.cwd(), name), 'utf8')
   } catch {
-    return // Sin .env.local: los scripts fallarán más abajo con un mensaje claro (ConfigError de lib/redis.ts).
+    return // Sin el archivo: los scripts fallarán más abajo con un mensaje claro (ConfigError de lib/redis.ts).
   }
   for (const line of raw.split('\n')) {
     const trimmed = line.trim()

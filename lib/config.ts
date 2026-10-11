@@ -214,14 +214,20 @@ export function paymentFor(config: AppConfig, region: Region) {
       ? 'Nequi, Bancolombia o Daviplata'
       : 'Binance (USDT), PayPal, transferencia Wise o ACH vía DolarApp',
     instructions: colombia ? config.nequiInstructions : config.intlInstructions,
-    get configured() { return Boolean(config.payLink || this.instructions) },
+    /** En Colombia, con Bold configurado, cada reserva genera su propio link (ver lib/bold.ts). */
+    bold: colombia && Boolean(process.env.BOLD_API_KEY),
+    get configured() { return Boolean(config.payLink || this.instructions || this.bold) },
   }
+}
+
+/** Anticipo como número a partir del precio configurado. 0 si el precio no tiene un número legible. */
+export function depositAmount(config: AppConfig, price: string): number {
+  const digits = price.replace(/[^\d]/g, '')
+  return digits ? Math.round((Number(digits) * config.depositPercent) / 100) : 0
 }
 
 /** Anticipo en texto a partir del precio configurado. Vacío si el precio no tiene un número legible. */
 export function depositOf(config: AppConfig, price: string): string {
-  const digits = price.replace(/[^\d]/g, '')
-  if (!digits) return ''
-  const amount = Math.round((Number(digits) * config.depositPercent) / 100)
-  return `$${amount.toLocaleString('es-CO')}`
+  const amount = depositAmount(config, price)
+  return amount ? `$${amount.toLocaleString('es-CO')}` : ''
 }

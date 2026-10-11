@@ -28,6 +28,14 @@ export const ACTION_LABEL: Record<BookingStatus, string> = {
   cancelled: 'Cancelar',
 }
 
+/** Medios de pago de Bold, como los reporta su webhook. */
+export const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  PSE: 'PSE',
+  CREDIT_CARD: 'Tarjeta',
+  NEQUI: 'Nequi',
+  BOTON_BANCOLOMBIA: 'Botón Bancolombia',
+}
+
 /** Cuánto le queda al apartado antes de liberarse solo. */
 export function holdCountdown(holdUntil: number, now = Date.now()): string {
   const minutes = Math.round((holdUntil - now) / 60_000)
