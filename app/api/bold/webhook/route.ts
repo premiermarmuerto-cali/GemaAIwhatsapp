@@ -7,10 +7,9 @@ export const runtime = 'nodejs'
 /**
  * Notificaciones de pago de Bold (venta aprobada/rechazada, anulación aprobada/rechazada).
  *
- * FASE DE PRUEBA: este endpoint todavía no cambia el estado de ninguna cita. Guarda cada
- * notificación completa y anota si la firma cuadró, para confirmar con eventos reales el
- * formato exacto y el esquema de firma antes de automatizar nada. Antes de que un evento
- * confirme una cita sola, la firma inválida tiene que pasar a rechazarse (401).
+ * Todavía no cambia el estado de ninguna cita: guarda cada notificación verificada. Formato
+ * y firma ya están confirmados con eventos reales de Bold (sandbox, octubre 2026).
+ * Una firma inválida se rechaza con 401.
  */
 
 const SEEN_TTL_SECONDS = 60 * 60 * 24 * 7
@@ -25,18 +24,16 @@ function sameHex(a: string, b: string) {
 }
 
 /**
- * Bold firma con HMAC-SHA256 y la llave secreta. Como el esquema exacto aún no está confirmado
- * con un evento real, se aceptan las dos variantes conocidas: sobre el cuerpo en base64 y sobre
- * el cuerpo crudo. Cuando sepamos cuál usa, se deja solo esa.
+ * x-bold-signature = HMAC-SHA256, en hex, del cuerpo crudo codificado en base64, con la llave
+ * secreta de Botón de pagos. Confirmado con un evento real: en sandbox Bold firma con la llave
+ * vacía, así que con la secreta de producción los eventos de prueba no pasan (es lo esperado).
  */
 function checkSignature(rawBody: string, header: string | null): Signature {
   const secret = process.env.BOLD_WEBHOOK_SECRET
   if (secret === undefined) return 'sin-llave'
   if (!header) return 'sin-firma'
-  const received = header.trim().toLowerCase()
-  const candidates = [Buffer.from(rawBody, 'utf8').toString('base64'), rawBody]
-    .map((payload) => createHmac('sha256', secret).update(payload).digest('hex'))
-  return candidates.some((expected) => sameHex(expected, received)) ? 'valida' : 'invalida'
+  const expected = createHmac('sha256', secret).update(Buffer.from(rawBody, 'utf8').toString('base64')).digest('hex')
+  return sameHex(expected, header.trim().toLowerCase()) ? 'valida' : 'invalida'
 }
 
 type BoldEvent = {
@@ -60,8 +57,13 @@ export async function POST(request: NextRequest) {
   let event: BoldEvent
   try { event = JSON.parse(rawBody) } catch { return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 }) }
 
-  const signatureHeader = request.headers.get('x-bold-signature')
-  const signature = checkSignature(rawBody, signatureHeader)
+  const signature = checkSignature(rawBody, request.headers.get('x-bold-signature'))
+  // Firma falsa o ausente: no viene de Bold. Sin llave configurada se acepta pero queda marcada,
+  // para no perder pagos reales por un error de configuración; nada debe actuar sobre esos eventos.
+  if (signature === 'invalida' || signature === 'sin-firma') {
+    console.warn(`[bold-webhook] notificación rechazada: firma ${signature}`)
+    return NextResponse.json({ error: 'Firma inválida.' }, { status: 401 })
+  }
   const eventId = event.id ?? event.data?.payment_id ?? crypto.randomUUID()
 
   try {
@@ -79,10 +81,6 @@ export async function POST(request: NextRequest) {
       amount: event.data?.amount?.total ?? null,
       paymentMethod: event.data?.payment_method ?? '',
       signature,
-      // Se guarda la firma recibida y los nombres de los encabezados para confirmar el esquema
-      // de firma de Bold con eventos reales; no contienen secretos.
-      signatureHeader: signatureHeader?.slice(0, 200) ?? null,
-      headerNames: [...request.headers.keys()],
       raw: rawBody.slice(0, 4000),
     }
     await db.multi()
