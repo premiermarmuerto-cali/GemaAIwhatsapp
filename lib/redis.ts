@@ -76,4 +76,8 @@ export const keys = {
   byPhone: (phone: string) => `pm:bookings:phone:${phone}`,
   holds: 'pm:holds',
   closed: (day: string) => `pm:closed:${day}`,
+
+  // Bold: notificaciones de pago recibidas (las últimas 200) y deduplicación por id de evento.
+  boldEvents: 'pm:bold:events',
+  boldSeen: (eventId: string) => `pm:bold:seen:${eventId}`,
 }

@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { SESSION_COOKIE, verifySession } from '@/lib/auth'
 import { clientIp, rateLimit } from '@/lib/ratelimit'
 
-// Rutas accesibles sin sesión. El webhook se protege con la firma de Meta, no con cookie.
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook']
+// Rutas accesibles sin sesión. Los webhooks (Meta y Bold) se protegen con firma, no con cookie.
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook', '/api/bold/webhook']
 const API_LIMIT_PER_MINUTE = 120
 
 function isPublic(pathname: string) {
