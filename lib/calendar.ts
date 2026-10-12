@@ -30,6 +30,12 @@ export function toClock(minutes: number): string {
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 }
 
+/** "16:00" → "4:00 p.m.": al cliente nunca se le habla en formato militar. */
+export function clock12(hhmm: string): string {
+  const [hour, minute] = hhmm.split(':').map(Number)
+  return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'a.m.' : 'p.m.'}`
+}
+
 export function isDayKey(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(value)
 }

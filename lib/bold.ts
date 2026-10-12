@@ -44,14 +44,15 @@ function errorText(data: LinkResponse | null, status: number): string {
  * Nunca lanza: si algo falla (llave inválida, Bold caído, datos rechazados) registra el motivo
  * y devuelve null, para que el bot pase la conversación a un asesor en vez de romperse.
  *
- * No envía expiration_date: la documentación dice que va en nanosegundos, pero su propio
- * ejemplo trae milisegundos. Hasta confirmar la unidad con Bold, el link usa la vigencia por defecto.
+ * `expiraEn` (epoch en milisegundos) hace que el link venza solo. Bold lo guarda en
+ * nanosegundos, tal como dice su documentación (comprobado con un link real: lo que se envía es
+ * lo que devuelve). Sin él, el link no vence nunca.
  */
 export async function generarLinkPagoBold(
   monto: number,
   descripcion: string,
   referenciaCliente: string | number,
-  { timeoutMs = REQUEST_TIMEOUT_MS }: { timeoutMs?: number } = {},
+  { timeoutMs = REQUEST_TIMEOUT_MS, expiraEn }: { timeoutMs?: number; expiraEn?: number } = {},
 ): Promise<string | null> {
   const apiKey = process.env.BOLD_API_KEY
   if (!apiKey) {
@@ -79,6 +80,8 @@ export async function generarLinkPagoBold(
         amount: { currency: 'COP', taxes: [], tip_amount: 0, total_amount: Math.round(monto) },
         reference: boldReference(referenciaCliente),
         description,
+        // ms × 1e6 = ns; a esta magnitud el double pierde unos 100 ns, irrelevante para un vencimiento.
+        ...(expiraEn && expiraEn > Date.now() ? { expiration_date: expiraEn * 1e6 } : {}),
       }),
       signal: AbortSignal.timeout(timeoutMs),
     })

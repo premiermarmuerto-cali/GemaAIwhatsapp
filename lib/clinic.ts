@@ -34,15 +34,17 @@ export const MONTH_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ag
 
 /**
  * Horario por índice de día (0 = domingo). Cada franja es "HH:MM-HH:MM".
- * Por defecto, horario de centro comercial en Cali: lunes a sábado 10:00–20:00, domingo cerrado.
+ * Horarios de AGENDAMIENTO confirmados por Premier (octubre 2026): lunes a jueves 10:00–20:30,
+ * viernes 10:00–21:00, domingo 11:00–17:00. El sábado no se confirmó: se deja el horario anterior
+ * hasta que lo digan.
  */
 export const DEFAULT_HOURS: string[][] = [
-  [],
-  ['10:00-20:00'],
-  ['10:00-20:00'],
-  ['10:00-20:00'],
-  ['10:00-20:00'],
-  ['10:00-20:00'],
+  ['11:00-17:00'],
+  ['10:00-20:30'],
+  ['10:00-20:30'],
+  ['10:00-20:30'],
+  ['10:00-20:30'],
+  ['10:00-21:00'],
   ['10:00-20:00'],
 ]
 

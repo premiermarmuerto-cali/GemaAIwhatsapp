@@ -7,8 +7,8 @@
  * [[RESERVA]]. El servidor es quien aparta la cabina y quien pega el link de pago, así que
  * el modelo no puede inventarse ni un horario ni un cobro.
  */
-import { addDays, dayKey, dayLabel, freeWindows, shortestService } from './calendar'
-import { LOCATION_LABEL, LOCATIONS } from './clinic'
+import { addDays, clock12, dayKey, dayLabel, freeWindows, shortestService } from './calendar'
+import { LOCATION_LABEL, LOCATIONS, WEEKDAY_LABEL } from './clinic'
 import { depositOf, paymentFor } from './config'
 import { isClosed, liveBookingOf, occupancyOf } from './booking'
 import { formatPhone, countryOf, regionOf } from './phone'
@@ -35,6 +35,24 @@ function catalogBlock(config: AppConfig): string {
       : 'precio NO CONFIGURADO: no lo cotices, pasa a un asesor'
     return `- \`${service.id}\` · *${service.label}* · ${service.durationMin} min · ${price}${service.summary ? ` · ${service.summary}` : ''}`
   }).join('\n')
+}
+
+/**
+ * Horario de agendamiento en lenguaje natural, sacado de config.hours para que nunca se
+ * desincronice del calendario: "lunes a jueves 10:00 a.m.–8:30 p.m.; viernes …".
+ */
+function hoursSummary(config: AppConfig): string {
+  const order = [1, 2, 3, 4, 5, 6, 0]
+  const text = (index: number) => config.hours[index]?.length
+    ? config.hours[index].map((range) => range.split('-').map(clock12).join('–')).join(' y ')
+    : 'cerrado'
+  const groups: Array<{ from: number; to: number; text: string }> = []
+  for (const index of order) {
+    const last = groups.at(-1)
+    if (last && last.text === text(index)) last.to = index
+    else groups.push({ from: index, to: index, text: text(index) })
+  }
+  return groups.map(({ from, to, text: hours }) => `${WEEKDAY_LABEL[from]}${from === to ? '' : ` a ${WEEKDAY_LABEL[to]}`} ${hours}`).join('; ')
 }
 
 function locationsBlock(config: AppConfig): string {
@@ -123,6 +141,11 @@ ${catalogBlock(config)}
 
 ## Sedes
 ${locationsBlock(config)}
+
+## Horario
+- Horario de agendamiento de las sedes: ${hoursSummary(config)}
+- Ese es el horario que das si preguntan a qué hora atienden o pueden asistir.
+- Tú atiendes por WhatsApp las 24 horas, todos los días, aunque la clínica esté cerrada: responde con normalidad a cualquier hora y agenda para el próximo horario disponible. Nunca digas que estás fuera de horario.
 
 ## Cobro de esta conversación
 ${paymentBlock(config, phone)}

@@ -1,6 +1,6 @@
 import { generateReply } from './ai'
-import { createBooking, markDepositClaimed } from './booking'
-import { dayLabel, isClock, isDayKey } from './calendar'
+import { createBooking, liveBookingOf, markDepositClaimed } from './booking'
+import { clock12, dayLabel, isClock, isDayKey } from './calendar'
 import { isLocation, LOCATION_LABEL } from './clinic'
 import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead } from './chats'
 import { generarLinkPagoBold } from './bold'
@@ -106,7 +106,7 @@ function parseFicha(payload: string) {
  * Intenta la reserva que pidió el modelo y devuelve lo que hay que añadir al mensaje.
  * Nunca devuelve el link si la cabina no quedó apartada: así el cliente no paga por un horario que no existe.
  */
-async function applyReserva(config: AppConfig, phone: string, payload: string): Promise<{ append: string; escalate?: string }> {
+export async function applyReserva(config: AppConfig, phone: string, payload: string): Promise<{ append: string; replaceText?: string; escalate?: string }> {
   const parsed = parseReserva(payload)
   if (!parsed) {
     console.warn(`[autoreply] marca RESERVA ilegible para ${phone}: "${payload}"`)
@@ -117,6 +117,19 @@ async function applyReserva(config: AppConfig, phone: string, payload: string): 
   if (!service) return { append: '', escalate: `Gema pidió un servicio que no existe: "${parsed.servicio}"` }
   if (!isLocation(parsed.sede)) return { append: '', escalate: `Gema pidió una sede que no existe: "${parsed.sede}"` }
   if (!service.price) return { append: '', escalate: `El precio de ${service.label} no está configurado` }
+
+  // Una sola cita viva por cliente, impuesta aquí y no solo pedida en el prompt: el modelo ya
+  // agendó una segunda (con su segundo link de cobro) pese a la instrucción. El mensaje de Gema
+  // dio la reserva por hecha, así que se reemplaza entero en vez de añadirle una corrección.
+  const existing = await liveBookingOf(phone)
+  if (existing) {
+    const state = existing.status === 'confirmed' ? 'confirmada' : 'apartada'
+    return {
+      append: '',
+      replaceText: `Ya tienes una cita ${state}: *${existing.serviceLabel}* el ${dayLabel(existing.day)} a las ${clock12(existing.start)} en ${LOCATION_LABEL[existing.location]}. Si quieres cambiarla o agendar otra, una asesora te ayuda en breve 💛`,
+      escalate: `La clienta pidió otra cita teniendo la ${existing.id} (${existing.day} ${existing.start}) ${state}`,
+    }
+  }
 
   const chat = await getSummary(phone)
   const result = await createBooking(config, {
@@ -160,7 +173,8 @@ async function applyReserva(config: AppConfig, phone: string, payload: string): 
   // confirmar cuando llega el pago. Timeout corto porque esto corre dentro del after() del
   // webhook de WhatsApp, que en el plan Hobby tiene poco margen (ver lib/autoreply.ts arriba).
   const boldUrl = payment.bold && amount
-    ? await generarLinkPagoBold(amount, `Anticipo ${booking.serviceLabel}`, booking.id, { timeoutMs: BOLD_TIMEOUT_MS })
+    // El link vence junto con el apartado: así nadie puede pagar un horario que ya se liberó.
+    ? await generarLinkPagoBold(amount, `Anticipo ${booking.serviceLabel}`, booking.id, { timeoutMs: BOLD_TIMEOUT_MS, expiraEn: booking.holdUntil })
     : null
   if (boldUrl) {
     return {
@@ -240,7 +254,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   const reserva = markers.find((marker) => marker.kind === 'RESERVA')
   if (reserva) {
     const applied = await applyReserva(config, phone, reserva.payload)
-    text += applied.append
+    text = applied.replaceText ?? text + applied.append
     if (applied.escalate) escalation = { kind: 'ASESOR', payload: applied.escalate }
   }
 

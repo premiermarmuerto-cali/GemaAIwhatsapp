@@ -6,22 +6,15 @@
  * está apartada no se vuelve a tocar.
  */
 import { confirmPaidByBold, getBooking } from './booking'
-import { dayLabel } from './calendar'
+import { clock12, dayLabel } from './calendar'
 import { LOCATION_LABEL } from './clinic'
-import { notePayment, recordOutbound, requestAgent } from './chats'
+import { getSummary, notePayment, recordOutbound, requestAgent } from './chats'
 import { sendWhatsAppText } from './whatsapp'
 import { HOLD_STATUSES } from './types'
 
 export type BoldPayment = { type: string; reference: string; paymentId: string; amount: number | null; paymentMethod: string }
 
 const METHOD_LABEL: Record<string, string> = { PSE: 'PSE', CREDIT_CARD: 'tarjeta', NEQUI: 'Nequi', BOTON_BANCOLOMBIA: 'Botón Bancolombia' }
-
-/** "16:00" → "4:00 p.m.": al cliente nunca se le habla en formato militar. */
-function clock12(hhmm: string): string {
-  const [hour, minute] = hhmm.split(':').map(Number)
-  const suffix = hour < 12 ? 'a.m.' : 'p.m.'
-  return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${suffix}`
-}
 
 const pesos = (value: number) => `$${value.toLocaleString('es-CO')}`
 
@@ -30,7 +23,11 @@ export async function handleBoldPayment(event: BoldPayment): Promise<string> {
   const cut = event.reference.lastIndexOf('-')
   const bookingId = cut > 0 ? event.reference.slice(0, cut) : event.reference
   const booking = bookingId ? await getBooking(bookingId) : null
-  if (!booking) return 'sin cita asociada'
+  if (!booking) {
+    // Normal para links creados a mano en el portal; pero un cobro real aprobado sin cita merece rastro.
+    if (event.type === 'SALE_APPROVED') console.warn(`[bold-webhook] venta aprobada sin cita asociada: ref "${event.reference}", $${event.amount}, pago ${event.paymentId}`)
+    return 'sin cita asociada'
+  }
 
   // Una anulación no se deshace sola: la decide una persona.
   if (event.type === 'VOID_APPROVED') {
@@ -39,10 +36,20 @@ export async function handleBoldPayment(event: BoldPayment): Promise<string> {
   }
   // Un pago rechazado no cambia nada: el link sigue activo para que el cliente reintente.
   if (event.type !== 'SALE_APPROVED') return 'sin acción'
-  if (!HOLD_STATUSES.includes(booking.status)) return `ya estaba en ${booking.status}`
+  // Bold reintenta y a veces manda el mismo pago dos veces: una cita ya confirmada no se toca.
+  if (booking.status === 'confirmed') return 'ya estaba confirmada'
+
+  const paid = event.amount ?? 0
+  if (!HOLD_STATUSES.includes(booking.status)) {
+    // Dinero cobrado por una cita que ya no está apartada (se liberó o se canceló): sin esta
+    // alerta Bold cobra y nadie se entera. Una persona decide: reagendar o reembolsar.
+    const detail = `Bold cobró ${pesos(paid)} (${event.paymentMethod}) de una cita ${booking.status === 'cancelled' ? 'cancelada' : `en estado ${booking.status}`}: reagendar o reembolsar. Cita ${booking.id}, pago ${event.paymentId}`
+    if (booking.phone && await getSummary(booking.phone)) await requestAgent(booking.phone, detail, 'payment')
+    console.error(`[bold-webhook] ${detail}`)
+    return `pago sobre cita ${booking.status}: pasa a un asesor`
+  }
 
   const expected = Number(booking.deposit.replace(/[^\d]/g, '')) || 0
-  const paid = event.amount ?? 0
   if (expected && paid < expected) {
     if (booking.phone) await requestAgent(booking.phone, `Bold reporta un pago de ${pesos(paid)}, menor al anticipo de ${booking.deposit}`, 'payment')
     return 'monto menor al anticipo: pasa a un asesor'
