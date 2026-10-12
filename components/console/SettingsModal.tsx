@@ -174,8 +174,9 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
                 <small>Gema nunca escribe estos datos: el sistema los añade cuando la cabina queda apartada de verdad.</small>
               </label>
               <label className={styles.field}>
-                <span><span className="badge badge-region">+57</span> Colombia · COP</span>
-                <textarea rows={2} maxLength={1500} placeholder="Número de Nequi, titular, cuenta Bancolombia o Daviplata y qué debe enviar como comprobante" {...text('nequiInstructions')} />
+                <span><span className="badge badge-region">+57</span> Colombia · transferencia directa</span>
+                <textarea rows={2} maxLength={1500} placeholder="Número de Nequi o llave de Premier, titular, y qué debe enviar como comprobante" {...text('nequiInstructions')} />
+                <small>Por defecto Gema cobra con el link de Bold. Estos datos solo se envían si el cliente pide transferir; en ese caso la cita la confirmas tú al validar el comprobante.</small>
               </label>
               <label className={styles.field}>
                 <span><span className="badge badge-region">Resto</span> Internacional · USD</span>
@@ -200,8 +201,8 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
               <textarea rows={4} maxLength={4000} placeholder="Llegar sin maquillaje, no exponerse al sol 48 h después, cuánto duran los resultados…" {...text('faq')} />
             </label>
 
-            {!config.payLink && !config.nequiInstructions && (
-              <p className={styles.warning}>Sin link ni datos para Colombia, Gema aparta el horario pero pasa el cobro a un asesor.</p>
+            {!config.nequiInstructions && (
+              <p className={styles.warning}>Sin datos de transferencia para Colombia: si un cliente pide transferir en vez de pagar con el link, Gema lo pasa a un asesor.</p>
             )}
             {!config.payLink && !config.intlInstructions && (
               <p className={styles.warning}>Sin link ni datos internacionales, los clientes de fuera de Colombia pasan a un asesor para pagar.</p>

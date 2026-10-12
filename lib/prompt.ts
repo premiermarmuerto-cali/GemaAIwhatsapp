@@ -75,10 +75,36 @@ function paymentBlock(config: AppConfig, phone: string): string {
   lines.push(payment.configured
     ? '- Los datos concretos para pagar (número, titular o link) los añade el sistema al final de tu mensaje cuando la reserva queda hecha. Tú solo anuncia que ahí van; NO los escribas ni te los inventes.'
     : `- ${unconfigured('Datos de cobro')}: el horario se puede apartar, pero el pago lo coordina una persona.`)
-  if (payment.bold) {
-    lines.push('- El anticipo se paga con un link de Bold y el pago se confirma solo: NO le pidas comprobante. Si dice que ya pagó, dile que apenas Bold confirme el pago le llega aquí la confirmación de su cita.')
-  }
   return lines.join('\n')
+}
+
+/**
+ * Reglas del anticipo. Con Bold hay dos caminos y cada uno se confirma distinto: el link se
+ * confirma solo (sin comprobante) y la transferencia la confirma el equipo con el comprobante.
+ * Antes ambas instrucciones convivían sin distinguirse y el modelo se contradecía.
+ */
+function cobroBlock(config: AppConfig, phone: string): string {
+  const payment = paymentFor(config, regionOf(phone))
+  const common = [
+    `- Reservar exige un anticipo del ${config.depositPercent}% del valor del servicio; el resto se paga en sede.`,
+    `- El horario queda apartado ${config.holdMinutes} minutos. Si no se paga en ese tiempo, se libera solo. Dilo con amabilidad, no como amenaza.`,
+    '- Los métodos y la moneda son los de "Cobro de esta conversación", arriba. No ofrezcas ningún otro.',
+    '- No escribas el monto del anticipo ni los datos de pago en el mensaje de la reserva: el sistema los añade al final. Nunca digas "aquí va el link" o "te envío los datos" sin la marca que corresponde: sin la marca no se envía nada.',
+  ]
+  const receipt = [
+    '- Si dice que ya transfirió y no ha enviado comprobante, pídele la captura.',
+    '- Cuando te envíe el comprobante, agradécele, dile que el equipo lo valida y le confirma la cita en breve, y termina con la marca [[PAGO: plataforma y monto]], por ejemplo [[PAGO: Nequi $45.000]]. Usa "no visible" si no se ve el monto. Nunca digas que el pago ya fue recibido ni que el comprobante es válido.',
+  ]
+  if (!payment.bold) {
+    return [...common, '- La cita queda confirmada cuando el equipo valida el comprobante.', ...receipt].join('\n')
+  }
+  return [
+    ...common,
+    '- Por defecto el anticipo se paga con el link de Bold que el sistema añade al reservar (tarjeta, PSE o Nequi). Con ese link la cita se confirma sola cuando Bold confirma el pago y al cliente le llega aquí la confirmación: no le pidas comprobante ni le digas que el equipo lo valida. Si dice que ya pagó con el link, dile que apenas Bold lo confirme le llega aquí la confirmación.',
+    '- Si pide el link otra vez o dice que lo perdió, usa la marca [[LINK]]: el sistema lo vuelve a enviar.',
+    '- Solo si el cliente prefiere transferir directo a la cuenta de Premier (Nequi o llave), usa la marca [[TRANSFERENCIA]]: el sistema añade los datos de transferencia. Si lo dice antes de reservar, ponla junto con [[RESERVA]] en el mismo mensaje y el sistema enviará esos datos en vez del link. Por transferencia la cita la confirma el equipo al validar el comprobante:',
+    ...receipt,
+  ].join('\n')
 }
 
 /** Huecos reales de las dos sedes para los próximos días. Es lo único que el modelo puede ofrecer. */
@@ -113,12 +139,15 @@ export async function buildPromptContext(config: AppConfig, phone: string, lead:
 function bookingBlock(booking: Booking | null): string {
   if (!booking) return 'El cliente no tiene ninguna cita activa. Si quiere agendar, es una cita nueva.'
   const state = booking.status === 'confirmed'
-    ? 'ya confirmada (el anticipo fue validado)'
-    : 'apartada pero SIN confirmar: falta que el equipo valide el anticipo'
+    ? 'ya confirmada (el anticipo está pagado)'
+    : booking.paidAt
+      ? 'apartada: dice que ya transfirió y el equipo está validando el comprobante'
+      : 'apartada, esperando el pago del anticipo'
   return [
     `El cliente YA tiene una cita ${state}:`,
     `- ${booking.serviceLabel} · ${LOCATION_LABEL[booking.location]} · ${dayLabel(booking.day)} a las ${booking.start}`,
     '- No le ofrezcas otro horario ni crees otra cita. Si quiere cambiarla o cancelarla, pásalo a un asesor.',
+    ...(booking.status !== 'confirmed' && !booking.paidAt ? ['- Si pide el link de pago otra vez, usa [[LINK]]; si prefiere transferir, [[TRANSFERENCIA]].'] : []),
   ].join('\n')
 }
 
@@ -133,7 +162,6 @@ function leadBlock(lead: Lead): string {
 
 /** System prompt final: voz de marca + hechos del negocio + agenda real + reglas duras. */
 export function buildSystemPrompt(config: AppConfig, phone: string, context: PromptContext): string {
-  const deposit = `${config.depositPercent}%`
   return `${config.systemPrompt}
 
 ## Catálogo
@@ -188,22 +216,21 @@ ${leadBlock(context.lead)}
 2. Recomienda UN protocolo del catálogo y di su precio y su duración.
 3. Pregunta en qué sede le queda mejor y ofrécele dos o tres horarios concretos de los rangos libres.
 4. Cuando acepte un horario, necesitas su nombre completo. Si no lo tienes, pídelo antes de reservar, y mientras tanto no digas "te agendo" ni des la cita por hecha: todavía no lo está.
-5. Con nombre, servicio, sede, día y hora, escribe el mensaje de la regla de abajo y cierra con la marca [[RESERVA]].
+5. Con nombre, servicio, sede, día y hora, escribe el mensaje de la regla de abajo y cierra con la marca [[RESERVA]] (y [[TRANSFERENCIA]] si ya dijo que prefiere transferir).
 
 ## Cobro del anticipo
-- Reservar exige un anticipo del ${deposit} del valor del servicio; el resto se paga en sede.
-- El horario queda apartado ${config.holdMinutes} minutos. Si no se paga en ese tiempo, se libera solo. Dilo con amabilidad, no como amenaza.
-- Los métodos y la moneda son los de "Cobro de esta conversación", arriba. No ofrezcas ningún otro.
-- La cita NO queda confirmada con el pago: queda confirmada cuando el equipo valida el comprobante. Nunca digas que el pago ya fue recibido ni que el comprobante es válido.
-- Si el cliente dice que pagó y no ha enviado comprobante, pídele la captura.
-- Cuando te envíe el comprobante, agradécele, dile que el equipo lo valida y le confirma la cita en breve, y termina con la marca [[PAGO: plataforma y monto]], por ejemplo [[PAGO: Nequi $45.000]]. Usa "no visible" si no se ve el monto.
+${cobroBlock(config, phone)}
 
 ## Marcas (el cliente nunca las ve)
 Van siempre al final del mensaje, después del texto.
 
 - \`[[FICHA: motivo · servicio · sede]]\` — úsala en cuanto sepas algo nuevo del cliente, para que el equipo lo vea en el panel. Pon \`-\` en lo que todavía no sepas. Ejemplo: \`[[FICHA: acné y poros abiertos · limpieza-profunda · unicentro]]\`. Esta marca no interrumpe nada: puedes seguir conversando después de usarla.
 
-- \`[[RESERVA: servicio · sede · YYYY-MM-DD · HH:MM · nombre completo]]\` — úsala solo cuando el cliente ya aceptó un horario concreto y tienes su nombre. Usa el id exacto del catálogo y de la sede. Ejemplo: \`[[RESERVA: limpieza-profunda · unicentro · ${addDays(dayKey(), 1)} · 15:00 · Laura Martínez]]\`. Escribe tu mensaje dando por hecha la reserva y mencionando el anticipo; el sistema añade el link.
+- \`[[RESERVA: servicio · sede · YYYY-MM-DD · HH:MM · nombre completo]]\` — úsala solo cuando el cliente ya aceptó un horario concreto y tienes su nombre. Usa el id exacto del catálogo y de la sede. Ejemplo: \`[[RESERVA: limpieza-profunda · unicentro · ${addDays(dayKey(), 1)} · 15:00 · Laura Martínez]]\`. Escribe tu mensaje dando por hecha la reserva, sin el monto ni el link: el sistema los añade.
+
+- \`[[LINK]]\` — el cliente pide otra vez el link de pago de su cita apartada. El sistema lo añade; tú solo dile que ahí va.
+
+- \`[[TRANSFERENCIA]]\` — el cliente prefiere transferir directo a Premier en vez de pagar con el link. El sistema añade los datos de transferencia; tú pídele que te envíe el comprobante cuando transfiera. Tú NO tienes número de Nequi, llave, cuenta ni titular de Premier: nunca escribas ninguno, ni siquiera de ejemplo.
 
 - \`[[PAGO: plataforma y monto]]\` — cuando ya tienes el comprobante. Después de esta marca no vuelves a escribir en la conversación.
 

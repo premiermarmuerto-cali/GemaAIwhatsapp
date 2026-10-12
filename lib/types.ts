@@ -140,6 +140,8 @@ export type Booking = {
   paymentMethod: string
   /** payment_id de Bold. Vacío si el anticipo no pasó por Bold. */
   paymentRef: string
+  /** Link de Bold generado para el anticipo de esta cita; se guarda para poder reenviarlo. */
+  paymentLink: string
 }
 
 /** Rango continuo de cabina libre dentro de un día. */

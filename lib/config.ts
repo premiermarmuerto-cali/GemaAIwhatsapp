@@ -208,14 +208,17 @@ export function serviceById(config: AppConfig, id: string): Service | undefined 
  */
 export function paymentFor(config: AppConfig, region: Region) {
   const colombia = region === 'CO'
+  /** En Colombia, con Bold configurado, cada reserva genera su propio link (ver lib/bold.ts). */
+  const bold = colombia && Boolean(process.env.BOLD_API_KEY)
   return {
     currency: colombia ? 'pesos colombianos (COP)' : 'dólares estadounidenses (USD)',
-    methods: colombia
-      ? 'Nequi, Bancolombia o Daviplata'
-      : 'Binance (USDT), PayPal, transferencia Wise o ACH vía DolarApp',
+    methods: bold
+      ? 'link de pago de Bold (tarjeta, PSE o Nequi) o, si el cliente lo prefiere, transferencia directa a Premier (Nequi o llave)'
+      : colombia
+        ? 'Nequi, Bancolombia o Daviplata'
+        : 'Binance (USDT), PayPal, transferencia Wise o ACH vía DolarApp',
     instructions: colombia ? config.nequiInstructions : config.intlInstructions,
-    /** En Colombia, con Bold configurado, cada reserva genera su propio link (ver lib/bold.ts). */
-    bold: colombia && Boolean(process.env.BOLD_API_KEY),
+    bold,
     get configured() { return Boolean(config.payLink || this.instructions || this.bold) },
   }
 }

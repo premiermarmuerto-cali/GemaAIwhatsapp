@@ -63,6 +63,9 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate }: P
         {booking.holdUntil > 0 && (
           <div><dt>Apartado</dt><dd>se libera en {holdCountdown(booking.holdUntil)}</dd></div>
         )}
+        {booking.paymentLink && !booking.paymentRef && (
+          <div><dt>Link de pago</dt><dd><a className={styles.link} href={booking.paymentLink} target="_blank" rel="noreferrer">{booking.paymentLink.replace('https://', '')}</a></dd></div>
+        )}
         {booking.paymentRef ? (
           <div><dt>Anticipo</dt><dd>Pagado por Bold · {PAYMENT_METHOD_LABEL[booking.paymentMethod] ?? booking.paymentMethod} · {new Date(booking.paidAt).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}</dd></div>
         ) : booking.paidAt > 0 && (

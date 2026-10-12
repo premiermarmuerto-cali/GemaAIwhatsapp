@@ -76,6 +76,7 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     confirmedAt: Number(raw.confirmedAt ?? 0),
     paymentMethod: raw.paymentMethod ?? '',
     paymentRef: raw.paymentRef ?? '',
+    paymentLink: raw.paymentLink ?? '',
   }
 }
 
@@ -231,6 +232,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     confirmedAt: status === 'confirmed' ? now : 0,
     paymentMethod: '',
     paymentRef: '',
+    paymentLink: '',
   }
 
   const tx = db.multi()
@@ -348,10 +350,21 @@ export async function bookingsOfPhone(phone: string, count = 10): Promise<Bookin
   return getBookings(ids)
 }
 
-/** La cita viva de un cliente, si tiene una. Sirve para que Gema no agende dos veces. */
+/**
+ * La cita viva de un cliente, si tiene una. Sirve para que Gema no agende dos veces.
+ * Un apartado ya vencido no cuenta aunque el barrido todavía no lo haya liberado: si no, el
+ * cliente quedaría bloqueado para reservar de nuevo hasta la siguiente lectura de agenda.
+ */
 export async function liveBookingOf(phone: string): Promise<Booking | null> {
+  const now = Date.now()
   const recent = await bookingsOfPhone(phone, 5)
-  return recent.find((booking) => LIVE_STATUSES.includes(booking.status) && booking.startTs > Date.now()) ?? null
+  return recent.find((booking) => LIVE_STATUSES.includes(booking.status)
+    && booking.startTs > now
+    && !(HOLD_STATUSES.includes(booking.status) && booking.holdUntil > 0 && booking.holdUntil <= now)) ?? null
+}
+
+export async function setPaymentLink(id: string, url: string): Promise<void> {
+  await redis().hset(keys.booking(id), { paymentLink: url })
 }
 
 /**

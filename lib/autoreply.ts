@@ -1,5 +1,5 @@
 import { generateReply } from './ai'
-import { createBooking, liveBookingOf, markDepositClaimed } from './booking'
+import { createBooking, liveBookingOf, markDepositClaimed, setPaymentLink } from './booking'
 import { clock12, dayLabel, isClock, isDayKey } from './calendar'
 import { isLocation, LOCATION_LABEL } from './clinic'
 import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead } from './chats'
@@ -11,7 +11,7 @@ import { buildPromptContext, buildSystemPrompt } from './prompt'
 import { rateLimit } from './ratelimit'
 import { keys, redis } from './redis'
 import { sendWhatsAppText } from './whatsapp'
-import type { AppConfig, Location } from './types'
+import { HOLD_STATUSES, type AppConfig, type Booking, type Location } from './types'
 
 const HISTORY_FOR_MODEL = 30
 // Mitigación para el plan Hobby de Vercel: el after() del webhook corre en segundo plano
@@ -38,13 +38,31 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
  * Marcas con las que Gema actúa sobre el sistema; el cliente nunca las ve.
  *   FICHA   datos del prospecto (no interrumpe la conversación)
  *   RESERVA aparta la cabina y dispara el cobro del anticipo
+ *   LINK    reenvía el link de pago de la cita apartada
+ *   TRANSFERENCIA  datos para transferir a Premier en vez del link (se valida con comprobante)
  *   PAGO    llegó el comprobante → una persona lo valida
  *   ASESOR  todo lo demás que necesita una persona
  */
-const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA)\s*(?::([^\]]*))?\]\]/gi
+const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA)\s*(?::([^\]]*))?\]\]/gi
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
 const SOUNDS_BOOKED = /\b(te agend[eoé]|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
+// Frases con las que promete un link sin emitir [[LINK]] (pasó en una prueba real: "Aquí va el
+// link" y el mensaje salía sin link). Si hay una cita apartada, el sistema lo reenvía igual.
+const PROMISES_LINK = /(aqu[ií]\s+(va|tienes|est[aá]|te\s+(dejo|env[ií]o|paso))|te\s+(env[ií]o|enviar[eé]|mando|paso|comparto|dejo))[^.\n]{0,25}\b(link|enlace)\b/i
+// Datos de pago escritos por el modelo: secuencias de 7+ dígitos (teléfonos, cuentas), titulares
+// o cuentas bancarias. Nunca los tiene, así que si aparecen son inventados (pasó en una prueba:
+// dio el teléfono del propio cliente como "número de Nequi"). Los precios usan puntos y no coinciden.
+const PAYMENT_DATA_LIKE = /\d(?:[ -]?\d){6,}|\btitular\b|\bcuenta\s+(de\s+)?(ahorros|corriente)\b/i
+
+/** Quita del texto del modelo las líneas con datos de pago inventados. Solo se aplica a lo que escribió el modelo. */
+function stripInventedPaymentData(phone: string, text: string): string {
+  const lines = text.split('\n')
+  const kept = lines.filter((line) => !PAYMENT_DATA_LIKE.test(line))
+  if (kept.length === lines.length) return text
+  console.warn(`[autoreply] Gema escribió datos de pago para ${phone}; se quitaron ${lines.length - kept.length} línea(s)`)
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
 // Si en el mismo mensaje pide el nombre, todavía no está reservando: le faltan datos, y eso es correcto.
 const ASKS_FOR_NAME = /\b(tu|su)\s+nombre\b/i
 
@@ -106,7 +124,58 @@ function parseFicha(payload: string) {
  * Intenta la reserva que pidió el modelo y devuelve lo que hay que añadir al mensaje.
  * Nunca devuelve el link si la cabina no quedó apartada: así el cliente no paga por un horario que no existe.
  */
-export async function applyReserva(config: AppConfig, phone: string, payload: string): Promise<{ append: string; replaceText?: string; escalate?: string }> {
+type Applied = { append: string; replaceText?: string; escalate?: string }
+
+/** Minutos que le quedan al apartado, para decírselo al cliente al reenviar datos de pago. */
+function holdMinutesLeft(booking: Booking): number {
+  return Math.max(0, Math.round((booking.holdUntil - Date.now()) / 60_000))
+}
+
+/**
+ * El cliente prefiere transferir directo a Premier (Nequi o llave) en vez del link: el servidor
+ * pega los datos de la configuración y la cita la confirma el operador al validar el comprobante.
+ */
+function transferAppend(config: AppConfig, booking: Booking): Applied {
+  const data = paymentFor(config, regionOf(booking.phone)).instructions
+  if (!data) {
+    return {
+      append: '\n\nUna asesora te comparte los datos para transferir en breve 💛',
+      escalate: `La clienta quiere pagar el anticipo de la cita ${booking.id} por transferencia, pero los datos de transferencia no están configurados`,
+    }
+  }
+  const deposit = booking.deposit ? ` de ${booking.deposit}` : ''
+  return {
+    append: `\n\nPuedes transferir el anticipo${deposit} a:\n${data}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos. Cuando transfieras, envíame aquí la captura del comprobante para validarlo 💛`,
+  }
+}
+
+/**
+ * Reenvía el link de Bold de la cita apartada. Si la cita no lo tiene (Bold falló al reservar, o
+ * la creó un operador) se genera uno nuevo que vence con el apartado.
+ * `implicit`: Gema prometió el link sin la marca; si no hay cita apartada, no se hace nada.
+ */
+async function resendLink(config: AppConfig, phone: string, { implicit = false } = {}): Promise<Applied> {
+  const booking = await liveBookingOf(phone)
+  if (!booking || !HOLD_STATUSES.includes(booking.status)) {
+    return implicit ? { append: '' } : { append: '', escalate: 'Gema quiso reenviar un link de pago, pero no hay una cita apartada' }
+  }
+  let url = booking.paymentLink
+  if (!url && paymentFor(config, regionOf(phone)).bold) {
+    const amount = depositAmount(config, booking.price)
+    url = (amount && await generarLinkPagoBold(amount, `Anticipo ${booking.serviceLabel}`, booking.id, { timeoutMs: BOLD_TIMEOUT_MS, expiraEn: booking.holdUntil })) || ''
+    if (url) await setPaymentLink(booking.id, url)
+  }
+  if (!url) {
+    return {
+      append: '\n\nUna asesora te envía el link de pago en breve 💛',
+      escalate: `La clienta pidió el link de pago de la cita ${booking.id}, pero no hay ninguno para reenviar`,
+    }
+  }
+  const deposit = booking.deposit ? ` de ${booking.deposit}` : ''
+  return { append: `\n\nAquí tienes el link para pagar el anticipo${deposit} con tarjeta, PSE o Nequi:\n${url}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos.` }
+}
+
+export async function applyReserva(config: AppConfig, phone: string, payload: string, { transfer = false } = {}): Promise<Applied> {
   const parsed = parseReserva(payload)
   if (!parsed) {
     console.warn(`[autoreply] marca RESERVA ilegible para ${phone}: "${payload}"`)
@@ -161,6 +230,17 @@ export async function applyReserva(config: AppConfig, phone: string, payload: st
 
   // El cobro lo escribe el servidor, nunca el modelo: los datos salen de la config,
   // según el país del número (misma lógica por región que la consola original).
+  // El cliente ya dijo que prefiere transferir: datos de transferencia en vez del link. El mensaje
+  // lo compone el servidor entero, porque en este paso el modelo tiende a inventarse los datos.
+  if (transfer) {
+    const result = transferAppend(config, booking)
+    const firstName = booking.name.split(' ')[0]
+    return {
+      ...result,
+      replaceText: `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${booking.serviceLabel}* queda apartada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}.${result.append}`,
+    }
+  }
+
   const payment = paymentFor(config, regionOf(phone))
   if (!payment.configured) {
     return { append: '', escalate: `Cita ${booking.id} apartada, pero los datos de cobro de ${regionOf(phone)} no están configurados` }
@@ -177,6 +257,8 @@ export async function applyReserva(config: AppConfig, phone: string, payload: st
     ? await generarLinkPagoBold(amount, `Anticipo ${booking.serviceLabel}`, booking.id, { timeoutMs: BOLD_TIMEOUT_MS, expiraEn: booking.holdUntil })
     : null
   if (boldUrl) {
+    // Se guarda en la cita para poder reenviarlo si el cliente lo pierde ([[LINK]]).
+    await setPaymentLink(booking.id, boldUrl)
     return {
       append: `\n\nPara dejarla reservada necesitamos el anticipo${deposit}. Puedes pagarlo aquí con tarjeta, PSE o Nequi:\n${boldUrl}\nTu horario queda apartado ${config.holdMinutes} minutos y apenas se confirme el pago te aviso por aquí 💛`,
     }
@@ -243,7 +325,8 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   if (!reply) return
 
   const markers = [...reply.matchAll(MARKERS)].map((marker) => ({ kind: marker[1].toUpperCase(), payload: (marker[2] ?? '').trim() }))
-  let text = reply.replace(MARKERS, '').trim()
+  // Lo que viene del modelo pasa por la red de datos de pago; lo que añade el servidor después, no.
+  let text = stripInventedPaymentData(phone, reply.replace(MARKERS, '').trim())
 
   // FICHA es silenciosa: solo enriquece el panel y el prompt de la próxima vuelta.
   const ficha = markers.find((marker) => marker.kind === 'FICHA')
@@ -252,8 +335,23 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // La reserva se intenta antes de enviar: el texto que sale ya refleja lo que de verdad pasó.
   let escalation = markers.find((marker) => marker.kind === 'PAGO') ?? markers.find((marker) => marker.kind === 'ASESOR')
   const reserva = markers.find((marker) => marker.kind === 'RESERVA')
+  const transfer = markers.some((marker) => marker.kind === 'TRANSFERENCIA')
+  const link = markers.some((marker) => marker.kind === 'LINK')
+  let applied: Applied | null = null
   if (reserva) {
-    const applied = await applyReserva(config, phone, reserva.payload)
+    applied = await applyReserva(config, phone, reserva.payload, { transfer })
+  } else if (transfer) {
+    // El mensaje lo compone entero el servidor: el texto del modelo en este paso es justo donde
+    // tiende a inventarse números y titulares.
+    const booking = await liveBookingOf(phone)
+    const result = booking && HOLD_STATUSES.includes(booking.status)
+      ? transferAppend(config, booking)
+      : { append: '\n\nUna asesora te ayuda con la transferencia en breve 💛', escalate: 'La clienta quiere transferir, pero no hay una cita apartada' }
+    applied = { ...result, replaceText: `Claro 💛${result.append}` }
+  } else if (link || PROMISES_LINK.test(text)) {
+    applied = await resendLink(config, phone, { implicit: !link })
+  }
+  if (applied) {
     text = applied.replaceText ?? text + applied.append
     if (applied.escalate) escalation = { kind: 'ASESOR', payload: applied.escalate }
   }
