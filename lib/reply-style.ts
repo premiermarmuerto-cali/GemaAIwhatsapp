@@ -44,10 +44,14 @@ function withoutFiller(part: string): string {
 /** Reglas mecánicas de puntuación sobre un mensaje del modelo. */
 function casual(part: string, isLast: boolean): string {
   let out = withoutFiller(part)
+    .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // Markdown **negrita** → *negrita* de WhatsApp
+    .replace(/^\s*[-•]\s+/gm, '') // sin viñetas
+    .replace(/\[(?!\[)[^\]\n]{2,60}\]/g, '') // relleno tipo "[datos de la cuenta]"
     .replace(/[¿¡]/g, '')
     .replace(/\s*—\s*/g, ', ')
     .replace(/;\s*/g, ', ')
     .replace(/ {2,}/g, ' ')
+    .replace(/([:,;])\s*([:,;.])/g, '$2') // restos de puntuación al quitar relleno ("Nequi:.")
     .trim()
   // El último mensaje no lleva punto final (pero sí los puntos suspensivos).
   if (isLast) out = out.replace(/(?<!\.)\.$/, '')

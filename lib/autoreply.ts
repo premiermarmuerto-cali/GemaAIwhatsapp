@@ -52,10 +52,15 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
 const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO)\s*(?::([^\]]*))?\]\]/gi
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
-const SOUNDS_BOOKED = /\b(te (agend|reserv)[eoé]|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
+const SOUNDS_BOOKED = /\b(te (agend|reserv)[eoé]|(entonces,? )?(agend|reserv)(emos|amos|ar[eé]|o)\b|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
 // Frases con las que promete un link sin emitir [[LINK]] (pasó en una prueba real: "Aquí va el
 // link" y el mensaje salía sin link). Si hay una cita apartada, el sistema lo reenvía igual.
-const PROMISES_LINK = /(aqu[ií]\s+(va|tienes|est[aá]|te\s+(dejo|env[ií]o|paso))|te\s+(env[ií]o|enviar[eé]|mando|paso|comparto|dejo))[^.\n]{0,25}\b(link|enlace)\b/i
+// Frases con las que el modelo "entrega" datos de pago escritos por él, sin la marca [[TRANSFERENCIA]]
+// ("Aquí están los datos para el anticipo", "datos de la cuenta"). Los datos reales los pega solo el servidor.
+const PROMISES_PAYMENT_DATA = /\b(aqu[ií]|ah[ií])\s+(est[aá]n|van|tienes|te dejo)[^.\n]{0,40}\b(datos|cuenta|n[uú]mero)|\bdatos\s+(para|de)\s+(el\s+|la\s+|tu\s+)?(anticipo|transferencia|pago|cuenta)|\bdatos de la cuenta\b/i
+// Texto entre corchetes simples ("[datos de la cuenta]"): relleno del modelo, nunca una marca válida.
+const BRACKET_PLACEHOLDER = /\[(?!\[)[^\]\n]{2,60}\]/
+const PROMISES_LINK =/(aqu[ií]\s+(va|tienes|est[aá]|te\s+(dejo|env[ií]o|paso))|te\s+(env[ií]o|enviar[eé]|mando|paso|comparto|dejo))[^.\n]{0,25}\b(link|enlace)\b/i
 // Datos de pago escritos por el modelo: secuencias de 7+ dígitos (teléfonos, cuentas), titulares
 // o cuentas bancarias. Nunca los tiene, así que si aparecen son inventados (pasó en una prueba:
 // dio el teléfono del propio cliente como "número de Nequi"). Los precios usan puntos y no coinciden.
@@ -77,7 +82,8 @@ function forgotReserva(reply: string, bookingId: string | undefined): boolean {
   const found = [...reply.matchAll(MARKERS)].map((marker) => marker[1].toUpperCase())
   if (found.includes('RESERVA') || found.includes('ASESOR') || found.includes('PAGO')) return false
   const plain = reply.replace(MARKERS, '')
-  return (SOUNDS_BOOKED.test(plain) && !ASKS_FOR_NAME.test(plain)) || found.some((kind) => ['TRANSFERENCIA', 'PAREJA', 'COMPLETO'].includes(kind))
+  const handsOverPaymentData = PROMISES_PAYMENT_DATA.test(plain) || BRACKET_PLACEHOLDER.test(plain)
+  return (SOUNDS_BOOKED.test(plain) && !ASKS_FOR_NAME.test(plain)) || handsOverPaymentData || found.some((kind) => ['TRANSFERENCIA', 'PAREJA', 'COMPLETO'].includes(kind))
 }
 
 // Montos en pesos escritos por el modelo ("$340.000", "$85.000 COP por persona").
@@ -445,7 +451,10 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   let escalation = markers.find((marker) => marker.kind === 'PAGO') ?? markers.find((marker) => marker.kind === 'ASESOR')
   const reserva = markers.find((marker) => marker.kind === 'RESERVA')
   const clientSaid = history.filter((message) => message.sender === 'user').slice(-6).map((message) => message.text).join(' ')
-  const transfer = markers.some((marker) => marker.kind === 'TRANSFERENCIA') && WANTS_TRANSFER.test(clientSaid)
+  // El modelo a veces "entrega" los datos de pago él mismo (con un relleno entre corchetes) en vez de
+  // usar la marca: se trata igual que [[TRANSFERENCIA]] y los datos reales los pega el servidor.
+  const writesPaymentData = PROMISES_PAYMENT_DATA.test(text) || BRACKET_PLACEHOLDER.test(text)
+  const transfer = (markers.some((marker) => marker.kind === 'TRANSFERENCIA') || writesPaymentData) && WANTS_TRANSFER.test(clientSaid)
   if (reserva) text = stripModelAmounts(phone, text)
   const pareja = markers.find((marker) => marker.kind === 'PAREJA')
   const payFull = markers.some((marker) => marker.kind === 'COMPLETO')

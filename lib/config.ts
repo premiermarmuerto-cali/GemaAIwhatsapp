@@ -231,15 +231,28 @@ export async function saveConfig(config: AppConfig) {
   await redis().set(keys.config, JSON.stringify(config))
 }
 
+/**
+ * Códigos que tenían los servicios de Premier antes de llamarse como el servicio (17 oct 2026). No
+ * coincidían con los nombres (`valoracion` era el Peeling, `limpieza-basica` era Pigmentación) y el
+ * modelo se equivocaba de servicio al reservar. Siguen valiendo para citas y fichas ya guardadas.
+ */
+export const LEGACY_SERVICE_IDS: Record<string, string> = {
+  valoracion: 'peeling-hidratacion',
+  'limpieza-basica': 'pigmentacion',
+  'limpieza-profunda': 'lineas-expresion',
+  'hidratacion-mineral': 'hidratacion-profunda',
+}
+
 export function serviceById(config: AppConfig, id: string): Service | undefined {
   return config.services.find((service) => service.id === id)
+    ?? (LEGACY_SERVICE_IDS[id] ? config.services.find((service) => service.id === LEGACY_SERVICE_IDS[id]) : undefined)
 }
 
 const slug = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
 /**
  * El servicio que pidió Gema en [[RESERVA]]: por id y, si no existe, por nombre. Los ids son
- * históricos (`valoracion` es hoy la Limpieza Peeling Gel) y el modelo a veces escribe el nombre
+ * y el modelo a veces escribe el nombre
  * convertido en id (`limpieza-peeling-gel`). Si el nombre no coincide exacto (la voz del panel y
  * el catálogo pueden nombrarlo distinto: "Peeling Gel" / "Peeling y Hidratación"), acepta el
  * servicio cuyo nombre comparte más palabras iniciales, solo si son 2 o más y no hay empate.

@@ -9,7 +9,7 @@
  */
 import { addDays, clock12, dayKey, dayLabel, nextHumanWindow, startWindows, type Occupancy } from './calendar'
 import { LOCATION_LABEL, LOCATIONS, WEEKDAY_LABEL } from './clinic'
-import { amountOf, bookingPrice, depositOf, paymentFor, pesos, twoForOneApplies, twoForOneLive } from './config'
+import { amountOf, bookingPrice, depositOf, LEGACY_SERVICE_IDS, paymentFor, pesos, twoForOneApplies, twoForOneLive } from './config'
 import { chargeText, liveBookingOf, serviceText, sweepExpiredHolds } from './booking'
 import { keys, redis, toHash } from './redis'
 import { formatPhone, countryOf, regionOf } from './phone'
@@ -101,6 +101,7 @@ function promoBlock(config: AppConfig, today: string): string {
     '',
     scope,
     '- Menciónala en tu primera respuesta sobre un servicio que la tenga, junto al precio. Si preguntan por un servicio sin 2x1, no se la ofrezcas para ese servicio.',
+    '- Si el cliente pregunta por el 2x1 (o por una promoción) OFRÉCELO tú, no preguntes si le interesa saber más: dile directo en qué servicios aplica, con el precio de cada uno (y la fecha límite si la tiene), y termina preguntando cuál le interesa o con quién viene. Si pregunta por un servicio que no lo tiene, díselo en una frase y ofrécele de una vez los que sí. Ejemplo: "en esa no hay 2x1|||sí lo tienen la de peeling y hidratación, $130.000 hasta el 31 de octubre, y la de líneas de expresión, $200.000|||cuál te gustaría?".',
     pairLine,
     '- Explícala solo con lo que dice arriba, sin cambiarle condiciones ni añadir otras: nunca digas "por tiempo limitado", "últimos cupos" ni una fecha que no esté escrita. Si preguntan algo que no está ahí, dile que ese detalle se lo confirma una asesora y usa [[ASESOR]].',
     '- Una pareja es UNA cita: con 2x1 paga el precio y el anticipo de una sesión; sin 2x1, los de dos sesiones (el catálogo trae ambos montos). Nunca digas "por persona" ni "por cada uno" al hablar de precio o anticipo.',
@@ -152,7 +153,7 @@ function paymentBlock(config: AppConfig, phone: string): string {
     `- Métodos aceptados para pagar la reserva: ${payment.methods}. No ofrezcas otros.`,
   ]
   lines.push(payment.configured
-    ? '- Los datos concretos para pagar (número, titular o link) los añade el sistema al final de tu mensaje cuando la reserva queda hecha. Tú solo anuncia que ahí van; NO los escribas ni te los inventes.'
+    ? '- Los datos concretos para pagar (número, titular o link) los añade el sistema al final de tu mensaje cuando la reserva queda hecha. Tú solo anuncia que ahí van; NO los escribas ni te los inventes, y nunca dejes un hueco o un texto entre corchetes como "[datos de la cuenta]": llegan solo si usas la marca de reserva (y [[TRANSFERENCIA]] si pagará transfiriendo).'
     : `- ${unconfigured('Datos de cobro')}: el horario se puede apartar, pero el pago lo coordina una persona.`)
   return lines.join('\n')
 }
@@ -246,7 +247,7 @@ function bookingBlock(booking: Booking | null): string {
 function leadBlock(lead: Lead): string {
   const known = [
     lead.concern && `motivo de consulta: ${lead.concern}`,
-    lead.serviceId && `servicio de interés: ${lead.serviceId}`,
+    lead.serviceId && `servicio de interés: ${LEGACY_SERVICE_IDS[lead.serviceId] ?? lead.serviceId}`,
     lead.location && `sede preferida: ${LOCATION_LABEL[lead.location as Location]}`,
   ].filter(Boolean)
   return known.length ? `Ya sabes de este cliente — ${known.join('; ')}. No se lo vuelvas a preguntar.` : 'Todavía no sabes nada de la piel de este cliente.'
@@ -412,9 +413,9 @@ ${cobroBlock(config, phone)}
 ## Marcas (el cliente nunca las ve)
 Van siempre al final del mensaje, después del texto.
 
-- \`[[FICHA: motivo · servicio · sede]]\` — úsala en cuanto sepas algo nuevo del cliente, para que el equipo lo vea en el panel. Pon \`-\` en lo que todavía no sepas. Ejemplo: \`[[FICHA: acné y poros abiertos · limpieza-profunda · unicentro]]\`. Esta marca no interrumpe nada: puedes seguir conversando después de usarla.
+- \`[[FICHA: motivo · servicio · sede]]\` — úsala en cuanto sepas algo nuevo del cliente, para que el equipo lo vea en el panel. Pon \`-\` en lo que todavía no sepas. Ejemplo: \`[[FICHA: acné y poros abiertos · peeling-hidratacion · unicentro]]\` (el servicio es el que le interesa a ESE cliente, no el del ejemplo). Esta marca no interrumpe nada: puedes seguir conversando después de usarla.
 
-- \`[[RESERVA: servicio · sede · YYYY-MM-DD · HH:MM · nombre completo]]\` — úsala solo cuando el cliente ya aceptó un horario concreto y tienes su nombre. Usa el id exacto del catálogo y de la sede. Ejemplo: \`[[RESERVA: limpieza-profunda · unicentro · ${addDays(dayKey(), 1)} · 15:00 · Laura Martínez]]\`. Escribe tu mensaje dando por hecha la reserva, sin el monto ni el link: el sistema los añade.
+- \`[[RESERVA: servicio · sede · YYYY-MM-DD · HH:MM · nombre completo]]\` — úsala solo cuando el cliente ya aceptó un horario concreto y tienes su nombre. Usa el id exacto del servicio que pidió el cliente (el id del catálogo cuyo nombre coincide con lo que él eligió; nunca el del ejemplo) y el de la sede. Ejemplo: \`[[RESERVA: lineas-expresion · unicentro · ${addDays(dayKey(), 1)} · 15:00 · Laura Martínez]]\`. Escribe tu mensaje dando por hecha la reserva, sin el monto ni el link: el sistema los añade.
 
 - \`[[PAREJA: nombre del acompañante]]\` — va junto con [[RESERVA]] cuando la cita es para dos personas a la misma hora y con el mismo servicio (una cita, dos cabinas). En [[RESERVA]] va el nombre de quien escribe; aquí el de su acompañante, o \`-\` si no lo dio. Sin esta marca el sistema aparta una sola cabina.
 
