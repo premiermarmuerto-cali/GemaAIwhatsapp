@@ -1,15 +1,15 @@
 import { generateReply } from './ai'
 import { chargeText, createBooking, liveBookingOf, markDepositClaimed, serviceText, setPaymentLink } from './booking'
-import { clock12, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
+import { clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
 import { isLocation, LOCATION_LABEL } from './clinic'
 import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead } from './chats'
 import { generarLinkPagoBold } from './bold'
-import { amountOf, getConfig, paymentFor, resolveService } from './config'
+import { amountOf, getConfig, paymentFor, pesos, resolveService, twoForOneApplies } from './config'
 import { mediaBusy } from './media'
 import { regionOf } from './phone'
-import { buildPromptContext, buildSystemPrompt } from './prompt'
+import { buildPromptContext, buildSystemPrompt, promoLive } from './prompt'
 import { rateLimit } from './ratelimit'
-import { SEPARATOR, styleModelText, toMessages } from './reply-style'
+import { insertAfter, SEPARATOR, styleModelText, toMessages } from './reply-style'
 import { keys, redis } from './redis'
 import { sendWhatsAppText } from './whatsapp'
 import { HOLD_STATUSES, type AppConfig, type Booking, type Location, type Message } from './types'
@@ -229,6 +229,30 @@ function receiptNote(history: Message[]): string {
     if (media?.kind === 'image' && media.status === 'ready' && /^\s*comprobante de pago/i.test(media.note ?? '')) return media.note ?? ''
   }
   return ''
+}
+
+const MONTH_NAME = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+/**
+ * El 2x1 que el modelo olvidó mencionar. Con un historial largo el modelo imita sus respuestas
+ * anteriores y deja de nombrar la promoción aunque el prompt lo exija (medido: 0 de 4). Si la
+ * respuesta da el precio de un servicio con 2x1 vigente y no dice "2x1", el servidor lo añade.
+ */
+function missingPromo(config: AppConfig, text: string): { price: string; line: string } | null {
+  const today = dayKey()
+  // Mientras se cierra la reserva (anticipo, pago completo) no se interrumpe con la promoción.
+  if (!promoLive(config, today) || /2\s?x\s?1|dos por uno|anticipo|completo/i.test(text)) return null
+  const service = config.services.find((item) => {
+    const amount = amountOf(item.price)
+    return amount && twoForOneApplies(config, item.id, today) && text.includes(pesos(amount))
+  })
+  if (!service) return null
+  const until = config.twoForOne[service.id]
+  const [, month, day] = until ? until.split('-').map(Number) : []
+  return {
+    price: pesos(amountOf(service.price)),
+    line: `y tiene 2x1 si vienes con alguien${until ? `, para citas hasta el ${day} de ${MONTH_NAME[month - 1]}` : ''}`,
+  }
 }
 
 /** Con qué se paga el link de Bold según el país: fuera de Colombia, solo tarjeta y en pesos. */
@@ -456,6 +480,10 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   const writesPaymentData = PROMISES_PAYMENT_DATA.test(text) || BRACKET_PLACEHOLDER.test(text)
   const transfer = (markers.some((marker) => marker.kind === 'TRANSFERENCIA') || writesPaymentData) && WANTS_TRANSFER.test(clientSaid)
   if (reserva) text = stripModelAmounts(phone, text)
+  else {
+    const promo = missingPromo(config, text)
+    if (promo) text = insertAfter(text, promo.price, promo.line)
+  }
   const pareja = markers.find((marker) => marker.kind === 'PAREJA')
   const payFull = markers.some((marker) => marker.kind === 'COMPLETO')
   const link = markers.some((marker) => marker.kind === 'LINK')

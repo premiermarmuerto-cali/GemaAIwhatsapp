@@ -45,6 +45,7 @@ function withoutFiller(part: string): string {
 function casual(part: string, isLast: boolean): string {
   let out = withoutFiller(part)
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // Markdown **negrita** → *negrita* de WhatsApp
+    .replace(/(\$\s?[\d.]+\*?)\s*COP\b/g, '$1') // "$130.000 COP" → "$130.000"
     .replace(/^\s*[-•]\s+/gm, '') // sin viñetas
     .replace(/\[(?!\[)[^\]\n]{2,60}\]/g, '') // relleno tipo "[datos de la cuenta]"
     .replace(/[¿¡]/g, '')
@@ -65,6 +66,22 @@ function casual(part: string, isLast: boolean): string {
 export function styleModelText(text: string): string {
   const parts = splitMessages(text)
   return parts.map((part, index) => casual(part, index === parts.length - 1)).filter(Boolean).join(SEPARATOR)
+}
+
+/**
+ * Mete un mensaje del servidor justo después del mensaje que contiene `anchor` (p. ej. el precio).
+ * Si ese mensaje termina en pregunta, la separa para que la pregunta siga siendo lo último:
+ * "está en $130.000. Te gustaría agendar?" → "está en $130.000." | mensaje | "Te gustaría agendar?".
+ */
+export function insertAfter(text: string, anchor: string, message: string): string {
+  const parts = toMessages(text)
+  const index = parts.findIndex((part) => part.includes(anchor))
+  if (index === -1) return [...parts, message].join(SEPARATOR)
+  const part = parts[index]
+  const split = /\?$/.test(part) ? part.match(/^([\s\S]*?[.!])\s+([^.!]*\?)$/) : null
+  if (split) parts.splice(index, 1, split[1], message, split[2])
+  else parts.splice(index + 1, 0, message)
+  return parts.join(SEPARATOR)
 }
 
 /** Texto final (modelo + servidor, unidos por |||) → mensajes que se envían uno por uno. */

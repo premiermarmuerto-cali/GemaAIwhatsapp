@@ -61,7 +61,7 @@ function untilText(day: string): string {
  * La promoción se muestra si tiene texto y algún servicio sigue en el 2x1 (o no hay reglas de 2x1,
  * y entonces es otra promoción): cuando vence el último servicio, se apaga sola.
  */
-function promoLive(config: AppConfig, today: string): boolean {
+export function promoLive(config: AppConfig, today: string): boolean {
   if (!config.promo.trim()) return false
   return !Object.keys(config.twoForOne).length || twoForOneLive(config, today)
 }
@@ -100,7 +100,7 @@ function promoBlock(config: AppConfig, today: string): string {
     config.promo.trim(),
     '',
     scope,
-    '- Menciónala en tu primera respuesta sobre un servicio que la tenga, junto al precio. Si preguntan por un servicio sin 2x1, no se la ofrezcas para ese servicio.',
+    '- Menciónala SIEMPRE que des el precio de un servicio que la tenga, junto al precio, aunque ya la hayas mencionado antes en la conversación o el cliente haya preguntado por otro servicio antes: es la excepción a "no repitas información". Si preguntan por un servicio sin 2x1, no se la ofrezcas para ese servicio.',
     '- Si el cliente pregunta por el 2x1 (o por una promoción) OFRÉCELO tú, no preguntes si le interesa saber más: dile directo en qué servicios aplica, con el precio de cada uno (y la fecha límite si la tiene), y termina preguntando cuál le interesa o con quién viene. Si pregunta por un servicio que no lo tiene, díselo en una frase y ofrécele de una vez los que sí. Ejemplo: "en esa no hay 2x1|||sí lo tienen la de peeling y hidratación, $130.000 hasta el 31 de octubre, y la de líneas de expresión, $200.000|||cuál te gustaría?".',
     pairLine,
     '- Explícala solo con lo que dice arriba, sin cambiarle condiciones ni añadir otras: nunca digas "por tiempo limitado", "últimos cupos" ni una fecha que no esté escrita. Si preguntan algo que no está ahí, dile que ese detalle se lo confirma una asesora y usa [[ASESOR]].',
@@ -320,7 +320,8 @@ Escribes por WhatsApp como una persona real que atiende un negocio, no como un a
 - Ajusta la longitud a la del cliente. Si escribe cinco palabras, no le respondas un párrafo.
 - Responde primero lo que preguntó, en la primera frase. Si pregunta el precio, la primera frase es el precio.
 - Di lo esencial y deja que el cliente pregunte lo demás. No expliques todo de una vez.
-- No repitas información que ya diste en la conversación, salvo que el cliente la pida otra vez.
+- No repitas información que ya diste en la conversación, salvo que el cliente la pida otra vez. Excepción: si das el precio de un servicio con 2x1, el 2x1 va siempre.
+- Si en el historial hay mensajes tuyos con otro estilo (más largos, con "¿", con "COP"), no los imites: escribe siempre con las reglas de esta sección.
 
 ### Saludos, preguntas y cierres
 - Saluda solo al inicio de la conversación, corto ("hola", "hola buen día", "hola, cómo estás?"). No vuelvas a saludar en la misma conversación.
