@@ -37,7 +37,25 @@ function catalogBlock(config: AppConfig): string {
   }).join('\n')
 }
 
-/** Cuándo atiende una persona, con la misma regla de los horarios de agendamiento. */
+/**
+ * La promoción la escribe el operador en el panel. Gema solo puede contar lo que dice ese texto:
+ * las condiciones que no estén escritas (vigencia, si se puede compartir, cómo se agenda la segunda
+ * sesión…) no las inventa, porque un error ahí es un compromiso comercial con el cliente.
+ */
+function promoBlock(config: AppConfig): string {
+  if (!config.promo.trim()) {
+    return '- No hay ninguna promoción cargada: no ofrezcas descuentos ni 2x1. Si el cliente pregunta por una promoción (por ejemplo, la de un anuncio), no la confirmes ni la niegues: dile que una asesora se la confirma y usa [[ASESOR]].'
+  }
+  return [
+    config.promo.trim(),
+    '',
+    '- Menciónala en tu primera respuesta sobre cualquier servicio, junto al precio.',
+    '- Explícala solo con lo que dice arriba, sin cambiarle condiciones ni añadir otras: nunca digas "por tiempo limitado", "últimos cupos" ni una fecha que no esté escrita. Si preguntan algo que no está ahí (hasta cuándo es, si se puede compartir…), dile que ese detalle se lo confirma una asesora y usa [[ASESOR]].',
+    '- El precio y el anticipo del catálogo no cambian por la promoción, salvo que el texto de arriba diga otra cosa.',
+  ].join('\n')
+}
+
+/** Cuándo atiende una persona, según el horario de escalación (no el de agendamiento). */
 function humanHoursLine(): string {
   const when = nextHumanWindow()
   return when === 'ahora'
@@ -175,6 +193,9 @@ export function buildSystemPrompt(config: AppConfig, phone: string, context: Pro
 ## Catálogo
 ${catalogBlock(config)}
 
+## Promoción vigente
+${promoBlock(config)}
+
 ## Sedes
 ${locationsBlock(config)}
 
@@ -220,8 +241,8 @@ ${leadBlock(context.lead)}
 - Si te mandan un documento o un video que no puedes ver, pregúntale qué es. Si es un comprobante, pídele una captura de pantalla.
 
 ## Cómo se agenda
-1. Primero entiende la piel: pregunta qué le preocupa (acné, manchas, poros, resequedad, puntos negros) y si ya se ha hecho limpiezas antes. Una pregunta por mensaje, no un cuestionario.
-2. Recomienda UN protocolo del catálogo y di su precio y su duración.
+1. Si pregunta por un servicio concreto (lo nombra, o llegó desde un anuncio de ese servicio), tu primera respuesta va directo a ese servicio: en qué consiste, para quién es ideal, su precio y la promoción vigente si hay. Termina invitándolo a agendar y preguntándole en qué sede le queda mejor. No le hagas preguntas sobre su piel antes de darle esa información.
+2. Si no sabe qué elegir o pide información general, pregúntale qué le preocupa de su piel (acné, manchas, poros, líneas de expresión, resequedad), una pregunta por mensaje, y recomiéndale UN protocolo del catálogo con su precio y la promoción vigente si hay.
 3. Pregunta en qué sede le queda mejor y ofrécele dos o tres horarios concretos de los rangos libres.
 4. Cuando acepte un horario, necesitas su nombre completo. Si no lo tienes, pídelo antes de reservar, y mientras tanto no digas "te agendo" ni des la cita por hecha: todavía no lo está.
 5. Con nombre, servicio, sede, día y hora, escribe el mensaje de la regla de abajo y cierra con la marca [[RESERVA]] (y [[TRANSFERENCIA]] si ya dijo que prefiere transferir).

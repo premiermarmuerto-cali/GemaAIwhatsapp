@@ -63,6 +63,14 @@ function stripInventedPaymentData(phone: string, text: string): string {
   console.warn(`[autoreply] Gema escribió datos de pago para ${phone}; se quitaron ${lines.length - kept.length} línea(s)`)
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
+// Promete que "una asesora te confirma / te contacta" sin emitir [[ASESOR]]: nadie se entera y el
+// cliente queda esperando (pasó en una prueba con una pregunta sobre una promoción).
+const ADVISOR_VERB = '(confirma|contacta|escribe|atiende|ayuda|responde|comparte|env[ií]a|explica)'
+const PROMISES_ADVISOR = new RegExp(
+  // En singular: "nuestras asesoras te atienden de lunes a sábado" es informar el horario, no prometer.
+  `\\b(una|la|nuestra)\\s+asesora\\s+(te|le|lo|la|se\\s+lo|se\\s+la)\\s+${ADVISOR_VERB}|\\b(te|se\\s+lo|se\\s+la)\\s+${ADVISOR_VERB}\\s+(una|la|nuestra)\\s+asesora`,
+  'i',
+)
 // Si en el mismo mensaje pide el nombre, todavía no está reservando: le faltan datos, y eso es correcto.
 const ASKS_FOR_NAME = /\b(tu|su)\s+nombre\b/i
 
@@ -201,7 +209,7 @@ export async function applyReserva(config: AppConfig, phone: string, payload: st
     const state = existing.status === 'confirmed' ? 'confirmada' : 'apartada'
     return {
       append: '',
-      replaceText: `Ya tienes una cita ${state}: *${existing.serviceLabel}* el ${dayLabel(existing.day)} a las ${clock12(existing.start)} en ${LOCATION_LABEL[existing.location]}. Si quieres cambiarla o agendar otra, una asesora te ayuda en breve 💛`,
+      replaceText: `Ya tienes una cita ${state}: *${existing.serviceLabel}* el ${dayLabel(existing.day)} a las ${clock12(existing.start)} en ${LOCATION_LABEL[existing.location]}. Si quieres cambiarla o agendar otra, una asesora te ayuda ${humanWhen()} 💛`,
       escalate: `La clienta pidió otra cita teniendo la ${existing.id} (${existing.day} ${existing.start}) ${state}`,
     }
   }
@@ -367,6 +375,10 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // nadie se entera. Mejor escalar a una persona que dejar pasar una confirmación fantasma.
   if (!reserva && !escalation && !chat.bookingId && SOUNDS_BOOKED.test(text) && !ASKS_FOR_NAME.test(text)) {
     escalation = { kind: 'ASESOR', payload: 'Gema pareció confirmar una cita sin generar la marca de reserva' }
+  }
+  // Lo mismo con una asesora prometida sin escalar: la promesa se cumple escalando.
+  if (!escalation && PROMISES_ADVISOR.test(text)) {
+    escalation = { kind: 'ASESOR', payload: `Gema le dijo al cliente que una asesora lo contacta: "${text.slice(0, 120)}"` }
   }
 
   // El cliente dice que pagó: el horario no se puede caer mientras el operador revisa.

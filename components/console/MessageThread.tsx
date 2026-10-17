@@ -38,6 +38,7 @@ export function MessageThread({ chat, messages }: { chat: ChatSummary; messages:
                 {message.sender === 'user' && chat.name ? chat.name : SENDER_LABEL[message.sender]}
                 <time>{message.pending === 'sending' ? 'Enviando…' : formatClock(message.at)}</time>
               </div>
+              {message.ad && <p className={styles.mediaNote}><b>Desde anuncio</b>{message.ad.headline || message.ad.body}</p>}
               {message.media ? <MediaBubble message={message} /> : <div className={styles.bubble}>{message.text}</div>}
             </div>
           </Fragment>

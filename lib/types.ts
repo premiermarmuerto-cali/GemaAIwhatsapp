@@ -28,6 +28,8 @@ export type Message = {
   text: string
   at: number
   media?: MessageMedia
+  /** Anuncio de Meta (clic a WhatsApp) desde el que llegó el cliente; viene solo en el primer mensaje. */
+  ad?: { headline?: string; body?: string }
   /** Solo en el cliente: estado del envío optimista. */
   pending?: 'sending' | 'failed'
 }
@@ -176,6 +178,8 @@ export type AppConfig = {
   holdMinutes: number
   /** Preguntas frecuentes e indicaciones previas que Gema puede citar. */
   faq: string
+  /** Promoción vigente, tal como Gema la debe comunicar (p. ej. el 2x1). Vacío = no hay promoción. */
+  promo: string
 }
 
 /** Lo que el panel necesita para pintar una semana completa. */

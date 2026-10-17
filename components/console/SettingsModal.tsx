@@ -36,7 +36,7 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
 
   const patch = (changes: Partial<AppConfig>) => setConfig((current) => (current ? { ...current, ...changes } : current))
 
-  const text = (name: 'systemPrompt' | 'faq' | 'payLink' | 'nequiInstructions' | 'intlInstructions') => ({
+  const text = (name: 'systemPrompt' | 'faq' | 'promo' | 'payLink' | 'nequiInstructions' | 'intlInstructions') => ({
     value: config?.[name] ?? '',
     onChange: (event: { target: { value: string } }) => patch({ [name]: event.target.value } as Partial<AppConfig>),
   })
@@ -195,6 +195,12 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
                 ))}
               </div>
             </fieldset>
+
+            <label className={styles.field}>
+              <span>Promoción vigente</span>
+              <textarea rows={3} maxLength={1000} placeholder="Ej.: 2x1 en todas las sesiones hasta el 30 de noviembre: pagas una sesión y recibes dos. Las dos son para la misma persona y la segunda se agenda después de la primera." {...text('promo')} />
+              <small>Gema la menciona en su primera respuesta sobre cualquier servicio. Solo explica lo que esté escrito aquí: si preguntan una condición que no está, no la inventa. Déjalo vacío cuando termine la promoción.</small>
+            </label>
 
             <label className={styles.field}>
               <span>Preguntas frecuentes e indicaciones</span>

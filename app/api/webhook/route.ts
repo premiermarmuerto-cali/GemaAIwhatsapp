@@ -4,7 +4,7 @@ import { recordInbound, requestAgent } from '@/lib/chats'
 import { beginMediaJob, isStoredKind, processMedia, type StoredKind } from '@/lib/media'
 import { isValidPhone, normalizePhone } from '@/lib/phone'
 import { keys, redis } from '@/lib/redis'
-import type { MediaKind, MessageMedia } from '@/lib/types'
+import type { MediaKind, Message, MessageMedia } from '@/lib/types'
 import { verifyMetaSignature } from '@/lib/whatsapp'
 
 export const runtime = 'nodejs'
@@ -33,6 +33,8 @@ type WaMessage = {
   text?: { body?: string }
   button?: { text?: string }
   interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } }
+  // Anuncio de clic a WhatsApp: Meta lo adjunta al primer mensaje del cliente.
+  referral?: { source_type?: string; headline?: string; body?: string }
 } & Partial<Record<MediaKind, WaFile>>
 type WaValue = { messages?: WaMessage[]; contacts?: Array<{ wa_id?: string; profile?: { name?: string } }> }
 type WaPayload = { object?: string; entry?: Array<{ changes?: Array<{ field?: string; value?: WaValue }> }> }
@@ -52,6 +54,17 @@ function parseMessage(message: WaMessage): { text: string; media?: MessageMedia;
     }
   }
   return { text: `[${OTHER_LABEL[message.type] ?? message.type}]`, conversational: false }
+}
+
+/**
+ * El anuncio del que llegó el cliente. El texto automático de la plantilla suele ser genérico
+ * ("¿Puedo obtener más información sobre esto?"); el título del anuncio es lo que dice de qué
+ * servicio se trata.
+ */
+function adOf(message: WaMessage): Message['ad'] | undefined {
+  const headline = message.referral?.headline?.trim().slice(0, 200)
+  const body = message.referral?.body?.trim().slice(0, 500)
+  return headline || body ? { ...(headline ? { headline } : {}), ...(body ? { body } : {}) } : undefined
 }
 
 // Verificación del webhook al registrarlo en Meta.
@@ -89,8 +102,9 @@ export async function POST(request: NextRequest) {
 
         const at = Number(message.timestamp) * 1000 || Date.now()
         const { text, media, conversational } = parseMessage(message)
+        const ad = adOf(message)
         try {
-          await recordInbound(phone, { id: message.id, sender: 'user', text, at, ...(media ? { media } : {}) }, names.get(phone) || undefined)
+          await recordInbound(phone, { id: message.id, sender: 'user', text, at, ...(media ? { media } : {}), ...(ad ? { ad } : {}) }, names.get(phone) || undefined)
         } catch (error) {
           await redis().del(seenKey) // permite que el reintento de Meta lo vuelva a intentar
           throw error

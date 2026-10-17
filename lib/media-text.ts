@@ -14,8 +14,17 @@ export function previewOf(message: Pick<Message, 'text' | 'media'>): string {
   return message.text ? `${label}: ${message.text}` : label
 }
 
-/** Cómo ve el modelo un mensaje con archivo: la imagen descrita, el audio transcrito y el resto sin abrir. */
+/** Cómo ve el modelo un mensaje: el anuncio de origen (si vino de uno) y el contenido del mensaje. */
 export function modelText(message: Message): string {
+  const ad = message.ad
+  const origin = ad
+    ? `[El cliente llegó desde un anuncio. Título: "${ad.headline ?? ''}"${ad.body ? `. Texto del anuncio: "${ad.body}"` : ''}]\n`
+    : ''
+  return origin + contentText(message)
+}
+
+/** La imagen descrita, el audio transcrito y el resto sin abrir. */
+function contentText(message: Message): string {
   const media = message.media
   if (!media) return message.text
   const caption = message.text ? ` Texto que escribió junto al archivo: "${message.text}".` : ''

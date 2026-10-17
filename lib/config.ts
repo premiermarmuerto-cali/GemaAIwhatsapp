@@ -30,6 +30,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   horizonDays: 14,
   holdMinutes: 120,
   faq: '',
+  promo: '',
 }
 
 const RANGE = /^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/
@@ -133,6 +134,10 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
   const faq = str(body, 'faq', 4000)
   if (typeof faq === 'object') return faq
 
+  // Opcional: un panel abierto antes de que existiera el campo no lo envía, y eso no es un error.
+  const promo = body.promo === undefined ? '' : str(body, 'promo', 1000)
+  if (typeof promo === 'object') return promo
+
   const payLink = str(body, 'payLink', 500)
   if (typeof payLink === 'object') return payLink
   if (payLink && !/^https:\/\/\S+$/.test(payLink)) return { error: 'El link de pago debe empezar por https://' }
@@ -177,6 +182,7 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
     config: {
       systemPrompt,
       faq,
+      promo,
       payLink,
       nequiInstructions,
       intlInstructions,
