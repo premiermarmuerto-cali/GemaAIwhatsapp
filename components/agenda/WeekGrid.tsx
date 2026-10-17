@@ -93,6 +93,8 @@ export function WeekGrid({ week, location, activeId, onSelect, onPick }: Props) 
 
               {items.map((booking) => {
                 const lane = Math.min(Math.max(booking.cabin, 1), lanes) - 1
+                // Una pareja ocupa sus cabinas seguidas: se pinta como un solo bloque más ancho.
+                const span = Math.min(Math.max(booking.people, 1), lanes - lane)
                 return (
                   <button
                     key={booking.id}
@@ -105,13 +107,13 @@ export function WeekGrid({ week, location, activeId, onSelect, onPick }: Props) 
                       top: `${(booking.startMin - from) * PX_PER_MIN}px`,
                       height: `${Math.max(booking.durationMin * PX_PER_MIN - 2, 20)}px`,
                       left: `calc(${(lane * 100) / lanes}% + 2px)`,
-                      width: `calc(${100 / lanes}% - 4px)`,
+                      width: `calc(${(span * 100) / lanes}% - 4px)`,
                     }}
                     onClick={() => onSelect(booking)}
                   >
                     <span className={styles.eventTime}>{booking.start}</span>
                     <span className={styles.eventName}>{booking.kind === 'block' ? (booking.notes || 'Bloqueado') : (booking.name || booking.phone)}</span>
-                    <span className={styles.eventService}>{booking.serviceLabel}</span>
+                    <span className={styles.eventService}>{booking.serviceLabel}{booking.people > 1 && ` · ${booking.people} personas`}</span>
                     {booking.status === 'pending_payment' && (
                       <span className={styles.eventHold}>{STATUS_LABEL.pending_payment} · {holdCountdown(booking.holdUntil)}</span>
                     )}

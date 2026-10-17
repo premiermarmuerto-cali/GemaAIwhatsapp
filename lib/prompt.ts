@@ -10,7 +10,7 @@
 import { addDays, clock12, dayKey, dayLabel, freeWindows, nextHumanWindow, shortestService } from './calendar'
 import { LOCATION_LABEL, LOCATIONS, WEEKDAY_LABEL } from './clinic'
 import { depositOf, paymentFor } from './config'
-import { isClosed, liveBookingOf, occupancyOf } from './booking'
+import { isClosed, liveBookingOf, occupancyOf, serviceText } from './booking'
 import { formatPhone, countryOf, regionOf } from './phone'
 import type { AppConfig, Booking, Lead, Location } from './types'
 
@@ -46,12 +46,20 @@ function promoBlock(config: AppConfig): string {
   if (!config.promo.trim()) {
     return '- No hay ninguna promoción cargada: no ofrezcas descuentos ni 2x1. Si el cliente pregunta por una promoción (por ejemplo, la de un anuncio), no la confirmes ni la niegues: dile que una asesora se la confirma y usa [[ASESOR]].'
   }
+  // Venir acompañado a la misma hora exige dos cabinas: se dice aquí, donde el modelo mira la promo,
+  // porque la nota de la agenda sola no bastó (en una prueba ofreció pareja en la sede de 1 cabina).
+  const pairSedes = LOCATIONS.filter((location) => (config.cabins[location] ?? 1) >= 2)
+  const singleSedes = LOCATIONS.filter((location) => !pairSedes.includes(location))
+  const pairLine = !pairSedes.length
+    ? '- Hoy ninguna sede puede atender a dos personas a la misma hora (una sola cabina): si quieren venir juntas, no les ofrezcas horario; dile que una asesora les coordina la cita y usa [[ASESOR]].'
+    : `- Dos personas a la misma hora solo se pueden agendar en ${pairSedes.map((location) => LOCATION_LABEL[location]).join(' y ')}${singleSedes.length ? `; en ${singleSedes.map((location) => LOCATION_LABEL[location]).join(' y ')} hay una sola cabina, así que si piden ir juntas allá, ofréceles ${pairSedes.map((location) => LOCATION_LABEL[location]).join(' o ')}` : ''}.`
   return [
     config.promo.trim(),
     '',
     '- Menciónala en tu primera respuesta sobre cualquier servicio, junto al precio.',
+    pairLine,
     '- Explícala solo con lo que dice arriba, sin cambiarle condiciones ni añadir otras: nunca digas "por tiempo limitado", "últimos cupos" ni una fecha que no esté escrita. Si preguntan algo que no está ahí (hasta cuándo es, si se puede compartir…), dile que ese detalle se lo confirma una asesora y usa [[ASESOR]].',
-    '- El precio y el anticipo del catálogo no cambian por la promoción, salvo que el texto de arriba diga otra cosa.',
+    '- El precio y el anticipo del catálogo no cambian por la promoción, salvo que el texto de arriba diga otra cosa. Si vienen dos personas, es UNA cita con UN anticipo (el de una sesión): nunca digas "por persona" ni "por cada uno" al hablar de precio o anticipo.',
   ].join('\n')
 }
 
@@ -145,15 +153,23 @@ export async function buildAgendaBlock(config: AppConfig, now = Date.now()): Pro
     Promise.all(LOCATIONS.map((location) => Promise.all(days.map((day) => occupancyOf(location, day))))),
   ])
 
+  const ranges = (windows: Array<{ from: string; to: string }>) => windows.map((window) => `${window.from}–${window.to}`).join(', ')
+
   return LOCATIONS.map((location, locationIndex) => {
+    // Pareja = dos cabinas libres a la vez. Con una sola cabina en la sede no hay huecos de pareja.
+    const pairs = (config.cabins[location] ?? 1) >= 2
     const rows = days.map((day, dayIndex) => {
       const closed = closedFlags[dayIndex]
       if (closed) return `  - ${dayLabel(day, { short: true })}: cerrado (${closed})`
-      const windows = freeWindows(config, location, day, occupancies[locationIndex][dayIndex], { now, minMinutes })
-      const free = windows.length ? windows.map((window) => `${window.from}–${window.to}`).join(', ') : 'sin horarios libres'
-      return `  - ${dayLabel(day, { short: true })}${day === today ? ' (hoy)' : ''}: ${free}`
+      const occupancy = occupancies[locationIndex][dayIndex]
+      const windows = freeWindows(config, location, day, occupancy, { now, minMinutes })
+      const free = windows.length ? ranges(windows) : 'sin horarios libres'
+      const pairWindows = pairs ? freeWindows(config, location, day, occupancy, { now, minMinutes, people: 2 }) : []
+      const pairText = pairs && windows.length ? ` · parejas: ${pairWindows.length ? ranges(pairWindows) : 'sin horarios'}` : ''
+      return `  - ${dayLabel(day, { short: true })}${day === today ? ' (hoy)' : ''}: ${free}${pairText}`
     })
-    return `- ${LOCATION_LABEL[location]} (\`${location}\`):\n${rows.join('\n')}`
+    const header = `- ${LOCATION_LABEL[location]} (\`${location}\`)${pairs ? '' : ' — una sola cabina: aquí NO se agendan parejas'}:`
+    return `${header}\n${rows.join('\n')}`
   }).join('\n')
 }
 
@@ -171,7 +187,7 @@ function bookingBlock(booking: Booking | null): string {
       : 'apartada, esperando el pago del anticipo'
   return [
     `El cliente YA tiene una cita ${state}:`,
-    `- ${booking.serviceLabel} · ${LOCATION_LABEL[booking.location]} · ${dayLabel(booking.day)} a las ${booking.start}`,
+    `- ${serviceText(booking)} · ${LOCATION_LABEL[booking.location]} · ${dayLabel(booking.day)} a las ${booking.start}`,
     '- No le ofrezcas otro horario ni crees otra cita. Si quiere cambiarla o cancelarla, pásalo a un asesor.',
     ...(booking.status !== 'confirmed' && !booking.paidAt ? ['- Si pide el link de pago otra vez, usa [[LINK]]; si prefiere transferir, [[TRANSFERENCIA]].'] : []),
   ].join('\n')
@@ -217,6 +233,10 @@ dentro de un rango: una limpieza de 60 min dentro de "10:00–13:00" puede empez
 10:15… hasta las 12:00, nunca a las 12:30. No ofrezcas nada fuera de estos rangos, ni "cualquier
 hora de la mañana": siempre dos o tres horas concretas. Se agenda con al menos
 ${config.leadTimeHours} h de antelación y hasta ${config.horizonDays} días adelante.
+Si vienen dos personas juntas (pareja), cada una va en su cabina a la misma hora: ofrece SOLO
+horas que quepan dentro de los rangos de "parejas" de esa sede. Una sede marcada "aquí NO se
+agendan parejas" no tiene horarios para dos personas: ofrécele la otra sede; si ninguna sede
+tiene rangos de "parejas", dile que una asesora le coordina la cita y usa [[ASESOR]].
 
 ## Estado de este cliente
 ${bookingBlock(context.booking)}
@@ -244,8 +264,8 @@ ${leadBlock(context.lead)}
 1. Si pregunta por un servicio concreto (lo nombra, o llegó desde un anuncio de ese servicio), tu primera respuesta va directo a ese servicio: en qué consiste, para quién es ideal, su precio y la promoción vigente si hay. Termina invitándolo a agendar y preguntándole en qué sede le queda mejor. No le hagas preguntas sobre su piel antes de darle esa información.
 2. Si no sabe qué elegir o pide información general, pregúntale qué le preocupa de su piel (acné, manchas, poros, líneas de expresión, resequedad), una pregunta por mensaje, y recomiéndale UN protocolo del catálogo con su precio y la promoción vigente si hay.
 3. Pregunta en qué sede le queda mejor y ofrécele dos o tres horarios concretos de los rangos libres.
-4. Cuando acepte un horario, necesitas su nombre completo. Si no lo tienes, pídelo antes de reservar, y mientras tanto no digas "te agendo" ni des la cita por hecha: todavía no lo está.
-5. Con nombre, servicio, sede, día y hora, escribe el mensaje de la regla de abajo y cierra con la marca [[RESERVA]] (y [[TRANSFERENCIA]] si ya dijo que prefiere transferir).
+4. Cuando acepte un horario, necesitas su nombre completo. Si no lo tienes, pídelo antes de reservar, y mientras tanto no digas "te agendo" ni des la cita por hecha: todavía no lo está. Si viene en pareja, pide también el nombre de su acompañante.
+5. Con nombre, servicio, sede, día y hora, escribe el mensaje de la regla de abajo y cierra con la marca [[RESERVA]] (más [[PAREJA]] si vienen dos personas, y [[TRANSFERENCIA]] si ya dijo que prefiere transferir).
 
 ## Cobro del anticipo
 ${cobroBlock(config, phone)}
@@ -256,6 +276,8 @@ Van siempre al final del mensaje, después del texto.
 - \`[[FICHA: motivo · servicio · sede]]\` — úsala en cuanto sepas algo nuevo del cliente, para que el equipo lo vea en el panel. Pon \`-\` en lo que todavía no sepas. Ejemplo: \`[[FICHA: acné y poros abiertos · limpieza-profunda · unicentro]]\`. Esta marca no interrumpe nada: puedes seguir conversando después de usarla.
 
 - \`[[RESERVA: servicio · sede · YYYY-MM-DD · HH:MM · nombre completo]]\` — úsala solo cuando el cliente ya aceptó un horario concreto y tienes su nombre. Usa el id exacto del catálogo y de la sede. Ejemplo: \`[[RESERVA: limpieza-profunda · unicentro · ${addDays(dayKey(), 1)} · 15:00 · Laura Martínez]]\`. Escribe tu mensaje dando por hecha la reserva, sin el monto ni el link: el sistema los añade.
+
+- \`[[PAREJA: nombre del acompañante]]\` — va junto con [[RESERVA]] cuando la cita es para dos personas a la misma hora y con el mismo servicio (una cita, dos cabinas). En [[RESERVA]] va el nombre de quien escribe; aquí el de su acompañante, o \`-\` si no lo dio. Sin esta marca el sistema aparta una sola cabina.
 
 - \`[[LINK]]\` — el cliente pide otra vez el link de pago de su cita apartada. El sistema lo añade; tú solo dile que ahí va.
 

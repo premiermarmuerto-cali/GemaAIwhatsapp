@@ -33,16 +33,20 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
   const [slots, setSlots] = useState<Slots | null>(null)
+  const [pair, setPair] = useState(false)
+  // Pareja = dos cabinas a la vez: solo se ofrece en sedes con al menos dos.
+  const canPair = kind === 'appointment' && (week.cabins[location] ?? 1) >= 2
+  const people = canPair && pair ? 2 : 1
 
   useEffect(() => {
     if (!serviceId) return
     let active = true
     setSlots(null)
-    api<Slots>(`/api/agenda/slots?location=${location}&day=${day}&service=${serviceId}`)
+    api<Slots>(`/api/agenda/slots?location=${location}&day=${day}&service=${serviceId}&people=${people}`)
       .then((data) => { if (active) setSlots(data) })
       .catch(() => { if (active) setSlots({ starts: [], closed: null }) })
     return () => { active = false }
-  }, [location, day, serviceId])
+  }, [location, day, serviceId, people])
 
   // Si la hora sembrada ya no cabe para el servicio elegido, se ofrece la primera que sí.
   useEffect(() => {
@@ -90,6 +94,16 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
           </select>
         </label>
 
+        {canPair && (
+          <label>
+            <span className="eyebrow">Personas</span>
+            <select value={people} onChange={(event) => setPair(event.target.value === '2')}>
+              <option value={1}>1 persona</option>
+              <option value={2}>2 personas a la vez (pareja 2x1)</option>
+            </select>
+          </label>
+        )}
+
         <div className={styles.field}>
           <span className="eyebrow">Hora</span>
           {slots === null ? (
@@ -130,7 +144,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
         <button
           className="btn btn-primary"
           disabled={busy || !canSubmit}
-          onClick={() => onSubmit({ kind, location, day, start, serviceId, phone, name: name.trim(), notes })}
+          onClick={() => onSubmit({ kind, location, day, start, serviceId, phone, name: name.trim(), notes, people })}
         >
           {kind === 'block' ? 'Bloquear' : 'Crear cita confirmada'}
         </button>

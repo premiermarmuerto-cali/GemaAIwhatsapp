@@ -46,9 +46,11 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate }: P
       </header>
 
       <dl className={styles.facts}>
-        <div><dt>Servicio</dt><dd>{booking.serviceLabel}</dd></div>
+        <div><dt>Servicio</dt><dd>{booking.serviceLabel}{booking.people > 1 && <span className={styles.dim}> · {booking.people} personas</span>}</dd></div>
         <div><dt>Cuándo</dt><dd>{dayLabel(booking.day)} · {booking.start}–{ends} <span className={styles.dim}>({booking.durationMin} min)</span></dd></div>
-        <div><dt>Sede</dt><dd><PinIcon /> {LOCATION_LABEL[booking.location]}{(booking.cabin > 1) && ` · cabina ${booking.cabin}`}</dd></div>
+        <div><dt>Sede</dt><dd><PinIcon /> {LOCATION_LABEL[booking.location]}{booking.people > 1
+          ? ` · cabinas ${booking.cabin}–${booking.cabin + booking.people - 1}`
+          : (booking.cabin > 1) && ` · cabina ${booking.cabin}`}</dd></div>
         {booking.price && <div><dt>Valor</dt><dd>{booking.price}{booking.deposit && <span className={styles.dim}> · anticipo {booking.deposit}</span>}</dd></div>}
         {booking.phone && (
           <div>

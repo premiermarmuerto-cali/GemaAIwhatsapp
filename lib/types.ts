@@ -114,8 +114,10 @@ export type Booking = {
   phone: string
   name: string
   location: Location
-  /** Cabina asignada, desde 1. */
+  /** Cabina asignada, desde 1. Con `people` > 1 ocupa también las siguientes (cabin … cabin + people - 1). */
   cabin: number
+  /** Personas atendidas a la vez: 2 en el 2x1 de pareja, cada una en su cabina. */
+  people: number
   serviceId: string
   serviceLabel: string
   durationMin: number

@@ -5,7 +5,7 @@
  * que de ahí sale qué cita confirmar. Todo es idempotente: Bold reintenta, y una cita que ya no
  * está apartada no se vuelve a tocar.
  */
-import { confirmPaidByBold, getBooking } from './booking'
+import { confirmPaidByBold, getBooking, serviceText } from './booking'
 import { clock12, dayLabel } from './calendar'
 import { LOCATION_LABEL } from './clinic'
 import { getSummary, notePayment, recordOutbound, requestAgent } from './chats'
@@ -62,7 +62,7 @@ export async function handleBoldPayment(event: BoldPayment): Promise<string> {
   const method = METHOD_LABEL[event.paymentMethod] ?? event.paymentMethod
   await notePayment(booking.phone, `Pago recibido · ${booking.name || booking.phone} · ${pesos(paid)} · ${method}`)
 
-  const text = `¡Recibimos tu anticipo de ${pesos(paid)}! 💛 Tu cita de *${booking.serviceLabel}* quedó confirmada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}. Te esperamos.`
+  const text = `¡Recibimos tu anticipo de ${pesos(paid)}! 💛 Tu cita de *${serviceText(booking)}* quedó confirmada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}. Te esperamos.`
   try {
     const waId = await sendWhatsAppText(booking.phone, text)
     await recordOutbound(booking.phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now() })

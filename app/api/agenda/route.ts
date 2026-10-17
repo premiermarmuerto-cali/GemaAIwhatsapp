@@ -67,10 +67,12 @@ export const POST = route(async (request: Request) => {
     kind,
     // Lo que agenda el operador no espera anticipo: ya habló con el cliente.
     status: 'confirmed',
+    people: body.people === 2 ? 2 : 1,
   })
 
   if (!result.ok) {
     const message = {
+      cabins: 'Esa sede no tiene cabinas suficientes para atender a dos personas a la vez.',
       service: 'Ese servicio no existe en el catálogo.',
       closed: 'Ese día está cerrado. Ábrelo antes de agendar.',
       taken: result.alternatives.length ? `Ese horario ya está ocupado. Libres: ${result.alternatives.join(', ')}.` : 'Ese horario ya está ocupado y ese día no queda espacio.',

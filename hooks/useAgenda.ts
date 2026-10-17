@@ -19,6 +19,8 @@ export type NewAppointment = {
   concern?: string
   notes?: string
   kind?: 'appointment' | 'block'
+  /** 2 = pareja: una cabina por persona, a la misma hora. */
+  people?: number
 }
 
 /**

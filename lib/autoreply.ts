@@ -1,10 +1,10 @@
 import { generateReply } from './ai'
-import { createBooking, liveBookingOf, markDepositClaimed, setPaymentLink } from './booking'
+import { createBooking, liveBookingOf, markDepositClaimed, serviceText, setPaymentLink } from './booking'
 import { clock12, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
 import { isLocation, LOCATION_LABEL } from './clinic'
 import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead } from './chats'
 import { generarLinkPagoBold } from './bold'
-import { depositAmount, getConfig, paymentFor, serviceById } from './config'
+import { depositAmount, getConfig, paymentFor, resolveService } from './config'
 import { mediaBusy } from './media'
 import { regionOf } from './phone'
 import { buildPromptContext, buildSystemPrompt } from './prompt'
@@ -40,10 +40,11 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
  *   RESERVA aparta la cabina y dispara el cobro del anticipo
  *   LINK    reenvía el link de pago de la cita apartada
  *   TRANSFERENCIA  datos para transferir a Premier en vez del link (se valida con comprobante)
+ *   PAREJA  acompaña a RESERVA: la cita es para dos personas a la vez (2x1), dos cabinas
  *   PAGO    llegó el comprobante → una persona lo valida
  *   ASESOR  todo lo demás que necesita una persona
  */
-const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA)\s*(?::([^\]]*))?\]\]/gi
+const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA)\s*(?::([^\]]*))?\]\]/gi
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
 const SOUNDS_BOOKED = /\b(te agend[eoé]|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
@@ -189,14 +190,20 @@ async function resendLink(config: AppConfig, phone: string, { implicit = false }
   return { append: `\n\nAquí tienes el link para pagar el anticipo${deposit} con tarjeta, PSE o Nequi:\n${url}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos.` }
 }
 
-export async function applyReserva(config: AppConfig, phone: string, payload: string, { transfer = false } = {}): Promise<Applied> {
+/** Pareja: `companion` es el nombre del acompañante ('' si no lo dio). null = cita individual. */
+export async function applyReserva(
+  config: AppConfig,
+  phone: string,
+  payload: string,
+  { transfer = false, companion = null as string | null } = {},
+): Promise<Applied> {
   const parsed = parseReserva(payload)
   if (!parsed) {
     console.warn(`[autoreply] marca RESERVA ilegible para ${phone}: "${payload}"`)
     return { append: '', escalate: 'Gema intentó agendar con datos incompletos' }
   }
 
-  const service = serviceById(config, parsed.servicio)
+  const service = resolveService(config, parsed.servicio)
   if (!service) return { append: '', escalate: `Gema pidió un servicio que no existe: "${parsed.servicio}"` }
   if (!isLocation(parsed.sede)) return { append: '', escalate: `Gema pidió una sede que no existe: "${parsed.sede}"` }
   if (!service.price) return { append: '', escalate: `El precio de ${service.label} no está configurado` }
@@ -209,12 +216,13 @@ export async function applyReserva(config: AppConfig, phone: string, payload: st
     const state = existing.status === 'confirmed' ? 'confirmada' : 'apartada'
     return {
       append: '',
-      replaceText: `Ya tienes una cita ${state}: *${existing.serviceLabel}* el ${dayLabel(existing.day)} a las ${clock12(existing.start)} en ${LOCATION_LABEL[existing.location]}. Si quieres cambiarla o agendar otra, una asesora te ayuda ${humanWhen()} 💛`,
+      replaceText: `Ya tienes una cita ${state}: *${serviceText(existing)}* el ${dayLabel(existing.day)} a las ${clock12(existing.start)} en ${LOCATION_LABEL[existing.location]}. Si quieres cambiarla o agendar otra, una asesora te ayuda ${humanWhen()} 💛`,
       escalate: `La clienta pidió otra cita teniendo la ${existing.id} (${existing.day} ${existing.start}) ${state}`,
     }
   }
 
   const chat = await getSummary(phone)
+  const pair = companion !== null
   const result = await createBooking(config, {
     phone,
     name: parsed.name || chat?.name || '',
@@ -223,10 +231,18 @@ export async function applyReserva(config: AppConfig, phone: string, payload: st
     day: parsed.day,
     start: parsed.start,
     concern: chat?.lead.concern ?? '',
+    notes: pair ? `Pareja 2x1 · acompañante: ${companion || 'sin nombre'}` : '',
     source: 'bot',
+    people: pair ? 2 : 1,
   })
 
   if (!result.ok) {
+    if (result.reason === 'cabins') {
+      return {
+        append: `\n\nEn ${LOCATION_LABEL[parsed.sede]} no podemos atender a dos personas a la misma hora; una asesora te ayuda a coordinarlo ${humanWhen()} 💛`,
+        escalate: `Pareja 2x1 pedida en ${LOCATION_LABEL[parsed.sede]}, que tiene una sola cabina configurada`,
+      }
+    }
     if (result.reason === 'taken') {
       const options = result.alternatives.slice(0, 4)
       return {
@@ -251,7 +267,7 @@ export async function applyReserva(config: AppConfig, phone: string, payload: st
     const firstName = booking.name.split(' ')[0]
     return {
       ...result,
-      replaceText: `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${booking.serviceLabel}* queda apartada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}.${result.append}`,
+      replaceText: `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${serviceText(booking)}* queda apartada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}.${result.append}`,
     }
   }
 
@@ -350,10 +366,12 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   let escalation = markers.find((marker) => marker.kind === 'PAGO') ?? markers.find((marker) => marker.kind === 'ASESOR')
   const reserva = markers.find((marker) => marker.kind === 'RESERVA')
   const transfer = markers.some((marker) => marker.kind === 'TRANSFERENCIA')
+  const pareja = markers.find((marker) => marker.kind === 'PAREJA')
   const link = markers.some((marker) => marker.kind === 'LINK')
   let applied: Applied | null = null
   if (reserva) {
-    applied = await applyReserva(config, phone, reserva.payload, { transfer })
+    const companion = pareja ? (pareja.payload === '-' ? '' : pareja.payload.slice(0, 80)) : null
+    applied = await applyReserva(config, phone, reserva.payload, { transfer, companion })
   } else if (transfer) {
     // El mensaje lo compone entero el servidor: el texto del modelo en este paso es justo donde
     // tiende a inventarse números y titulares.

@@ -207,6 +207,18 @@ export function serviceById(config: AppConfig, id: string): Service | undefined 
   return config.services.find((service) => service.id === id)
 }
 
+const slug = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+/**
+ * El servicio que pidió Gema en [[RESERVA]]: por id y, si no existe, por nombre. Los ids son
+ * históricos (`valoracion` es hoy la Limpieza Peeling Gel) y el modelo a veces escribe el nombre
+ * convertido en id (`limpieza-peeling-gel`). Solo acepta una coincidencia exacta del nombre.
+ */
+export function resolveService(config: AppConfig, raw: string): Service | undefined {
+  const wanted = slug(raw)
+  return serviceById(config, raw) ?? config.services.find((service) => slug(service.label) === wanted)
+}
+
 /**
  * Cobro que aplica a este cliente según su país. Es la única fuente: la usa el prompt para
  * contarle a Gema qué métodos existen, y la usa el servidor para pegar los datos reales

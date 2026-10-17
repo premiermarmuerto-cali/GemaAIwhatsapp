@@ -12,25 +12,32 @@ import { HOLD_STATUSES, LIVE_STATUSES, type AppConfig, type Booking, type Bookin
 const PHONE_HISTORY = 50
 
 /**
- * Toma la primera cabina en la que TODOS los slots pedidos están libres y los marca.
- * Devuelve el número de cabina, o 0 si no hay ninguna disponible.
+ * Toma las primeras `people` cabinas seguidas en las que TODOS los slots pedidos están libres y
+ * los marca. Devuelve la primera de ellas, o 0 si no hay. Seguidas para que la pareja se pinte
+ * como un solo bloque en la grilla; con las 1–2 cabinas por sede de Premier no cambia nada.
  */
 const CLAIM = `
 local cabins = tonumber(ARGV[2])
-local slots = #ARGV - 2
-for cabin = 1, cabins do
-  local free = true
+local people = tonumber(ARGV[3])
+local slots = #ARGV - 3
+local function free(cabin)
   for i = 1, slots do
-    if redis.call('HEXISTS', KEYS[1], ARGV[2 + i] .. '#' .. cabin) == 1 then
-      free = false
-      break
-    end
+    if redis.call('HEXISTS', KEYS[1], ARGV[3 + i] .. '#' .. cabin) == 1 then return false end
   end
-  if free then
-    for i = 1, slots do
-      redis.call('HSET', KEYS[1], ARGV[2 + i] .. '#' .. cabin, ARGV[1])
+  return true
+end
+for first = 1, cabins - people + 1 do
+  local ok = true
+  for cabin = first, first + people - 1 do
+    if not free(cabin) then ok = false break end
+  end
+  if ok then
+    for cabin = first, first + people - 1 do
+      for i = 1, slots do
+        redis.call('HSET', KEYS[1], ARGV[3 + i] .. '#' .. cabin, ARGV[1])
+      end
     end
-    return cabin
+    return first
   end
 end
 return 0
@@ -57,6 +64,7 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     name: raw.name ?? '',
     location: (raw.location as Location) ?? 'unicentro',
     cabin: Number(raw.cabin ?? 1),
+    people: Number(raw.people ?? 1) || 1,
     serviceId: raw.serviceId ?? '',
     serviceLabel: raw.serviceLabel ?? '',
     durationMin: Number(raw.durationMin ?? 0),
@@ -78,6 +86,11 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     paymentRef: raw.paymentRef ?? '',
     paymentLink: raw.paymentLink ?? '',
   }
+}
+
+/** "Limpieza Peeling Gel" o "Limpieza Peeling Gel para 2 personas": así se nombra la cita al cliente. */
+export function serviceText(booking: Pick<Booking, 'serviceLabel' | 'people'>): string {
+  return booking.people > 1 ? `${booking.serviceLabel} para ${booking.people} personas` : booking.serviceLabel
 }
 
 export async function getBooking(id: string): Promise<Booking | null> {
@@ -172,11 +185,13 @@ export type NewBooking = {
   kind?: Booking['kind']
   /** Por defecto pending_payment: el horario queda apartado hasta que el operador valide el anticipo. */
   status?: BookingStatus
+  /** 2 = pareja del 2x1: una cabina por persona, a la misma hora. Por defecto 1. */
+  people?: number
 }
 
 export type BookingResult =
   | { ok: true; booking: Booking }
-  | { ok: false; reason: 'service' | 'closed' | 'taken'; alternatives: string[] }
+  | { ok: false; reason: 'service' | 'closed' | 'taken' | 'cabins'; alternatives: string[] }
 
 /**
  * Crea la cita apartando la cabina de forma atómica. Si el horario se ocupó entre que
@@ -187,9 +202,12 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
   const service = serviceById(config, input.serviceId)
   const durationMin = service?.durationMin ?? (input.kind === 'block' ? config.slotMinutes : 0)
   if (!durationMin) return { ok: false, reason: 'service', alternatives: [] }
+  const people = input.kind === 'block' ? 1 : Math.max(1, Math.floor(input.people ?? 1))
+  const cabins = config.cabins[input.location] ?? 1
+  if (people > cabins) return { ok: false, reason: 'cabins', alternatives: [] }
 
   const occupancy = await occupancyOf(input.location, input.day, { force: true })
-  const free = freeStarts(config, input.location, input.day, durationMin, occupancy)
+  const free = freeStarts(config, input.location, input.day, durationMin, occupancy, { people })
 
   if (input.kind !== 'block') {
     if (await isClosed(input.day)) return { ok: false, reason: 'closed', alternatives: [] }
@@ -199,9 +217,9 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
   const id = crypto.randomUUID().slice(0, 8)
   const startMin = toMinutes(input.start)
   const slots = slotsOf(config, startMin, durationMin)
-  const cabin = Number(await db.eval(CLAIM, [keys.slots(input.location, input.day)], [id, String(config.cabins[input.location] ?? 1), ...slots]))
+  const cabin = Number(await db.eval(CLAIM, [keys.slots(input.location, input.day)], [id, String(cabins), String(people), ...slots]))
   // La carrera real se pierde aquí, no en la comprobación de arriba.
-  if (!cabin) return { ok: false, reason: 'taken', alternatives: freeStarts(config, input.location, input.day, durationMin, await occupancyOf(input.location, input.day)) }
+  if (!cabin) return { ok: false, reason: 'taken', alternatives: freeStarts(config, input.location, input.day, durationMin, await occupancyOf(input.location, input.day), { people }) }
 
   const now = Date.now()
   const status = input.status ?? 'pending_payment'
@@ -213,6 +231,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     name: input.name,
     location: input.location,
     cabin,
+    people,
     serviceId: input.serviceId,
     serviceLabel: service?.label ?? 'Bloqueo',
     durationMin,
@@ -317,6 +336,7 @@ export async function rescheduleBooking(config: AppConfig, id: string, day: stri
     source: 'operator',
     kind: booking.kind,
     status: booking.status,
+    people: booking.people,
   })
   if (!created.ok) return created
 

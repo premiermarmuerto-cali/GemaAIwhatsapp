@@ -134,8 +134,9 @@ function takenAt(occupancy: Occupancy, cabins: number, startMin: number): number
 }
 
 /**
- * Inicios en los que el servicio cabe completo en UNA cabina libre.
- * Es la verdad exacta: el panel pinta esto y la reserva lo vuelve a comprobar de forma atómica.
+ * Inicios en los que el servicio cabe completo en UNA cabina libre (o en `people` cabinas seguidas,
+ * para una pareja). Es la verdad exacta: el panel pinta esto y la reserva lo vuelve a comprobar
+ * de forma atómica, con el mismo criterio de cabinas seguidas.
  */
 export function freeStarts(
   config: AppConfig,
@@ -143,7 +144,7 @@ export function freeStarts(
   day: string,
   durationMin: number,
   occupancy: Occupancy,
-  { now = Date.now() } = {},
+  { now = Date.now(), people = 1 } = {},
 ): string[] {
   const cabins = config.cabins[location] ?? 1
   const earliest = now + config.leadTimeHours * 3_600_000
@@ -155,8 +156,9 @@ export function freeStarts(
     if (!open.some((range) => startMin >= range.from && startMin + durationMin <= range.to)) continue
     if (timestampOf(day, toClock(startMin)) < earliest) continue
     const needed = slotsOf(config, startMin, durationMin)
-    const fits = Array.from({ length: cabins }, (_, index) => index + 1)
-      .some((cabin) => needed.every((clock) => !occupancy[`${clock}#${cabin}`]))
+    const freeCabin = (cabin: number) => needed.every((clock) => !occupancy[`${clock}#${cabin}`])
+    const fits = Array.from({ length: Math.max(0, cabins - people + 1) }, (_, index) => index + 1)
+      .some((first) => Array.from({ length: people }, (_, offset) => first + offset).every(freeCabin))
     if (fits) out.push(toClock(startMin))
   }
   return out
@@ -166,15 +168,17 @@ export function freeStarts(
  * Huecos continuos de cabina libre, para contárselos al cliente ("mañana tengo de 10 a 13").
  * Con varias cabinas la ventana es la unión, así que puede ser algo más optimista que
  * `freeStarts`; no importa: reservar vuelve a validar y, si se cayó, se ofrecen alternativas.
+ * Con `people` = 2 cuenta solo los minutos con al menos dos cabinas libres (huecos de pareja).
  */
 export function freeWindows(
   config: AppConfig,
   location: Location,
   day: string,
   occupancy: Occupancy,
-  { now = Date.now(), minMinutes = 0 } = {},
+  { now = Date.now(), minMinutes = 0, people = 1 } = {},
 ): FreeWindow[] {
   const cabins = config.cabins[location] ?? 1
+  if (people > cabins) return []
   const earliest = now + config.leadTimeHours * 3_600_000
   const slot = config.slotMinutes
   const windows: FreeWindow[] = []
@@ -182,7 +186,7 @@ export function freeWindows(
   for (const range of openRanges(config.hours, day)) {
     let open: number | null = null
     for (let at = range.from; at + slot <= range.to; at += slot) {
-      const usable = takenAt(occupancy, cabins, at) < cabins && timestampOf(day, toClock(at)) >= earliest
+      const usable = cabins - takenAt(occupancy, cabins, at) >= people && timestampOf(day, toClock(at)) >= earliest
       if (usable) {
         if (open === null) open = at
         continue

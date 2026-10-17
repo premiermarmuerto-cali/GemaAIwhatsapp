@@ -26,12 +26,13 @@ export const GET = route(async (request: NextRequest) => {
   const serviceId = params.get('service')
   const service = serviceId ? serviceById(config, serviceId) : undefined
   if (serviceId && !service) throw new HttpError(400, 'Ese servicio no existe.')
+  const people = params.get('people') === '2' ? 2 : 1
 
   return NextResponse.json({
     day,
     location,
     closed: null,
-    starts: service ? freeStarts(config, location, day, service.durationMin, occupancy) : [],
+    starts: service ? freeStarts(config, location, day, service.durationMin, occupancy, { people }) : [],
     windows: freeWindows(config, location, day, occupancy, { minMinutes: shortestService(config) }),
   })
 })
