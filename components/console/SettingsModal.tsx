@@ -205,30 +205,28 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
 
             <fieldset className={styles.group}>
               <legend>2x1 de pareja</legend>
-              <div className={styles.row} style={{ flexWrap: 'wrap' }}>
-                {config.services.map((service) => (
-                  <label key={service.id} className={styles.row} style={{ alignItems: 'center', flex: '0 0 auto' }}>
-                    <input
-                      type="checkbox"
-                      checked={config.twoForOne.services.includes(service.id)}
-                      onChange={(event) => patch({
-                        twoForOne: {
-                          ...config.twoForOne,
-                          services: event.target.checked
-                            ? [...config.twoForOne.services, service.id]
-                            : config.twoForOne.services.filter((id) => id !== service.id),
-                        },
-                      })}
-                    />
-                    <span>{service.label || service.id}</span>
-                  </label>
-                ))}
-              </div>
-              <label className={styles.field} style={{ maxWidth: 220 }}>
-                <span>Última sesión incluida</span>
-                <input type="date" value={config.twoForOne.until} onChange={(event) => patch({ twoForOne: { ...config.twoForOne, until: event.target.value } })} />
-              </label>
-              <small className={styles.hint}>Dos personas a la misma hora pagan una sola sesión en los servicios marcados, para citas hasta esa fecha. En los demás, o después de la fecha, una pareja paga dos sesiones. Pasada la fecha, Gema deja de mencionar la promoción sola.</small>
+              {config.services.map((service) => {
+                const included = service.id in config.twoForOne
+                const setTwoForOne = (until: string | null) => {
+                  const next = { ...config.twoForOne }
+                  if (until === null) delete next[service.id]
+                  else next[service.id] = until
+                  patch({ twoForOne: next })
+                }
+                return (
+                  <div key={service.id} className={styles.row} style={{ alignItems: 'center' }}>
+                    <label className={styles.row} style={{ alignItems: 'center' }}>
+                      <input type="checkbox" checked={included} onChange={(event) => setTwoForOne(event.target.checked ? '' : null)} />
+                      <span>{service.label || service.id}</span>
+                    </label>
+                    <label className={styles.field} style={{ maxWidth: 200 }} title="Última sesión incluida. Vacío = sin fecha límite.">
+                      <span>Hasta</span>
+                      <input type="date" disabled={!included} value={config.twoForOne[service.id] ?? ''} onChange={(event) => setTwoForOne(event.target.value)} />
+                    </label>
+                  </div>
+                )
+              })}
+              <small className={styles.hint}>Dos personas a la misma hora pagan una sola sesión en los servicios marcados, para citas hasta su fecha (vacía = sin fecha límite). En los demás, o después de la fecha, una pareja paga dos sesiones.</small>
             </fieldset>
 
             <label className={styles.field}>

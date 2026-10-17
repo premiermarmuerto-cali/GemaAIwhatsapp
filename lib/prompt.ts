@@ -9,7 +9,7 @@
  */
 import { addDays, clock12, dayKey, dayLabel, nextHumanWindow, startWindows, type Occupancy } from './calendar'
 import { LOCATION_LABEL, LOCATIONS, WEEKDAY_LABEL } from './clinic'
-import { amountOf, bookingPrice, depositOf, paymentFor, pesos, twoForOneApplies } from './config'
+import { amountOf, bookingPrice, depositOf, paymentFor, pesos, twoForOneApplies, twoForOneLive } from './config'
 import { chargeText, liveBookingOf, serviceText, sweepExpiredHolds } from './booking'
 import { keys, redis, toHash } from './redis'
 import { formatPhone, countryOf, regionOf } from './phone'
@@ -44,32 +44,50 @@ function catalogBlock(config: AppConfig, today: string): string {
       return `- \`${service.id}\` · *${service.label}* · ${service.durationMin} min · precio NO CONFIGURADO: no lo cotices, pasa a un asesor`
     }
     const pair = bookingPrice(config, service, 2, today)
+    const until = config.twoForOne[service.id]
     const pairText = live && twoForOneApplies(config, service.id, today)
-      ? `2x1 de pareja: SÍ (dos personas pagan ${pesos(amount)}, anticipo ${depositOf(config, pair)})`
+      ? `2x1 de pareja: SÍ, ${until ? `para sesiones hasta el ${untilText(until)}` : 'sin fecha límite por ahora'} (dos personas pagan ${pesos(amount)}, anticipo ${depositOf(config, pair)})`
       : `${live ? 'SIN 2x1; ' : ''}pareja (2 personas a la vez): ${pesos(amountOf(pair))}, anticipo ${depositOf(config, pair)}`
     return `- \`${service.id}\` · *${service.label}* · ${service.durationMin} min · ${pesos(amount)} (anticipo ${depositOf(config, service.price)}) · ${pairText}${service.summary ? ` · ${service.summary}` : ''}`
   }).join('\n')
 }
 
-/** La promoción se muestra si tiene texto y no pasó la fecha del 2x1: se apaga sola al vencer. */
+/** "sábado 31 oct de 2026". */
+function untilText(day: string): string {
+  return `${dayLabel(day)} de ${day.slice(0, 4)}`
+}
+
+/**
+ * La promoción se muestra si tiene texto y algún servicio sigue en el 2x1 (o no hay reglas de 2x1,
+ * y entonces es otra promoción): cuando vence el último servicio, se apaga sola.
+ */
 function promoLive(config: AppConfig, today: string): boolean {
-  return Boolean(config.promo.trim()) && (!config.twoForOne.until || today <= config.twoForOne.until)
+  if (!config.promo.trim()) return false
+  return !Object.keys(config.twoForOne).length || twoForOneLive(config, today)
 }
 
 /**
  * La promoción la escribe el operador en el panel. Gema solo puede contar lo que dice ese texto:
  * las condiciones que no estén escritas no las inventa, porque un error ahí es un compromiso
- * comercial con el cliente. Qué servicios entran y hasta cuándo sale de config.twoForOne, que es
- * lo mismo con lo que el servidor cobra.
+ * comercial con el cliente. Qué servicios entran y hasta cuándo (por servicio) sale de
+ * config.twoForOne, que es lo mismo con lo que el servidor cobra.
  */
 function promoBlock(config: AppConfig, today: string): string {
   if (!promoLive(config, today)) {
     return '- No hay ninguna promoción vigente: no ofrezcas descuentos ni 2x1. Si el cliente pregunta por una promoción (por ejemplo, la de un anuncio), no la confirmes ni la niegues: dile que una asesora se la confirma y usa [[ASESOR]].'
   }
-  const included = config.services.filter((service) => config.twoForOne.services.includes(service.id))
-  const excluded = config.services.filter((service) => !config.twoForOne.services.includes(service.id))
+  // Vigencia por servicio, la misma con la que cobra el servidor. Un servicio vencido pasa a "NO aplica".
+  const included = config.services.filter((service) => twoForOneApplies(config, service.id, today))
+  const excluded = config.services.filter((service) => !twoForOneApplies(config, service.id, today))
   const scope = included.length
-    ? `- El 2x1 aplica a: ${included.map((service) => service.label).join(', ')}.${excluded.length ? ` NO aplica a: ${excluded.map((service) => service.label).join(', ')}.` : ''}${config.twoForOne.until ? ` Solo para sesiones hasta el ${dayLabel(config.twoForOne.until)} de ${config.twoForOne.until.slice(0, 4)} inclusive: si la cita es después, ya no aplica.` : ''}`
+    ? [
+      `- El 2x1 aplica a: ${included.map((service) => {
+        const until = config.twoForOne[service.id]
+        return `${service.label} (${until ? `solo para sesiones hasta el ${untilText(until)} inclusive` : 'sin fecha límite por ahora'})`
+      }).join('; ')}.`,
+      excluded.length ? `- NO aplica a: ${excluded.map((service) => service.label).join(', ')}.` : '',
+      '- Si la cita es después de la fecha límite de ese servicio, ya no aplica: la pareja paga dos sesiones.',
+    ].filter(Boolean).join('\n')
     : ''
   // Venir acompañado a la misma hora exige dos cabinas: se dice aquí, donde el modelo mira la promo,
   // porque la nota de la agenda sola no bastó (en una prueba ofreció pareja en la sede de 1 cabina).

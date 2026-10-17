@@ -31,7 +31,27 @@ export const DEFAULT_CONFIG: AppConfig = {
   holdMinutes: 120,
   faq: '',
   promo: '',
-  twoForOne: { services: [], until: '' },
+  twoForOne: {},
+}
+
+/**
+ * Acepta también la primera forma que se guardó ({ services, until }: una sola fecha para todos)
+ * y la convierte a servicio → fecha. Descarta servicios que ya no existen.
+ */
+function normalizeTwoForOne(raw: unknown, serviceIds: string[]): { value: Record<string, string> } | Issue {
+  if (!raw || typeof raw !== 'object') return { value: {} }
+  const value = raw as Record<string, unknown>
+  const entries: Array<[string, string]> = Array.isArray(value.services)
+    ? value.services.map((id) => [String(id), String(value.until ?? '')])
+    : Object.entries(value).map(([id, until]) => [id, String(until ?? '')])
+  const out: Record<string, string> = {}
+  for (const [id, until] of entries) {
+    if (!serviceIds.includes(id)) continue
+    const date = until.trim()
+    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: `La fecha del 2x1 de "${id}" debe tener el formato AAAA-MM-DD.` }
+    out[id] = date
+  }
+  return { value: out }
 }
 
 const RANGE = /^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/
@@ -117,7 +137,9 @@ export async function getConfig(): Promise<AppConfig> {
   const raw = await redis().get<string>(keys.config)
   if (!raw) return DEFAULT_CONFIG
   try {
-    return { ...DEFAULT_CONFIG, ...(JSON.parse(raw) as Partial<AppConfig>) }
+    const config = { ...DEFAULT_CONFIG, ...(JSON.parse(raw) as Partial<AppConfig>) }
+    const twoForOne = normalizeTwoForOne(config.twoForOne, config.services.map((service) => service.id))
+    return { ...config, twoForOne: 'value' in twoForOne ? twoForOne.value : {} }
   } catch {
     return DEFAULT_CONFIG
   }
@@ -153,14 +175,8 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
   if (!Array.isArray(services)) return services
 
   // Opcional, como promo. Solo servicios que existen; la fecha es la última sesión incluida.
-  const rawTwoForOne = (body.twoForOne ?? {}) as Record<string, unknown>
-  const twoForOneUntil = String(rawTwoForOne.until ?? '').trim()
-  if (twoForOneUntil && !/^\d{4}-\d{2}-\d{2}$/.test(twoForOneUntil)) return { error: 'La fecha del 2x1 debe tener el formato AAAA-MM-DD.' }
-  const known = new Set(services.map((service) => service.id))
-  const twoForOne = {
-    services: Array.isArray(rawTwoForOne.services) ? rawTwoForOne.services.map(String).filter((id) => known.has(id)) : [],
-    until: twoForOneUntil,
-  }
+  const twoForOne = normalizeTwoForOne(body.twoForOne, services.map((service) => service.id))
+  if (!('value' in twoForOne)) return twoForOne
 
   const hours = parseHours(body.hours)
   if (!Array.isArray(hours)) return hours
@@ -194,7 +210,7 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
       systemPrompt,
       faq,
       promo,
-      twoForOne,
+      twoForOne: twoForOne.value,
       payLink,
       nequiInstructions,
       intlInstructions,
@@ -224,11 +240,24 @@ const slug = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toL
 /**
  * El servicio que pidió Gema en [[RESERVA]]: por id y, si no existe, por nombre. Los ids son
  * históricos (`valoracion` es hoy la Limpieza Peeling Gel) y el modelo a veces escribe el nombre
- * convertido en id (`limpieza-peeling-gel`). Solo acepta una coincidencia exacta del nombre.
+ * convertido en id (`limpieza-peeling-gel`). Si el nombre no coincide exacto (la voz del panel y
+ * el catálogo pueden nombrarlo distinto: "Peeling Gel" / "Peeling y Hidratación"), acepta el
+ * servicio cuyo nombre comparte más palabras iniciales, solo si son 2 o más y no hay empate.
  */
 export function resolveService(config: AppConfig, raw: string): Service | undefined {
   const wanted = slug(raw)
-  return serviceById(config, raw) ?? config.services.find((service) => slug(service.label) === wanted)
+  const exact = serviceById(config, raw) ?? config.services.find((service) => slug(service.label) === wanted)
+  if (exact) return exact
+  const words = wanted.split('-')
+  const shared = (label: string) => {
+    const other = slug(label).split('-')
+    let count = 0
+    while (count < words.length && words[count] === other[count]) count++
+    return count
+  }
+  const scored = config.services.map((service) => ({ service, score: shared(service.label) })).sort((a, b) => b.score - a.score)
+  const [best, second] = scored
+  return best && best.score >= 2 && best.score !== second?.score ? best.service : undefined
 }
 
 /**
@@ -280,14 +309,16 @@ export function depositOf(config: AppConfig, price: string): string {
   return amount ? pesos(amount) : ''
 }
 
-/** El 2x1 sigue vigente hoy (o no tiene fecha de fin). */
+/** Algún servicio tiene el 2x1 vigente para sesiones de hoy (o sin fecha de fin). */
 export function twoForOneLive(config: AppConfig, today: string): boolean {
-  return config.twoForOne.services.length > 0 && (!config.twoForOne.until || today <= config.twoForOne.until)
+  return Object.keys(config.twoForOne).some((id) => twoForOneApplies(config, id, today))
 }
 
-/** Dos personas a la misma hora pagan una sola sesión: el servicio entra en el 2x1 y la sesión es antes del fin. */
+/** Dos personas a la misma hora pagan una sola sesión: el servicio entra en el 2x1 y la sesión es antes de su fecha de fin. */
 export function twoForOneApplies(config: AppConfig, serviceId: string, day: string): boolean {
-  return config.twoForOne.services.includes(serviceId) && (!config.twoForOne.until || day <= config.twoForOne.until)
+  if (!(serviceId in config.twoForOne)) return false
+  const until = config.twoForOne[serviceId]
+  return !until || day <= until
 }
 
 /**

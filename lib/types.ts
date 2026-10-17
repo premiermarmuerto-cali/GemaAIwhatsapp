@@ -188,11 +188,11 @@ export type AppConfig = {
   /** Promoción vigente, tal como Gema la debe comunicar (p. ej. el 2x1). Vacío = no hay promoción. */
   promo: string
   /**
-   * Reglas del 2x1 de pareja que el servidor aplica al cobrar: dos personas a la misma hora pagan
-   * una sesión solo en estos servicios y para sesiones hasta `until` (YYYY-MM-DD, inclusive).
-   * Fuera de eso una pareja paga dos sesiones. Pasada la fecha, la promoción deja de mostrarse.
+   * Reglas del 2x1 de pareja que el servidor aplica al cobrar: id de servicio → fecha de la última
+   * sesión incluida (YYYY-MM-DD, inclusive; '' = sin fecha límite). Dos personas a la misma hora
+   * pagan una sesión solo en esos servicios y fechas; fuera de eso, dos sesiones.
    */
-  twoForOne: { services: string[]; until: string }
+  twoForOne: Record<string, string>
 }
 
 /** Lo que el panel necesita para pintar una semana completa. */
