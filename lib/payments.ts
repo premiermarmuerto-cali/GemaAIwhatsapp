@@ -64,7 +64,7 @@ export async function handleBoldPayment(event: BoldPayment): Promise<string> {
   await notePayment(booking.phone, `Pago recibido · ${booking.name || booking.phone} · ${pesos(paid)} · ${method}`)
 
   const what = booking.paymentPlan === 'full' ? 'el pago completo de tu sesión' : 'tu anticipo'
-  const text = `¡Recibimos ${what} (${pesos(paid)})! 💛 Tu cita de *${serviceText(booking)}* quedó confirmada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}. Te esperamos.`
+  const text = `Listo, ya recibimos ${what} (${pesos(paid)}). Tu cita de *${serviceText(booking)}* quedó confirmada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}. Te esperamos.`
   try {
     const waId = await sendWhatsAppText(booking.phone, text)
     await recordOutbound(booking.phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now() })

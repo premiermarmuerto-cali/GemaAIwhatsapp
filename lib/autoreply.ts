@@ -9,6 +9,7 @@ import { mediaBusy } from './media'
 import { regionOf } from './phone'
 import { buildPromptContext, buildSystemPrompt } from './prompt'
 import { rateLimit } from './ratelimit'
+import { SEPARATOR, styleModelText, toMessages } from './reply-style'
 import { keys, redis } from './redis'
 import { sendWhatsAppText } from './whatsapp'
 import { HOLD_STATUSES, type AppConfig, type Booking, type Location, type Message } from './types'
@@ -30,6 +31,9 @@ const MEDIA_WAIT_MS = 8_000
 const LOCK_SECONDS = 20
 const MAX_TURNS = 3
 const BOLD_TIMEOUT_MS = 5_000
+// Pausa entre los mensajes de una misma respuesta. Corta a propósito: este tiempo cuenta dentro del
+// presupuesto del after() del webhook (ver nota de arriba), y una respuesta lleva hasta 4 mensajes.
+const MESSAGE_GAP_MS = 1_200
 const PENDING_SECONDS = 600
 const PER_PHONE_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_PHONE) || 15 // por cada 10 min
 const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
@@ -48,7 +52,7 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
 const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO)\s*(?::([^\]]*))?\]\]/gi
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
-const SOUNDS_BOOKED = /\b(te agend[eoé]|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
+const SOUNDS_BOOKED = /\b(te (agend|reserv)[eoé]|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
 // Frases con las que promete un link sin emitir [[LINK]] (pasó en una prueba real: "Aquí va el
 // link" y el mensaje salía sin link). Si hay una cita apartada, el sistema lo reenvía igual.
 const PROMISES_LINK = /(aqu[ií]\s+(va|tienes|est[aá]|te\s+(dejo|env[ií]o|paso))|te\s+(env[ií]o|enviar[eé]|mando|paso|comparto|dejo))[^.\n]{0,25}\b(link|enlace)\b/i
@@ -65,6 +69,17 @@ function stripInventedPaymentData(phone: string, text: string): string {
   console.warn(`[autoreply] Gema escribió datos de pago para ${phone}; se quitaron ${lines.length - kept.length} línea(s)`)
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
+const RESERVA_NUDGE = 'Tu respuesta anterior dio la cita por hecha pero NO incluyó la marca [[RESERVA: servicio · sede · YYYY-MM-DD · HH:MM · nombre completo]]. Sin esa marca el sistema no aparta ningún horario. Vuelve a escribir tu respuesta completa incluyendo la marca (más [[PAREJA: nombre]], [[COMPLETO]] o [[TRANSFERENCIA]] si corresponden). Si todavía te falta algún dato para reservar, pídelo en vez de dar la cita por hecha.'
+
+/** La respuesta da la cita por hecha (o pide datos de pago/pareja) sin la marca de reserva, y el cliente no tiene cita. */
+function forgotReserva(reply: string, bookingId: string | undefined): boolean {
+  if (bookingId) return false
+  const found = [...reply.matchAll(MARKERS)].map((marker) => marker[1].toUpperCase())
+  if (found.includes('RESERVA') || found.includes('ASESOR') || found.includes('PAGO')) return false
+  const plain = reply.replace(MARKERS, '')
+  return (SOUNDS_BOOKED.test(plain) && !ASKS_FOR_NAME.test(plain)) || found.some((kind) => ['TRANSFERENCIA', 'PAREJA', 'COMPLETO'].includes(kind))
+}
+
 // Montos en pesos escritos por el modelo ("$340.000", "$85.000 COP por persona").
 const AMOUNT = /\$\s?\d[\d.,]*/
 
@@ -74,11 +89,16 @@ const AMOUNT = /\$\s?\d[\d.,]*/
  * quitan las frases del modelo con montos; el servidor añade el correcto después.
  */
 function stripModelAmounts(phone: string, text: string): string {
-  const sentences = text.split(/(?<=[.!?])\s+|\n+/)
-  const kept = sentences.filter((sentence) => !AMOUNT.test(sentence))
-  if (kept.length === sentences.length) return text
-  console.warn(`[autoreply] Gema escribió montos en la reserva de ${phone}; se quitaron ${sentences.length - kept.length} frase(s)`)
-  return kept.join(' ').replace(/\s{2,}/g, ' ').trim()
+  let removed = 0
+  const parts = text.split(SEPARATOR).map((part) => {
+    const sentences = part.split(/(?<=[.!?])\s+|\n+/)
+    const kept = sentences.filter((sentence) => !AMOUNT.test(sentence))
+    removed += sentences.length - kept.length
+    return kept.join(' ').replace(/\s{2,}/g, ' ').trim()
+  })
+  if (!removed) return text
+  console.warn(`[autoreply] Gema escribió montos en la reserva de ${phone}; se quitaron ${removed} frase(s)`)
+  return parts.filter(Boolean).join(SEPARATOR)
 }
 
 // Lo que dice un cliente que quiere transferir en vez de usar el link. [[TRANSFERENCIA]] solo se
@@ -183,13 +203,13 @@ function transferAppend(config: AppConfig, booking: Booking): Applied {
   const data = paymentFor(config, regionOf(booking.phone)).instructions
   if (!data) {
     return {
-      append: `\n\nUna asesora te comparte los datos para transferir ${humanWhen()} 💛`,
+      append: `\n\nUna asesora te comparte los datos para transferir ${humanWhen()}`,
       escalate: `La clienta quiere pagar ${chargeText(booking)} (${booking.deposit}) de la cita ${booking.id} por transferencia, pero los datos de transferencia no están configurados`,
     }
   }
   const deposit = booking.deposit ? ` de ${booking.deposit}` : ''
   return {
-    append: `\n\nPuedes transferir ${chargeText(booking)}${deposit} a:\n${data}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos. Cuando transfieras, envíame aquí la captura del comprobante y una asesora lo revisa 💛`,
+    append: `\n\nPuedes transferir ${chargeText(booking)}${deposit} a:\n${data}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos. Cuando transfieras, mándame aquí la captura del comprobante y una asesora lo revisa`,
   }
 }
 
@@ -235,7 +255,7 @@ async function resendLink(config: AppConfig, phone: string, { implicit = false }
   }
   if (!url) {
     return {
-      append: `\n\nUna asesora te envía el link de pago ${humanWhen()} 💛`,
+      append: `\n\nUna asesora te envía el link de pago ${humanWhen()}`,
       escalate: `La clienta pidió el link de pago de la cita ${booking.id}, pero no hay ninguno para reenviar`,
     }
   }
@@ -269,7 +289,7 @@ export async function applyReserva(
     const state = existing.status === 'confirmed' ? 'confirmada' : 'apartada'
     return {
       append: '',
-      replaceText: `Ya tienes una cita ${state}: *${serviceText(existing)}* el ${dayLabel(existing.day)} a las ${clock12(existing.start)} en ${LOCATION_LABEL[existing.location]}. Si quieres cambiarla o agendar otra, una asesora te ayuda ${humanWhen()} 💛`,
+      replaceText: `Ya tienes una cita ${state}: *${serviceText(existing)}* el ${dayLabel(existing.day)} a las ${clock12(existing.start)} en ${LOCATION_LABEL[existing.location]}. Si quieres cambiarla o agendar otra, una asesora te ayuda ${humanWhen()}`,
       escalate: `La clienta pidió otra cita teniendo la ${existing.id} (${existing.day} ${existing.start}) ${state}`,
     }
   }
@@ -293,7 +313,7 @@ export async function applyReserva(
   if (!result.ok) {
     if (result.reason === 'cabins') {
       return {
-        append: `\n\nEn ${LOCATION_LABEL[parsed.sede]} no podemos atender a dos personas a la misma hora; una asesora te ayuda a coordinarlo ${humanWhen()} 💛`,
+        append: `\n\nEn ${LOCATION_LABEL[parsed.sede]} no podemos atender a dos personas a la misma hora; una asesora te ayuda a coordinarlo ${humanWhen()}`,
         escalate: `Pareja 2x1 pedida en ${LOCATION_LABEL[parsed.sede]}, que tiene una sola cabina configurada`,
       }
     }
@@ -301,11 +321,11 @@ export async function applyReserva(
       const options = result.alternatives.slice(0, 4)
       return {
         append: options.length
-          ? `\n\nEse horario se acaba de ocupar 😔 Para ${dayLabel(parsed.day)} en ${LOCATION_LABEL[parsed.sede]} me quedan: ${options.join(', ')}. ¿Cuál te sirve?`
-          : '\n\nEse horario se acaba de ocupar y ese día ya no me queda espacio. ¿Te busco otro día?',
+          ? `\n\nEse horario se acaba de ocupar, justo alguien lo tomó. Para ${dayLabel(parsed.day)} en ${LOCATION_LABEL[parsed.sede]} me quedan: ${options.join(', ')}\n\ncuál te sirve?`
+          : '\n\nEse horario se acaba de ocupar y ese día ya no me queda espacio\n\nte busco otro día?',
       }
     }
-    if (result.reason === 'closed') return { append: `\n\nEse día la sede está cerrada. ¿Te busco otra fecha?` }
+    if (result.reason === 'closed') return { append: `\n\nEse día la sede está cerrada, te busco otra fecha?` }
     return { append: '', escalate: 'No se pudo crear la cita' }
   }
 
@@ -338,7 +358,7 @@ export async function applyReserva(
     await setPaymentLink(booking.id, boldUrl)
     return {
       summary: bookedLine(booking),
-      append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Puedes pagarlo aquí ${linkMethods(phone)}:\n${boldUrl}\nTu horario queda apartado ${config.holdMinutes} minutos y apenas se confirme el pago te aviso por aquí 💛`,
+      append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Puedes pagarlo aquí ${linkMethods(phone)}:\n${boldUrl}\nTu horario queda apartado ${config.holdMinutes} minutos y apenas se confirme el pago te aviso por aquí`,
     }
   }
 
@@ -355,7 +375,7 @@ export async function applyReserva(
   }
   return {
     summary: bookedLine(booking),
-    append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}.\n${how}\nTu horario queda apartado ${config.holdMinutes} minutos. Cuando pagues, envíame el comprobante por aquí 💛`,
+    append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}.\n${how}\nTu horario queda apartado ${config.holdMinutes} minutos. Cuando pagues, mándame el comprobante por aquí`,
   }
 }
 
@@ -404,9 +424,18 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   }
   if (!reply) return
 
+  // El modelo a veces escribe "te agendo" y manda [[TRANSFERENCIA]] sin la marca [[RESERVA]]: sin ella
+  // no se aparta nada. Se le pide una sola vez que la incluya; si aun así falta, actúa la red de abajo.
+  if (forgotReserva(reply, chat.bookingId)) {
+    console.warn(`[autoreply] ${phone}: el modelo dio la cita por hecha sin [[RESERVA]]; se reintenta`)
+    reply = await generateReply(prompt, history, RESERVA_NUDGE).catch(() => null) ?? reply
+  }
+
   const markers = [...reply.matchAll(MARKERS)].map((marker) => ({ kind: marker[1].toUpperCase(), payload: (marker[2] ?? '').trim() }))
   // Lo que viene del modelo pasa por la red de datos de pago; lo que añade el servidor después, no.
-  let text = stripInventedPaymentData(phone, reply.replace(MARKERS, '').trim())
+  // Después se parte en mensajes (|||) y se le da la puntuación de WhatsApp; los textos del servidor
+  // se unen con el mismo separador y viajan enteros.
+  let text = styleModelText(stripInventedPaymentData(phone, reply.replace(MARKERS, '').trim()))
 
   // FICHA es silenciosa: solo enriquece el panel y el prompt de la próxima vuelta.
   const ficha = markers.find((marker) => marker.kind === 'FICHA')
@@ -431,13 +460,18 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
     const booking = await liveBookingOf(phone)
     const result = booking && HOLD_STATUSES.includes(booking.status)
       ? transferAppend(config, booking)
-      : { append: `\n\nUna asesora te ayuda con la transferencia ${humanWhen()} 💛`, escalate: 'La clienta quiere transferir, pero no hay una cita apartada' }
-    applied = { ...result, replaceText: `Claro 💛${result.append}` }
+      : { append: `\n\nUna asesora te ayuda con la transferencia ${humanWhen()}`, escalate: 'La clienta quiere transferir, pero no hay una cita apartada' }
+    applied = { ...result, replaceText: `Claro${result.append}` }
   } else if (link || PROMISES_LINK.test(text)) {
     applied = await resendLink(config, phone, { implicit: !link })
   }
   if (applied) {
-    text = (applied.replaceText ?? (text || applied.summary || '') + applied.append).trim()
+    // Lo del servidor (el link, las cuentas, los montos) va en su propio mensaje y nunca se parte:
+    // los "\n\n" que separan sus bloques pasan a ser separadores de mensaje.
+    const server = (value: string) => value.trim().replace(/\n\n/g, SEPARATOR)
+    text = applied.replaceText !== undefined
+      ? server(applied.replaceText)
+      : [text || applied.summary || '', server(applied.append)].filter(Boolean).join(SEPARATOR)
     if (applied.escalate) escalation = { kind: 'ASESOR', payload: applied.escalate }
   }
 
@@ -448,7 +482,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
     escalation = { kind: 'ASESOR', payload: 'Gema pareció confirmar una cita sin generar la marca de reserva' }
     // El texto del modelo daba la cita por hecha (y a veces traía "[datos de Nequi aquí]" de
     // relleno): se cambia por uno honesto, porque la cita todavía no existe.
-    text = `¡Gracias! Ya tengo tus datos 💛 Una asesora termina de agendar tu cita y te comparte cómo pagar ${humanWhen()}.`
+    text = `Gracias, ya tengo tus datos${SEPARATOR}Una asesora termina de agendar tu cita y te comparte cómo pagar ${humanWhen()}`
   }
   // Lo mismo con una asesora prometida sin escalar: la promesa se cumple escalando.
   if (!escalation && PROMISES_ADVISOR.test(text)) {
@@ -466,10 +500,14 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // El cliente dice que pagó: el horario no se puede caer mientras el operador revisa.
   if (escalation?.kind === 'PAGO' && chat.bookingId) await markDepositClaimed(chat.bookingId, config)
 
-  if (text) {
+  // Cada mensaje sale por separado, con una pausa corta entre uno y otro como si alguien escribiera.
+  // Todos van dentro de la ventana de 24 h (la respuesta a un mensaje del cliente), así que no cuestan más.
+  const messages = toMessages(text)
+  for (const [index, message] of messages.entries()) {
     try {
-      const waId = await send(phone, text)
-      await recordOutbound(phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now() })
+      if (index > 0) await sleep(MESSAGE_GAP_MS)
+      const waId = await send(phone, message)
+      await recordOutbound(phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text: message, at: Date.now() })
     } catch (error) {
       console.error(`[autoreply] WhatsApp rechazó la respuesta a ${phone}:`, error)
       // El motivo real (token vencido, número no autorizado en modo desarrollo, etc.) se

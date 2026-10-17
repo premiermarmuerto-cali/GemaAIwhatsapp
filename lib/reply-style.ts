@@ -1,0 +1,69 @@
+/**
+ * Estilo de WhatsApp de Gema. El prompt le pide escribir como una persona (mensajes cortos, sin ¿ ¡,
+ * sin guion largo), pero el modelo se desvía con frecuencia, así que lo que es mecánico se impone
+ * aquí, sobre lo que escribe el modelo. Lo que compone el servidor (links, cuentas, montos) no pasa
+ * por estas funciones: va entero y nunca se parte.
+ */
+
+/** Separador que el modelo pone entre mensajes. El cliente nunca lo ve. */
+export const SEPARATOR = '|||'
+
+/** Más de tres mensajes seguidos abruman. */
+export const MAX_MESSAGES = 3
+
+/**
+ * Relleno que delata a un bot (lo mismo que prohíbe el prompt). Si el modelo lo escribe igual:
+ * - una frase corta que es solo relleno se elimina ("Entiendo tus dudas.", "Quedo atenta.");
+ * - si el relleno es el arranque de una frase con contenido, se recorta solo el arranque
+ *   ("Además, hay 2x1" → "hay 2x1"). Nunca se borra una frase con información.
+ */
+const FILLER_SENTENCE = /^(entiendo (perfectamente|tus dudas|tu duda|tu inquietud|tu preocupaci[oó]n)|es completamente normal|tienes toda la raz[oó]n|excelente pregunta|qu[eé] buena elecci[oó]n|con gusto te ayudo|gracias por tu inter[eé]s)\b|\b(hay algo m[aá]s en lo que (pueda|te pueda) ayudar|quedo atent[ao]|no dudes en escribirme|espero que esto te ayude|av[ií]same si tienes m[aá]s dudas)\b/i
+const FILLER_OPENER = /^(adem[aá]s|recuerda que|ten en cuenta que|por supuesto|excelente pregunta|qu[eé] buena elecci[oó]n|con gusto te ayudo)\b[,:!]?\s*/i
+const SHORT_SENTENCE_WORDS = 7
+
+/**
+ * Texto con ||| → lista de mensajes, máximo MAX_MESSAGES. Los saltos de párrafo también separan
+ * mensajes: el modelo a veces escribe párrafos en vez de usar |||. Si hay más de tres, se deja el
+ * primero, el último (que es la pregunta, si la hay) y se unen los del medio.
+ */
+export function splitMessages(text: string): string[] {
+  const parts = text.split(/\|\|\||\n{2,}/).map((part) => part.trim()).filter(Boolean)
+  if (parts.length <= MAX_MESSAGES) return parts
+  const middle = parts.slice(1, -1).map((part) => part.replace(/[.!?]$/, '')).join('. ')
+  return [parts[0], middle, parts[parts.length - 1]]
+}
+
+/** Quita frases de relleno de un mensaje; si no queda nada, lo deja como estaba. */
+function withoutFiller(part: string): string {
+  const sentences = part.split(/(?<=[.!?])\s+/)
+  const isFiller = (sentence: string) => FILLER_SENTENCE.test(sentence) && sentence.split(/\s+/).length <= SHORT_SENTENCE_WORDS
+  const kept = sentences.filter((sentence) => !isFiller(sentence))
+  return (kept.length ? kept : sentences).map((sentence) => sentence.replace(FILLER_OPENER, '')).join(' ')
+}
+
+/** Reglas mecánicas de puntuación sobre un mensaje del modelo. */
+function casual(part: string, isLast: boolean): string {
+  let out = withoutFiller(part)
+    .replace(/[¿¡]/g, '')
+    .replace(/\s*—\s*/g, ', ')
+    .replace(/;\s*/g, ', ')
+    .replace(/ {2,}/g, ' ')
+    .trim()
+  // El último mensaje no lleva punto final (pero sí los puntos suspensivos).
+  if (isLast) out = out.replace(/(?<!\.)\.$/, '')
+  return out
+}
+
+/**
+ * Lo que escribió el modelo, ya en su forma final: partido en mensajes y con la puntuación de
+ * WhatsApp. Devuelve los mensajes unidos por ||| para poder seguir tratándolo como un solo texto.
+ */
+export function styleModelText(text: string): string {
+  const parts = splitMessages(text)
+  return parts.map((part, index) => casual(part, index === parts.length - 1)).filter(Boolean).join(SEPARATOR)
+}
+
+/** Texto final (modelo + servidor, unidos por |||) → mensajes que se envían uno por uno. */
+export function toMessages(text: string): string[] {
+  return text.split(SEPARATOR).map((part) => part.trim()).filter(Boolean)
+}

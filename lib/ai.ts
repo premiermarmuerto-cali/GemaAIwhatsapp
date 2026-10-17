@@ -58,7 +58,7 @@ function looksEnglish(text: string): boolean {
 }
 
 /** Respuesta de Gema al último mensaje del cliente. null si el último mensaje no es del cliente. */
-export async function generateReply(systemPrompt: string, history: Message[]): Promise<string | null> {
+export async function generateReply(systemPrompt: string, history: Message[], nudge?: string): Promise<string | null> {
   const last = history.at(-1)
   if (last?.sender !== 'user') return null
   // Con todo el prompt en español, el modelo contestaba en español a clientes que escriben en
@@ -70,6 +70,8 @@ export async function generateReply(systemPrompt: string, history: Message[]): P
     { role: 'system', content: systemPrompt },
     ...history.map((message): ChatMessage => ({ role: message.sender === 'user' ? 'user' : 'assistant', content: modelText(message) })),
     ...language,
+    // Corrección puntual del servidor para este intento (p. ej. faltó una marca): solo se usa al reintentar.
+    ...(nudge ? [{ role: 'system', content: nudge } as ChatMessage] : []),
   ], MAX_OUTPUT_TOKENS, 0.6)
 }
 
