@@ -290,7 +290,7 @@ export function paymentFor(config: AppConfig, region: Region) {
     currency: colombia || bold ? 'pesos colombianos (COP)' : 'dólares estadounidenses (USD)',
     methods: bold
       ? colombia
-        ? 'link de pago de Bold (tarjeta, PSE o Nequi) o, si el cliente lo prefiere, transferencia directa a Premier (Nequi o llave)'
+        ? `link de pago de Bold (PSE, tarjeta débito o crédito, Nequi o Daviplata)${instructions ? ' o transferencia directa a Premier (Nequi, Daviplata o cuenta de ahorros Bancolombia) con envío del comprobante' : ''}`
         : `link de pago de Bold con tarjeta de crédito internacional (se cobra en pesos colombianos y su banco hace la conversión)${instructions ? ' o, si lo prefiere, los medios internacionales de Premier' : ''}`
       : colombia
         ? 'Nequi, Bancolombia o Daviplata'

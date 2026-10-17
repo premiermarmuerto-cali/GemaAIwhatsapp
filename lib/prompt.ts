@@ -181,9 +181,16 @@ function cobroBlock(config: AppConfig, phone: string): string {
   }
   return [
     ...common,
-    `- Por defecto se paga con el link de Bold que el sistema añade al reservar (${colombia ? 'tarjeta, PSE o Nequi' : 'tarjeta de crédito internacional; se cobra en pesos colombianos y su banco hace la conversión'}). Con ese link la cita se confirma sola cuando Bold confirma el pago y al cliente le llega aquí la confirmación: no le pidas comprobante ni le digas que el equipo lo valida. Si dice que ya pagó con el link, dile que apenas Bold lo confirme le llega aquí la confirmación.`,
+    ...(colombia && payment.instructions
+      ? [
+        '- Hay dos medios de pago y el cliente elige: (1) el link de Bold, que acepta PSE, tarjeta débito o crédito, Nequi y Daviplata, y confirma la cita sola apenas paga; (2) transferencia directa a Nequi, Daviplata o a la cuenta de ahorros Bancolombia de Premier, enviando la captura del comprobante.',
+        '- Al reservar, si el cliente todavía no dijo cómo paga, el sistema le explica los dos medios y le pregunta cuál prefiere: tú no lo expliques ni preguntes en ese mismo mensaje. Si ya lo dijo antes de reservar ("por Nequi", "con tarjeta", "por transferencia"), el sistema le manda directo ese medio.',
+        '- Cuando el cliente responda cómo paga, usa [[LINK]] si elige el link (o tarjeta, PSE) y [[TRANSFERENCIA]] si elige transferir. El sistema añade el link o los datos de las cuentas; tú solo di "listo, aquí va" o algo corto así.',
+      ]
+      : [`- Se paga con el link de Bold que el sistema añade al reservar (${colombia ? 'PSE, tarjeta débito o crédito, Nequi o Daviplata' : 'tarjeta de crédito internacional; se cobra en pesos colombianos y su banco hace la conversión'}).`]),
+    '- Con el link de Bold la cita se confirma sola cuando Bold confirma el pago y al cliente le llega aquí la confirmación: no le pidas comprobante ni le digas que el equipo lo valida. Si dice que ya pagó con el link, dile que apenas Bold lo confirme le llega aquí la confirmación.',
     '- Si pide el link otra vez o dice que lo perdió, usa la marca [[LINK]]: el sistema lo vuelve a enviar.',
-    `- Solo si el cliente prefiere ${colombia ? 'transferir directo a la cuenta de Premier (Nequi o llave)' : 'pagar por otro medio que no sea tarjeta'}, usa la marca [[TRANSFERENCIA]]: el sistema añade los datos para pagar. Si lo dice antes de reservar, ponla junto con [[RESERVA]] en el mismo mensaje y el sistema enviará esos datos en vez del link. Por transferencia la cita la confirma una asesora al revisar el comprobante:`,
+    `- Si el cliente prefiere ${colombia ? 'transferir directo a Premier' : 'pagar por otro medio que no sea tarjeta'}, usa la marca [[TRANSFERENCIA]]: el sistema añade los datos para pagar. Por transferencia la cita la confirma una asesora al revisar el comprobante:`,
     ...receipt,
   ].join('\n')
 }
