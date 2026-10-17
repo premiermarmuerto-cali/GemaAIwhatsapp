@@ -49,6 +49,21 @@ export const DEFAULT_HOURS: string[][] = [
 ]
 
 /**
+ * Horario en que una persona (asesora) atiende las escalaciones de Gema. NO es el de agendamiento:
+ * confirmado por Premier, lunes a sábado 10:00 a.m.–6:00 p.m., domingo sin atención humana.
+ * Índice 0 = domingo.
+ */
+export const ESCALATION_HOURS: string[][] = [
+  [],
+  ['10:00-18:00'],
+  ['10:00-18:00'],
+  ['10:00-18:00'],
+  ['10:00-18:00'],
+  ['10:00-18:00'],
+  ['10:00-18:00'],
+]
+
+/**
  * Catálogo inicial. Los precios arrancan vacíos a propósito: la IA nunca debe cotizar
  * un valor inventado (mismo criterio que ya usaba la consola de ventas).
  */

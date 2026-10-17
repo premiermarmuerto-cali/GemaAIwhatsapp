@@ -7,7 +7,7 @@
  * [[RESERVA]]. El servidor es quien aparta la cabina y quien pega el link de pago, así que
  * el modelo no puede inventarse ni un horario ni un cobro.
  */
-import { addDays, clock12, dayKey, dayLabel, freeWindows, shortestService } from './calendar'
+import { addDays, clock12, dayKey, dayLabel, freeWindows, nextHumanWindow, shortestService } from './calendar'
 import { LOCATION_LABEL, LOCATIONS, WEEKDAY_LABEL } from './clinic'
 import { depositOf, paymentFor } from './config'
 import { isClosed, liveBookingOf, occupancyOf } from './booking'
@@ -35,6 +35,14 @@ function catalogBlock(config: AppConfig): string {
       : 'precio NO CONFIGURADO: no lo cotices, pasa a un asesor'
     return `- \`${service.id}\` · *${service.label}* · ${service.durationMin} min · ${price}${service.summary ? ` · ${service.summary}` : ''}`
   }).join('\n')
+}
+
+/** Cuándo atiende una persona, con la misma regla de los horarios de agendamiento. */
+function humanHoursLine(): string {
+  const when = nextHumanWindow()
+  return when === 'ahora'
+    ? 'una asesora lo atiende ahora mismo.'
+    : `la asesora lo atiende ${when}. Horario de atención de asesoras: lunes a sábado de 10:00 a.m. a 6:00 p.m.; domingo no hay atención humana. Nunca digas "en breve" si ya no hay asesoras.`
 }
 
 /**
@@ -234,7 +242,7 @@ Van siempre al final del mensaje, después del texto.
 
 - \`[[PAGO: plataforma y monto]]\` — cuando ya tienes el comprobante. Después de esta marca no vuelves a escribir en la conversación.
 
-- \`[[ASESOR: motivo breve]]\` — pasa a una persona cuando: el cliente lo pide; pregunta un precio o un dato que está NO CONFIGURADO; quiere cambiar o cancelar una cita existente; tiene un reclamo; describe una condición médica; o pregunta algo que no puedes responder con esta información. Escribe tu mensaje diciéndole que una asesora lo atenderá en breve y cierra con la marca. Después de esta marca no vuelves a escribir en la conversación.${config.faq ? `
+- \`[[ASESOR: motivo breve]]\` — pasa a una persona cuando: el cliente lo pide; pregunta un precio o un dato que está NO CONFIGURADO; quiere cambiar o cancelar una cita existente; tiene un reclamo; describe una condición médica; o pregunta algo que no puedes responder con esta información. Escribe tu mensaje diciéndole cuándo lo atenderá una persona: ${humanHoursLine()} Cierra con la marca. Después de esta marca no vuelves a escribir en la conversación.${config.faq ? `
 
 ## Preguntas frecuentes e indicaciones
 ${config.faq}` : ''}`

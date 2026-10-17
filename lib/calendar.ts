@@ -5,7 +5,7 @@
  * Toda fecha "del negocio" es un string YYYY-MM-DD en la zona de la clínica, y toda hora
  * un string HH:MM. Colombia no tiene horario de verano, así que el offset es fijo.
  */
-import { CLINIC_TZ, CLINIC_UTC_OFFSET, MONTH_SHORT, WEEKDAY_LABEL, WEEKDAY_SHORT } from './clinic'
+import { CLINIC_TZ, CLINIC_UTC_OFFSET, ESCALATION_HOURS, MONTH_SHORT, WEEKDAY_LABEL, WEEKDAY_SHORT } from './clinic'
 import type { AppConfig, FreeWindow, Location } from './types'
 
 export type Range = { from: number; to: number }
@@ -34,6 +34,34 @@ export function toClock(minutes: number): string {
 export function clock12(hhmm: string): string {
   const [hour, minute] = hhmm.split(':').map(Number)
   return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'a.m.' : 'p.m.'}`
+}
+
+/**
+ * Cuándo atiende una persona, según el mismo horario de agendamiento (config.hours).
+ * Devuelve "ahora" si la clínica está abierta, o cuándo vuelve a abrir.
+ */
+export function nextHumanWindow(hours: string[][] = ESCALATION_HOURS, now = Date.now()): string {
+  const [sign, hh, mm] = CLINIC_UTC_OFFSET.match(/^([+-])(\d{2}):(\d{2})$/)!.slice(1)
+  const offsetMs = (sign === '-' ? -1 : 1) * (Number(hh) * 60 + Number(mm)) * 60_000
+  const local = new Date(now + offsetMs)
+  const today = local.getUTCDay()
+  const minutesNow = local.getUTCHours() * 60 + local.getUTCMinutes()
+  const openNow = hours[today]?.some((range) => {
+    const [from, to] = range.split('-').map(toMinutes)
+    return minutesNow >= from && minutesNow < to
+  })
+  if (openNow) return 'ahora'
+
+  for (let offset = 0; offset <= 7; offset++) {
+    const day = (today + offset) % 7
+    const ranges = hours[day] ?? []
+    const upcoming = ranges.map((range) => toMinutes(range.split('-')[0])).find((from) => offset > 0 || from > minutesNow)
+    if (upcoming !== undefined) {
+      const when = offset === 0 ? 'hoy' : offset === 1 ? 'mañana' : WEEKDAY_LABEL[day]
+      return `${when} a las ${clock12(toClock(upcoming))}`
+    }
+  }
+  return 'en el próximo horario de atención'
 }
 
 export function isDayKey(value: unknown): value is string {

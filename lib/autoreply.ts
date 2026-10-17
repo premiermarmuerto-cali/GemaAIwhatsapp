@@ -1,6 +1,6 @@
 import { generateReply } from './ai'
 import { createBooking, liveBookingOf, markDepositClaimed, setPaymentLink } from './booking'
-import { clock12, dayLabel, isClock, isDayKey } from './calendar'
+import { clock12, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
 import { isLocation, LOCATION_LABEL } from './clinic'
 import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead } from './chats'
 import { generarLinkPagoBold } from './bold'
@@ -126,6 +126,12 @@ function parseFicha(payload: string) {
  */
 type Applied = { append: string; replaceText?: string; escalate?: string }
 
+/** "ahora" o "mañana a las 10:00 a.m.": cuándo atiende una persona, con el mismo horario de agendamiento. */
+export function humanWhen(): string {
+  const when = nextHumanWindow()
+  return when === 'ahora' ? 'en este momento' : `${when}`
+}
+
 /** Minutos que le quedan al apartado, para decírselo al cliente al reenviar datos de pago. */
 function holdMinutesLeft(booking: Booking): number {
   return Math.max(0, Math.round((booking.holdUntil - Date.now()) / 60_000))
@@ -139,7 +145,7 @@ function transferAppend(config: AppConfig, booking: Booking): Applied {
   const data = paymentFor(config, regionOf(booking.phone)).instructions
   if (!data) {
     return {
-      append: '\n\nUna asesora te comparte los datos para transferir en breve 💛',
+      append: `\n\nUna asesora te comparte los datos para transferir ${humanWhen()} 💛`,
       escalate: `La clienta quiere pagar el anticipo de la cita ${booking.id} por transferencia, pero los datos de transferencia no están configurados`,
     }
   }
@@ -167,7 +173,7 @@ async function resendLink(config: AppConfig, phone: string, { implicit = false }
   }
   if (!url) {
     return {
-      append: '\n\nUna asesora te envía el link de pago en breve 💛',
+      append: `\n\nUna asesora te envía el link de pago ${humanWhen()} 💛`,
       escalate: `La clienta pidió el link de pago de la cita ${booking.id}, pero no hay ninguno para reenviar`,
     }
   }
@@ -271,7 +277,7 @@ export async function applyReserva(config: AppConfig, phone: string, payload: st
   ].filter(Boolean).join('\n')
   if (!how) {
     return {
-      append: '\n\nNo pude generar tu link de pago en este momento; una asesora te lo envía en breve.',
+      append: `\n\nNo pude generar tu link de pago en este momento; una asesora te lo envía ${humanWhen()}.`,
       escalate: `Cita ${booking.id} apartada, pero no se pudo generar el link de Bold y no hay datos de cobro de respaldo`,
     }
   }
@@ -346,7 +352,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
     const booking = await liveBookingOf(phone)
     const result = booking && HOLD_STATUSES.includes(booking.status)
       ? transferAppend(config, booking)
-      : { append: '\n\nUna asesora te ayuda con la transferencia en breve 💛', escalate: 'La clienta quiere transferir, pero no hay una cita apartada' }
+      : { append: `\n\nUna asesora te ayuda con la transferencia ${humanWhen()} 💛`, escalate: 'La clienta quiere transferir, pero no hay una cita apartada' }
     applied = { ...result, replaceText: `Claro 💛${result.append}` }
   } else if (link || PROMISES_LINK.test(text)) {
     applied = await resendLink(config, phone, { implicit: !link })
