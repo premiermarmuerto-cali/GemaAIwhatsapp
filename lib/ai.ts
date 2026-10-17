@@ -22,7 +22,7 @@ function apiKey(): string {
 }
 
 /** Una llamada a Chat Completions. Lanza AiError si falla o si el modelo responde vacío. */
-async function complete(messages: ChatMessage[], maxTokens: number, temperature: number): Promise<string> {
+async function complete(messages: ChatMessage[], maxTokens: number, temperature: number, extra: Record<string, unknown> = {}): Promise<string> {
   const model = process.env.OPENAI_MODEL || DEFAULT_MODEL
   const response = await fetch(`${API}/chat/completions`, {
     method: 'POST',
@@ -33,6 +33,7 @@ async function complete(messages: ChatMessage[], maxTokens: number, temperature:
       max_completion_tokens: maxTokens,
       // Los modelos de razonamiento (o-series, gpt-5) solo aceptan la temperatura por defecto.
       ...(model.startsWith('gpt-4') ? { temperature } : {}),
+      ...extra,
     }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
@@ -75,7 +76,60 @@ export async function generateReply(systemPrompt: string, history: Message[], nu
   ], MAX_OUTPUT_TOKENS, 0.6)
 }
 
-const IMAGE_PROMPT = `Analizas imágenes que los clientes envían por WhatsApp a Premier Mar Muerto Cali, una clínica de limpiezas y tratamientos faciales.
+export type ExtractedReserva = { servicio: string; sede: string; fecha: string; hora: string; nombre: string }
+
+/**
+ * Lee la conversación y devuelve los datos de la reserva SOLO si el cliente ya aceptó un día y una
+ * hora concretos, la sede está definida y dio su nombre. Se usa cuando el modelo de la conversación
+ * dio la cita por hecha pero olvidó la marca [[RESERVA]] (pasa con gpt-4o-mini). Usa salida
+ * estructurada (JSON con esquema estricto), que es mucho más fiable que pedirle la marca otra vez.
+ */
+export async function extractReserva(
+  history: Message[],
+  options: {
+    services: Array<{ id: string; label: string }>
+    locations: Array<{ id: string; label: string }>
+    today: string
+    todayLabel: string
+    /** Próximos días como "2026-10-19 = lunes 19 oct": el modelo no tiene que calcular fechas. */
+    calendar: string[]
+  },
+): Promise<ExtractedReserva | null> {
+  const system = [
+    'Lees una conversación de WhatsApp entre una clínica facial y un cliente, y extraes los datos de una cita.',
+    `Hoy es ${options.today} (${options.todayLabel}), zona horaria de Colombia. Para convertir "el lunes", "mañana" o "el próximo viernes" a fecha, usa SOLO este calendario (el primer día con ese nombre a partir de hoy): ${options.calendar.join('; ')}.`,
+    `Servicios (usa el id): ${options.services.map((service) => `${service.id} = ${service.label}`).join('; ')}.`,
+    `Sedes (usa el id): ${options.locations.map((location) => `${location.id} = ${location.label}`).join('; ')}.`,
+    'ready = true SOLO si en la conversación quedaron definidos los cinco datos: el servicio, la sede, el día, una hora concreta que el cliente aceptó (o pidió y la clínica confirmó) y el nombre del cliente. Si falta cualquiera, ready = false y deja los demás campos vacíos.',
+    'hora en formato 24 h HH:MM. nombre: el nombre del cliente que escribe (no el de su acompañante).',
+  ].join('\n')
+  const transcript = history.map((message) => `${message.sender === 'user' ? 'Cliente' : 'Clínica'}: ${modelText(message)}`).join('\n')
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['ready', 'servicio', 'sede', 'fecha', 'hora', 'nombre'],
+    properties: {
+      ready: { type: 'boolean' },
+      servicio: { type: 'string', enum: ['', ...options.services.map((service) => service.id)] },
+      sede: { type: 'string', enum: ['', ...options.locations.map((location) => location.id)] },
+      fecha: { type: 'string' },
+      hora: { type: 'string' },
+      nombre: { type: 'string' },
+    },
+  }
+  const raw = await complete(
+    [{ role: 'system', content: system }, { role: 'user', content: transcript }],
+    200,
+    0,
+    { response_format: { type: 'json_schema', json_schema: { name: 'reserva', strict: true, schema } } },
+  )
+  const data = JSON.parse(raw) as ExtractedReserva & { ready: boolean }
+  if (!data.ready || !data.servicio || !data.sede || !data.nombre.trim()) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.fecha) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(data.hora) || data.fecha < options.today) return null
+  return { servicio: data.servicio, sede: data.sede, fecha: data.fecha, hora: data.hora, nombre: data.nombre.trim().slice(0, 80) }
+}
+
+const IMAGE_PROMPT =`Analizas imágenes que los clientes envían por WhatsApp a Premier Mar Muerto Cali, una clínica de limpiezas y tratamientos faciales.
 Responde en español, en texto plano y en máximo 6 líneas.
 - Si es un comprobante o una captura de pago (Nequi, Bancolombia, Daviplata, transferencia, tarjeta, pasarela de pago u otro), empieza con "Comprobante de pago" y extrae: plataforma, monto, fecha y hora, referencia o número de aprobación, destinatario y estado (exitoso, pendiente o rechazado). Si un dato no se ve, escribe "no visible". No opines sobre si es auténtico.
 - Si es una foto de piel (rostro, zona del cuerpo), empieza con "Foto de piel" y describe de forma objetiva y prudente lo que se observa: zona, textura, presencia de brotes, puntos negros, enrojecimiento, descamación o manchas. No diagnostiques, no nombres enfermedades y no sugieras tratamientos.

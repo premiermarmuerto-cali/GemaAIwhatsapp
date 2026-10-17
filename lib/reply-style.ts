@@ -20,6 +20,9 @@ export const MAX_MESSAGES = 3
 const FILLER_SENTENCE = /^(entiendo (perfectamente|tus dudas|tu duda|tu inquietud|tu preocupaci[oó]n)|es completamente normal|tienes toda la raz[oó]n|excelente pregunta|qu[eé] buena elecci[oó]n|con gusto te ayudo|gracias por tu inter[eé]s)\b|\b(hay algo m[aá]s en lo que (pueda|te pueda) ayudar|quedo atent[ao]|no dudes en escribirme|espero que esto te ayude|av[ií]same si tienes m[aá]s dudas)\b/i
 const FILLER_OPENER = /^(adem[aá]s|recuerda que|ten en cuenta que|por supuesto|excelente pregunta|qu[eé] buena elecci[oó]n|con gusto te ayudo)\b[,:!]?\s*/i
 const SHORT_SENTENCE_WORDS = 7
+// Frases que anuncian que va a hacer algo después ("Voy a reservar tu cita y te cuento enseguida"):
+// el sistema ya lo hizo en ese mismo turno, así que no dicen nada. Se quitan aunque sean largas.
+const ANNOUNCES_LATER = /^(voy a (reservar|agendar|revisar|verificar|confirmar)|d[eé]jame (revisar|verificar|confirmar)|(dame|un) momento|ya te (confirmo|cuento)|te cuento enseguida|enseguida te)/i
 
 /**
  * Texto con ||| → lista de mensajes, máximo MAX_MESSAGES. Los saltos de párrafo también separan
@@ -36,8 +39,11 @@ export function splitMessages(text: string): string[] {
 /** Quita frases de relleno de un mensaje; si no queda nada, lo deja como estaba. */
 function withoutFiller(part: string): string {
   const sentences = part.split(/(?<=[.!?])\s+/)
-  const isFiller = (sentence: string) => FILLER_SENTENCE.test(sentence) && sentence.split(/\s+/).length <= SHORT_SENTENCE_WORDS
+  const isFiller = (sentence: string) => ANNOUNCES_LATER.test(sentence.trim())
+    || (FILLER_SENTENCE.test(sentence) && sentence.split(/\s+/).length <= SHORT_SENTENCE_WORDS)
   const kept = sentences.filter((sentence) => !isFiller(sentence))
+  // Un mensaje que solo anuncia algo para después se elimina entero; uno que solo es cortesía se deja.
+  if (!kept.length && sentences.every((sentence) => ANNOUNCES_LATER.test(sentence.trim()))) return ''
   return (kept.length ? kept : sentences).map((sentence) => sentence.replace(FILLER_OPENER, '')).join(' ')
 }
 
@@ -65,7 +71,9 @@ function casual(part: string, isLast: boolean): string {
  */
 export function styleModelText(text: string): string {
   const parts = splitMessages(text)
-  return parts.map((part, index) => casual(part, index === parts.length - 1)).filter(Boolean).join(SEPARATOR)
+  const styled = parts.map((part, index) => casual(part, index === parts.length - 1)).filter(Boolean)
+  // Nunca se deja una respuesta vacía por limpiar de más.
+  return styled.length ? styled.join(SEPARATOR) : parts.join(SEPARATOR)
 }
 
 /**

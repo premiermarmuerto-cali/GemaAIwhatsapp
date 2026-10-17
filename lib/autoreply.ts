@@ -1,7 +1,7 @@
-import { generateReply } from './ai'
+import { extractReserva, generateReply, type ExtractedReserva } from './ai'
 import { chargeText, createBooking, liveBookingOf, markDepositClaimed, serviceText, setPaymentLink } from './booking'
-import { clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
-import { isLocation, LOCATION_LABEL } from './clinic'
+import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
+import { isLocation, LOCATION_LABEL, LOCATIONS } from './clinic'
 import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead } from './chats'
 import { generarLinkPagoBold } from './bold'
 import { amountOf, getConfig, paymentFor, pesos, resolveService, twoForOneApplies } from './config'
@@ -74,7 +74,56 @@ function stripInventedPaymentData(phone: string, text: string): string {
   console.warn(`[autoreply] Gema escribió datos de pago para ${phone}; se quitaron ${lines.length - kept.length} línea(s)`)
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
-const RESERVA_NUDGE = 'Tu respuesta anterior dio la cita por hecha pero NO incluyó la marca [[RESERVA: servicio · sede · YYYY-MM-DD · HH:MM · nombre completo]]. Sin esa marca el sistema no aparta ningún horario. Vuelve a escribir tu respuesta completa incluyendo la marca (más [[PAREJA: nombre]], [[COMPLETO]] o [[TRANSFERENCIA]] si corresponden). Si todavía te falta algún dato para reservar, pídelo en vez de dar la cita por hecha.'
+const fold = (text: string) => text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+/** Formas en que se escribe una hora: "18:30", "6:30", "6:30 pm", "6 y media", "10 am", "las 10". */
+function hourPattern(hhmm: string): RegExp {
+  const [h24, mm] = hhmm.split(':').map(Number)
+  const h12 = h24 % 12 || 12
+  const minutes = String(mm).padStart(2, '0')
+  const forms = [`0?${h24}:${minutes}`, `${h12}:${minutes}`]
+  if (mm === 0) forms.push(`${h12}\\s*(am|a\\.\\s?m|pm|p\\.\\s?m|de la (mañana|manana|tarde|noche))`, `las ${h12}\\b`)
+  if (mm === 30) forms.push(`${h12}\\s*y\\s*media`)
+  return new RegExp(`\\b(${forms.join('|')})`, 'i')
+}
+
+const ANY_HOUR = /\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(a\.?\s?m\.?|p\.?\s?m\.?)?(?=[\s.,;!?)]|$)/gi
+
+/** "10:30 a.m." → "10:30", "6:30" → "18:30" (sin a.m./p.m., de 1 a 7 es de la tarde: horario de citas). */
+function hoursIn(text: string): string[] {
+  const out: string[] = []
+  for (const match of text.matchAll(ANY_HOUR)) {
+    const [, hourText, minutes, suffix] = match
+    if (!minutes && !suffix) continue // un número suelto no es una hora
+    let hour = Number(hourText)
+    const pm = suffix?.toLowerCase().startsWith('p')
+    if (pm && hour < 12) hour += 12
+    if (!suffix && hour >= 1 && hour <= 7) hour += 12
+    out.push(`${String(hour).padStart(2, '0')}:${minutes ?? '00'}`)
+  }
+  return [...new Set(out)]
+}
+
+/**
+ * La lectura estructurada (extractReserva) a veces inventa lo que falta: un nombre "Cliente" o una
+ * hora que nadie eligió. Solo se reserva si el nombre lo escribió el cliente y la hora la dijo él,
+ * o fue la única hora que Gema le ofreció justo antes de que siguiera adelante (aceptación implícita).
+ */
+export function groundedInChat(extracted: ExtractedReserva, history: Message[]): boolean {
+  const clientText = fold(history.filter((message) => message.sender === 'user').map((message) => message.text).join(' \n '))
+  const firstName = fold(extracted.nombre.split(/\s+/)[0] ?? '')
+  if (firstName.length < 2 || !clientText.includes(firstName)) return false
+
+  const hour = hourPattern(extracted.hora)
+  if (history.some((message) => message.sender === 'user' && hour.test(message.text))) return true
+  // Aceptación implícita: de las horas que Gema mencionó en sus últimos mensajes, se descartan las que
+  // el cliente había pedido (la que no estaba libre); si queda exactamente una, es la que aceptó.
+  const lastClient = history.map((message) => message.sender).lastIndexOf('user')
+  const offers = history.slice(0, lastClient).filter((message) => message.sender !== 'user').slice(-3).map((message) => message.text).join(' ')
+  const clientMessages = history.filter((message) => message.sender === 'user')
+  const offered = hoursIn(offers).filter((clock) => !clientMessages.some((message) => hourPattern(clock).test(message.text)))
+  return offered.length === 1 && offered[0] === extracted.hora
+}
 
 /** La respuesta da la cita por hecha (o pide datos de pago/pareja) sin la marca de reserva, y el cliente no tiene cita. */
 function forgotReserva(reply: string, bookingId: string | undefined): boolean {
@@ -82,8 +131,34 @@ function forgotReserva(reply: string, bookingId: string | undefined): boolean {
   const found = [...reply.matchAll(MARKERS)].map((marker) => marker[1].toUpperCase())
   if (found.includes('RESERVA') || found.includes('ASESOR') || found.includes('PAGO')) return false
   const plain = reply.replace(MARKERS, '')
+  // Si está pidiendo el nombre, todavía le faltan datos para reservar: es lo correcto, no un olvido.
+  if (ASKS_FOR_NAME.test(plain)) return false
   const handsOverPaymentData = PROMISES_PAYMENT_DATA.test(plain) || BRACKET_PLACEHOLDER.test(plain)
-  return (SOUNDS_BOOKED.test(plain) && !ASKS_FOR_NAME.test(plain)) || handsOverPaymentData || found.some((kind) => ['TRANSFERENCIA', 'PAREJA', 'COMPLETO'].includes(kind))
+  return SOUNDS_BOOKED.test(plain) || handsOverPaymentData || found.some((kind) => ['TRANSFERENCIA', 'PAREJA', 'COMPLETO'].includes(kind))
+}
+
+/**
+ * Lo que eligió el cliente según sus propios mensajes, no según las marcas del modelo: en una prueba
+ * real dijo "pago completo, puedo por nequi?" y que iba con su hermana, y el modelo reservó con solo
+ * [[RESERVA]] (anticipo, link de Bold, una persona). Gana la última mención del cliente.
+ */
+const SAYS_FULL = /\b(complet[oa]s?|todo de una( vez)?|pag(o|ar|amos|ar[ií]a)\s+(el\s+)?(total|todo))\b/i
+const SAYS_DEPOSIT = /\b(anticipo|abono|la mitad|50 ?%)\b/i
+const SAYS_LINK = /\b(link|enlace|tarjeta|pse|bold|cr[eé]dito|d[eé]bito)\b/i
+const SAYS_PAIR = /\b(con|y)\s+(mi|una|un)\s+(herman[oa]|novi[oa]|espos[oa]|amig[oa]|mam[aá]|madre|pap[aá]|padre|hij[oa]|prim[oa]|pareja|compañer[oa]|soci[oa]|t[ií][oa]|cuñad[oa]|suegr[oa]|sobrin[oa]|vecin[oa])\b|\b(dos personas|las dos|los dos|ambas|ambos|vamos dos|somos dos|para dos)\b/i
+const SAYS_ALONE = /\b(solo yo|yo sol[oa]|solo para m[ií]|nada m[aá]s yo|una persona|para m[ií] sol[oa]|voy sol[oa])\b/i
+
+/** La opción que el cliente mencionó de última, recorriendo sus mensajes del más nuevo al más viejo. */
+function latestOf<T>(texts: string[], options: Array<[RegExp, T]>): T | null {
+  for (const text of [...texts].reverse()) {
+    let best: { at: number; value: T } | null = null
+    for (const [pattern, value] of options) {
+      const global = new RegExp(pattern.source, 'gi')
+      for (const match of text.matchAll(global)) if (!best || match.index! >= best.at) best = { at: match.index!, value }
+    }
+    if (best) return best.value
+  }
+  return null
 }
 
 // Montos en pesos escritos por el modelo ("$340.000", "$85.000 COP por persona").
@@ -347,15 +422,19 @@ export async function applyReserva(
         escalate: `Pareja 2x1 pedida en ${LOCATION_LABEL[parsed.sede]}, que tiene una sola cabina configurada`,
       }
     }
+    // La cita no se creó: el texto del modelo (que la daba por hecha, a veces con "te espero el lunes")
+    // se reemplaza entero, no se le añade una corrección al final.
     if (result.reason === 'taken') {
-      const options = result.alternatives.slice(0, 4)
+      const options = result.alternatives.slice(0, 4).map(clock12)
+      const who = pair ? 'para dos personas ' : ''
       return {
-        append: options.length
-          ? `\n\nEse horario se acaba de ocupar, justo alguien lo tomó. Para ${dayLabel(parsed.day)} en ${LOCATION_LABEL[parsed.sede]} me quedan: ${options.join(', ')}\n\ncuál te sirve?`
-          : '\n\nEse horario se acaba de ocupar y ese día ya no me queda espacio\n\nte busco otro día?',
+        append: '',
+        replaceText: options.length
+          ? `A las ${clock12(parsed.start)} ya no me queda espacio ${who}el ${dayLabel(parsed.day)} en ${LOCATION_LABEL[parsed.sede]}. Me quedan: ${options.join(', ')}\n\ncuál te sirve?`
+          : `Ese día ya no me queda espacio ${who}en ${LOCATION_LABEL[parsed.sede]}\n\nte busco otro día?`,
       }
     }
-    if (result.reason === 'closed') return { append: `\n\nEse día la sede está cerrada, te busco otra fecha?` }
+    if (result.reason === 'closed') return { append: '', replaceText: 'Ese día la sede está cerrada\n\nte busco otra fecha?' }
     return { append: '', escalate: 'No se pudo crear la cita' }
   }
 
@@ -455,10 +534,24 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   if (!reply) return
 
   // El modelo a veces escribe "te agendo" y manda [[TRANSFERENCIA]] sin la marca [[RESERVA]]: sin ella
-  // no se aparta nada. Se le pide una sola vez que la incluya; si aun así falta, actúa la red de abajo.
+  // no se aparta nada. Pedirle la marca otra vez fallaba a menudo; en cambio, una lectura aparte de la
+  // conversación con salida estructurada saca servicio, sede, día, hora y nombre. Si algo falta, no
+  // reserva y actúa la red de abajo (mensaje honesto + asesora).
   if (forgotReserva(reply, chat.bookingId)) {
-    console.warn(`[autoreply] ${phone}: el modelo dio la cita por hecha sin [[RESERVA]]; se reintenta`)
-    reply = await generateReply(prompt, history, RESERVA_NUDGE).catch(() => null) ?? reply
+    const today = dayKey()
+    const extracted = await extractReserva([...history, { id: 'draft', sender: 'gem', text: reply.replace(MARKERS, ''), at: Date.now() }], {
+      services: config.services.map(({ id, label }) => ({ id, label })),
+      locations: LOCATIONS.map((location) => ({ id: location, label: LOCATION_LABEL[location] })),
+      today,
+      todayLabel: dayLabel(today),
+      calendar: Array.from({ length: config.horizonDays }, (_, index) => addDays(today, index)).map((day) => `${day} = ${dayLabel(day)}`),
+    }).catch((error) => {
+      console.warn(`[autoreply] ${phone}: no se pudo leer la reserva de la conversación:`, error instanceof Error ? error.message : error)
+      return null
+    })
+    const grounded = extracted !== null && groundedInChat(extracted, history)
+    console.warn(`[autoreply] ${phone}: el modelo dio la cita por hecha sin [[RESERVA]]; datos leídos: ${extracted ? JSON.stringify(extracted) : 'incompletos'}${extracted && !grounded ? ' (descartados: nombre u hora no los dio el cliente)' : ''}`)
+    if (extracted && grounded) reply =`${reply}\n[[RESERVA: ${extracted.servicio} · ${extracted.sede} · ${extracted.fecha} · ${extracted.hora} · ${extracted.nombre}]]`
   }
 
   const markers = [...reply.matchAll(MARKERS)].map((marker) => ({ kind: marker[1].toUpperCase(), payload: (marker[2] ?? '').trim() }))
@@ -474,22 +567,41 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // La reserva se intenta antes de enviar: el texto que sale ya refleja lo que de verdad pasó.
   let escalation = markers.find((marker) => marker.kind === 'PAGO') ?? markers.find((marker) => marker.kind === 'ASESOR')
   const reserva = markers.find((marker) => marker.kind === 'RESERVA')
-  const clientSaid = history.filter((message) => message.sender === 'user').slice(-6).map((message) => message.text).join(' ')
+  const clientTexts = history.filter((message) => message.sender === 'user').slice(-8).map((message) => message.text)
+  // Cómo quiere pagar y con quién viene, según lo que ESCRIBIÓ el cliente (gana lo último que dijo).
+  // Las marcas del modelo solo cuentan si el cliente no dijo nada al respecto.
+  const methodChoice = latestOf(clientTexts, [[WANTS_TRANSFER, 'transfer'], [SAYS_LINK, 'link']] as Array<[RegExp, 'transfer' | 'link']>)
+  const planChoice = latestOf(clientTexts, [[SAYS_FULL, 'full'], [SAYS_DEPOSIT, 'deposit']] as Array<[RegExp, 'full' | 'deposit']>)
+  const pairChoice = latestOf(clientTexts, [[SAYS_PAIR, 'pair'], [SAYS_ALONE, 'alone']] as Array<[RegExp, 'pair' | 'alone']>)
   // El modelo a veces "entrega" los datos de pago él mismo (con un relleno entre corchetes) en vez de
   // usar la marca: se trata igual que [[TRANSFERENCIA]] y los datos reales los pega el servidor.
   const writesPaymentData = PROMISES_PAYMENT_DATA.test(text) || BRACKET_PLACEHOLDER.test(text)
-  const transfer = (markers.some((marker) => marker.kind === 'TRANSFERENCIA') || writesPaymentData) && WANTS_TRANSFER.test(clientSaid)
+  const transferMarker = markers.some((marker) => marker.kind === 'TRANSFERENCIA')
+  // Al reservar basta con que el cliente haya pedido transferir; fuera de una reserva, además el
+  // modelo tiene que estar entregando los datos (si no, solo está respondiendo "sí, aceptamos Nequi").
+  // Si todavía está pidiendo el nombre ("me das tu nombre y te envío los datos"), no hay nada que
+  // entregar aún: se deja seguir la conversación.
+  const transfer = reserva
+    ? methodChoice === 'transfer'
+    : (transferMarker || writesPaymentData) && methodChoice === 'transfer' && !ASKS_FOR_NAME.test(text)
   if (reserva) text = stripModelAmounts(phone, text)
   else {
     const promo = missingPromo(config, text)
     if (promo) text = insertAfter(text, promo.price, promo.line)
   }
   const pareja = markers.find((marker) => marker.kind === 'PAREJA')
-  const payFull = markers.some((marker) => marker.kind === 'COMPLETO')
+  const payFull = planChoice ? planChoice === 'full' : markers.some((marker) => marker.kind === 'COMPLETO')
   const link = markers.some((marker) => marker.kind === 'LINK')
   let applied: Applied | null = null
   if (reserva) {
-    const companion = pareja ? (pareja.payload === '-' ? '' : pareja.payload.slice(0, 80)) : null
+    // Acompañante: el de la marca; si el modelo la olvidó pero el cliente dijo que viene con alguien,
+    // la cita es igual para dos (sin nombre del acompañante).
+    const companion = pareja && pairChoice !== 'alone'
+      ? (pareja.payload === '-' ? '' : pareja.payload.slice(0, 80))
+      : pairChoice === 'pair' ? '' : null
+    if ((companion !== null) !== Boolean(pareja) || payFull !== markers.some((marker) => marker.kind === 'COMPLETO') || transfer !== transferMarker) {
+      console.warn(`[autoreply] ${phone}: reserva ajustada a lo que dijo el cliente (pareja ${companion !== null}, completo ${payFull}, transferencia ${transfer})`)
+    }
     applied = await applyReserva(config, phone, reserva.payload, { transfer, companion, payFull })
   } else if (transfer) {
     // El mensaje lo compone entero el servidor: el texto del modelo en este paso es justo donde
