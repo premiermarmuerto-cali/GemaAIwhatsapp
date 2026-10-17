@@ -1,14 +1,14 @@
 import { LOCATION_LABEL } from '@/lib/clinic'
 import type { AgentKind, ChatSummary, Sender } from '@/lib/types'
 
-/** Moneda en la que se le cotiza a este cliente, según su país. */
+/** Moneda en la que se le cotiza a este cliente, según su país. Con Bold, todos pagan en pesos. */
 export function regionLabel(chat: Pick<ChatSummary, 'region'>) {
-  return chat.region === 'CO' ? 'COP · Colombia' : 'USD · Internacional'
+  return chat.region === 'CO' ? 'COP · Colombia' : 'COP · Internacional'
 }
 
-/** Métodos con los que puede pagar el anticipo. Debe coincidir con lib/config.ts → paymentFor. */
+/** Métodos con los que puede pagar la reserva. Debe coincidir con lib/config.ts → paymentFor. */
 export function paymentMethods(chat: Pick<ChatSummary, 'region'>) {
-  return chat.region === 'CO' ? 'Nequi · Bancolombia · Daviplata' : 'Binance · PayPal · Wise · ACH (DolarApp)'
+  return chat.region === 'CO' ? 'Bold (tarjeta · PSE · Nequi) · transferencia' : 'Bold (tarjeta de crédito internacional)'
 }
 
 /** Resumen de una línea de lo que Gema averiguó del prospecto. */
@@ -37,5 +37,5 @@ export const PREVIEW_PREFIX: Record<Sender, string> = {
 
 export const AGENT_LABEL: Record<AgentKind, string> = {
   help: 'Requiere asesor',
-  payment: 'Anticipo por validar',
+  payment: 'Pago por validar',
 }

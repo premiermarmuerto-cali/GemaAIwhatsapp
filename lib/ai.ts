@@ -47,12 +47,29 @@ async function complete(messages: ChatMessage[], maxTokens: number, temperature:
   return text
 }
 
+const ENGLISH_WORDS = /\b(the|you|your|is|are|how|what|can|i|my|hi|hello|please|thanks|want|would|like|book|price|deposit|pay)\b/gi
+const SPANISH_WORDS = /\b(el|la|los|las|que|de|y|en|hola|quiero|gracias|por|para|c[oó]mo|precio|cu[aá]nto|puedo|una|mi)\b/gi
+
+/** El último mensaje del cliente está en inglés (conteo simple de palabras frecuentes). */
+function looksEnglish(text: string): boolean {
+  const english = text.match(ENGLISH_WORDS)?.length ?? 0
+  const spanish = text.match(SPANISH_WORDS)?.length ?? 0
+  return english >= 2 && english > spanish
+}
+
 /** Respuesta de Gema al último mensaje del cliente. null si el último mensaje no es del cliente. */
 export async function generateReply(systemPrompt: string, history: Message[]): Promise<string | null> {
-  if (history.at(-1)?.sender !== 'user') return null
+  const last = history.at(-1)
+  if (last?.sender !== 'user') return null
+  // Con todo el prompt en español, el modelo contestaba en español a clientes que escriben en
+  // inglés pese a la regla. Un recordatorio después del historial sí lo corrige.
+  const language: ChatMessage[] = looksEnglish(last.text)
+    ? [{ role: 'system', content: "The customer's last message is in English: write your whole reply in English. Markers like [[RESERVA: ...]] stay exactly as specified." }]
+    : []
   return complete([
     { role: 'system', content: systemPrompt },
     ...history.map((message): ChatMessage => ({ role: message.sender === 'user' ? 'user' : 'assistant', content: modelText(message) })),
+    ...language,
   ], MAX_OUTPUT_TOKENS, 0.6)
 }
 

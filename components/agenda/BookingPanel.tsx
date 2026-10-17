@@ -51,7 +51,7 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate }: P
         <div><dt>Sede</dt><dd><PinIcon /> {LOCATION_LABEL[booking.location]}{booking.people > 1
           ? ` · cabinas ${booking.cabin}–${booking.cabin + booking.people - 1}`
           : (booking.cabin > 1) && ` · cabina ${booking.cabin}`}</dd></div>
-        {booking.price && <div><dt>Valor</dt><dd>{booking.price}{booking.deposit && <span className={styles.dim}> · anticipo {booking.deposit}</span>}</dd></div>}
+        {booking.price && <div><dt>Valor</dt><dd>{booking.price}{booking.deposit && <span className={styles.dim}> · {booking.paymentPlan === 'full' ? 'pago completo' : 'anticipo'} {booking.deposit}</span>}</dd></div>}
         {booking.phone && (
           <div>
             <dt>Cliente</dt>

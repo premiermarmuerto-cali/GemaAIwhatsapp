@@ -128,7 +128,7 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
             </fieldset>
 
             <fieldset className={styles.group}>
-              <legend>Horario de atención</legend>
+              <legend>Horario de agendamiento</legend>
               {config.hours.map((ranges, index) => (
                 <label key={index} className={styles.row} style={{ alignItems: 'center' }}>
                   <span className={styles.dayName}>{WEEKDAY_LABEL[index]}</span>
@@ -139,7 +139,7 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
                   />
                 </label>
               ))}
-              <small className={styles.hint}>Formato 10:00-20:00. Varias franjas separadas por coma, en orden y sin solaparse. Vacío = cerrado.</small>
+              <small className={styles.hint}>Primera y última hora a la que puede EMPEZAR una cita, por ejemplo 10:00-18:30 (la sesión puede terminar después). Varias franjas separadas por coma, en orden y sin solaparse. Vacío = cerrado.</small>
             </fieldset>
 
             <fieldset className={styles.group}>
@@ -179,8 +179,9 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
                 <small>Por defecto Gema cobra con el link de Bold. Estos datos solo se envían si el cliente pide transferir; en ese caso la cita la confirmas tú al validar el comprobante.</small>
               </label>
               <label className={styles.field}>
-                <span><span className="badge badge-region">Resto</span> Internacional · USD</span>
+                <span><span className="badge badge-region">Resto</span> Internacional · otros medios (opcional)</span>
                 <textarea rows={3} maxLength={1500} placeholder="Binance Pay ID, enlace de PayPal, datos de Wise o cuenta ACH de DolarApp" {...text('intlInstructions')} />
+                <small>Por defecto los clientes de fuera pagan con el link de Bold (tarjeta de crédito, en pesos). Esto solo se envía si piden otro medio.</small>
               </label>
               <div className={styles.row}>
                 {NUMBERS.map((item) => (
@@ -199,8 +200,36 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
             <label className={styles.field}>
               <span>Promoción vigente</span>
               <textarea rows={3} maxLength={1000} placeholder="Ej.: 2x1 en todas las sesiones hasta el 30 de noviembre: pagas una sesión y recibes dos. Las dos son para la misma persona y la segunda se agenda después de la primera." {...text('promo')} />
-              <small>Gema la menciona en su primera respuesta sobre cualquier servicio. Solo explica lo que esté escrito aquí: si preguntan una condición que no está, no la inventa. Déjalo vacío cuando termine la promoción.</small>
+              <small>Gema la menciona en su primera respuesta sobre un servicio que la tenga. Solo explica lo que esté escrito aquí: si preguntan una condición que no está, no la inventa.</small>
             </label>
+
+            <fieldset className={styles.group}>
+              <legend>2x1 de pareja</legend>
+              <div className={styles.row} style={{ flexWrap: 'wrap' }}>
+                {config.services.map((service) => (
+                  <label key={service.id} className={styles.row} style={{ alignItems: 'center', flex: '0 0 auto' }}>
+                    <input
+                      type="checkbox"
+                      checked={config.twoForOne.services.includes(service.id)}
+                      onChange={(event) => patch({
+                        twoForOne: {
+                          ...config.twoForOne,
+                          services: event.target.checked
+                            ? [...config.twoForOne.services, service.id]
+                            : config.twoForOne.services.filter((id) => id !== service.id),
+                        },
+                      })}
+                    />
+                    <span>{service.label || service.id}</span>
+                  </label>
+                ))}
+              </div>
+              <label className={styles.field} style={{ maxWidth: 220 }}>
+                <span>Última sesión incluida</span>
+                <input type="date" value={config.twoForOne.until} onChange={(event) => patch({ twoForOne: { ...config.twoForOne, until: event.target.value } })} />
+              </label>
+              <small className={styles.hint}>Dos personas a la misma hora pagan una sola sesión en los servicios marcados, para citas hasta esa fecha. En los demás, o después de la fecha, una pareja paga dos sesiones. Pasada la fecha, Gema deja de mencionar la promoción sola.</small>
+            </fieldset>
 
             <label className={styles.field}>
               <span>Preguntas frecuentes e indicaciones</span>
@@ -209,9 +238,6 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
 
             {!config.nequiInstructions && (
               <p className={styles.warning}>Sin datos de transferencia para Colombia: si un cliente pide transferir en vez de pagar con el link, Gema lo pasa a un asesor.</p>
-            )}
-            {!config.payLink && !config.intlInstructions && (
-              <p className={styles.warning}>Sin link ni datos internacionales, los clientes de fuera de Colombia pasan a un asesor para pagar.</p>
             )}
             {missingPrices.length > 0 && (
               <p className={styles.warning}>Sin precio: {missingPrices.map((service) => service.label || service.id).join(', ')}. Gema no los cotiza ni los agenda.</p>

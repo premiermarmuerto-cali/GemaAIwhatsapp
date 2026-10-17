@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { isClosed, occupancyOf, setClosed } from '@/lib/booking'
-import { dayKey, freeStarts, freeWindows, isDayKey, shortestService } from '@/lib/calendar'
+import { dayKey, freeStarts, isDayKey, startWindows } from '@/lib/calendar'
 import { isLocation } from '@/lib/clinic'
 import { getConfig, serviceById } from '@/lib/config'
 import { HttpError, jsonBody, route } from '@/lib/http'
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 
 /**
  * Huecos libres de una sede en un día. Con `service` devuelve los inicios exactos en los que
- * ese protocolo cabe; sin él, los rangos continuos de cabina libre (lo mismo que ve Gema).
+ * ese protocolo cabe; siempre, los rangos de horas de inicio libres (lo mismo que ve Gema).
  */
 export const GET = route(async (request: NextRequest) => {
   const params = request.nextUrl.searchParams
@@ -33,7 +33,7 @@ export const GET = route(async (request: NextRequest) => {
     location,
     closed: null,
     starts: service ? freeStarts(config, location, day, service.durationMin, occupancy, { people }) : [],
-    windows: freeWindows(config, location, day, occupancy, { minMinutes: shortestService(config) }),
+    windows: startWindows(config, location, day, occupancy, { people }),
   })
 })
 

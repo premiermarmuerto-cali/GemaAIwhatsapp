@@ -21,8 +21,8 @@ export const DEFAULT_ADDRESSES: Record<Location, string> = {
   chipichape: 'C.C. Chipichape, local 9-111',
 }
 
-/** Una cabina por sede mientras no se configure otra cosa. */
-export const DEFAULT_CABINS: Record<Location, number> = { unicentro: 1, chipichape: 1 }
+/** Premier atiende dos personas a la misma hora en cada sede (confirmado en octubre 2026). */
+export const DEFAULT_CABINS: Record<Location, number> = { unicentro: 2, chipichape: 2 }
 
 export function isLocation(value: unknown): value is Location {
   return typeof value === 'string' && (LOCATIONS as string[]).includes(value)
@@ -33,18 +33,17 @@ export const WEEKDAY_SHORT = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
 export const MONTH_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 
 /**
- * Horario por índice de día (0 = domingo). Cada franja es "HH:MM-HH:MM".
- * Horarios de AGENDAMIENTO confirmados por Premier (octubre 2026): lunes a jueves 10:00–20:30,
- * viernes 10:00–21:00, domingo 11:00–17:00. El sábado no se confirmó: se deja el horario anterior
- * hasta que lo digan.
+ * Horario de agendamiento por índice de día (0 = domingo). Cada franja es "primera–última hora de
+ * INICIO de una cita" (la sesión puede terminar después). Confirmado por Premier (16 oct 2026):
+ * lunes a jueves 10:00–18:30, viernes y sábado 10:00–20:00, domingo 10:00–17:00.
  */
 export const DEFAULT_HOURS: string[][] = [
-  ['11:00-17:00'],
-  ['10:00-20:30'],
-  ['10:00-20:30'],
-  ['10:00-20:30'],
-  ['10:00-20:30'],
-  ['10:00-21:00'],
+  ['10:00-17:00'],
+  ['10:00-18:30'],
+  ['10:00-18:30'],
+  ['10:00-18:30'],
+  ['10:00-18:30'],
+  ['10:00-20:00'],
   ['10:00-20:00'],
 ]
 

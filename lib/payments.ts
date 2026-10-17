@@ -51,8 +51,9 @@ export async function handleBoldPayment(event: BoldPayment): Promise<string> {
 
   const expected = Number(booking.deposit.replace(/[^\d]/g, '')) || 0
   if (expected && paid < expected) {
-    if (booking.phone) await requestAgent(booking.phone, `Bold reporta un pago de ${pesos(paid)}, menor al anticipo de ${booking.deposit}`, 'payment')
-    return 'monto menor al anticipo: pasa a un asesor'
+    const expectedText = booking.paymentPlan === 'full' ? 'pago completo' : 'anticipo'
+    if (booking.phone) await requestAgent(booking.phone, `Bold reporta un pago de ${pesos(paid)}, menor al ${expectedText} de ${booking.deposit}`, 'payment')
+    return `monto menor al ${expectedText}: pasa a un asesor`
   }
 
   const confirmed = await confirmPaidByBold(booking.id, { method: event.paymentMethod, paymentRef: event.paymentId })
@@ -62,7 +63,8 @@ export async function handleBoldPayment(event: BoldPayment): Promise<string> {
   const method = METHOD_LABEL[event.paymentMethod] ?? event.paymentMethod
   await notePayment(booking.phone, `Pago recibido · ${booking.name || booking.phone} · ${pesos(paid)} · ${method}`)
 
-  const text = `¡Recibimos tu anticipo de ${pesos(paid)}! 💛 Tu cita de *${serviceText(booking)}* quedó confirmada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}. Te esperamos.`
+  const what = booking.paymentPlan === 'full' ? 'el pago completo de tu sesión' : 'tu anticipo'
+  const text = `¡Recibimos ${what} (${pesos(paid)})! 💛 Tu cita de *${serviceText(booking)}* quedó confirmada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}. Te esperamos.`
   try {
     const waId = await sendWhatsAppText(booking.phone, text)
     await recordOutbound(booking.phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now() })

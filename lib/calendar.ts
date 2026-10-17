@@ -100,7 +100,11 @@ export function weekOf(day: string): string[] {
   return Array.from({ length: 7 }, (_, index) => addDays(monday, index))
 }
 
-/** Franjas de atención del día, en minutos. Vacío = cerrado. Recibe `hours` suelto para que el panel también pueda usarlo. */
+/**
+ * Franjas de agendamiento del día, en minutos: `from` = primera hora de inicio, `to` = última hora
+ * de inicio (la sesión puede terminar después). Vacío = cerrado. Recibe `hours` suelto para que el
+ * panel también pueda usarlo.
+ */
 export function openRanges(hours: string[][], day: string): Range[] {
   return (hours[weekdayOf(day)] ?? []).map((range) => {
     const [from, to] = range.split('-')
@@ -108,11 +112,11 @@ export function openRanges(hours: string[][], day: string): Range[] {
   })
 }
 
-/** Los inicios de slot de la grilla que caben dentro de las franjas de atención. */
+/** Los inicios de la grilla dentro de las franjas de agendamiento, incluida la última hora de inicio. */
 export function gridStarts(config: AppConfig, day: string): number[] {
   const starts: number[] = []
   for (const range of openRanges(config.hours, day)) {
-    for (let at = range.from; at + config.slotMinutes <= range.to; at += config.slotMinutes) starts.push(at)
+    for (let at = range.from; at <= range.to; at += config.slotMinutes) starts.push(at)
   }
   return starts
 }
@@ -124,14 +128,6 @@ export function slotsOf(config: AppConfig, startMin: number, durationMin: number
 }
 
 export type Occupancy = Record<string, string>
-
-/** Cuántas cabinas están tomadas en ese minuto de inicio. */
-function takenAt(occupancy: Occupancy, cabins: number, startMin: number): number {
-  const clock = toClock(startMin)
-  let taken = 0
-  for (let cabin = 1; cabin <= cabins; cabin++) if (occupancy[`${clock}#${cabin}`]) taken++
-  return taken
-}
 
 /**
  * Inicios en los que el servicio cabe completo en UNA cabina libre (o en `people` cabinas seguidas,
@@ -148,12 +144,10 @@ export function freeStarts(
 ): string[] {
   const cabins = config.cabins[location] ?? 1
   const earliest = now + config.leadTimeHours * 3_600_000
-  const open = openRanges(config.hours, day)
   const out: string[] = []
 
+  // gridStarts ya respeta la primera y la última hora de inicio; la sesión puede terminar después.
   for (const startMin of gridStarts(config, day)) {
-    // La sesión tiene que terminar dentro de la misma franja de atención.
-    if (!open.some((range) => startMin >= range.from && startMin + durationMin <= range.to)) continue
     if (timestampOf(day, toClock(startMin)) < earliest) continue
     const needed = slotsOf(config, startMin, durationMin)
     const freeCabin = (cabin: number) => needed.every((clock) => !occupancy[`${clock}#${cabin}`])
@@ -165,41 +159,38 @@ export function freeStarts(
 }
 
 /**
- * Huecos continuos de cabina libre, para contárselos al cliente ("mañana tengo de 10 a 13").
- * Con varias cabinas la ventana es la unión, así que puede ser algo más optimista que
- * `freeStarts`; no importa: reservar vuelve a validar y, si se cayó, se ofrecen alternativas.
- * Con `people` = 2 cuenta solo los minutos con al menos dos cabinas libres (huecos de pareja).
+ * Horas de INICIO libres agrupadas en rangos, para contárselas al cliente ("el sábado de 10:00 a
+ * 13:30"). Se calculan con la duración más larga del catálogo, así cualquier hora dentro de un rango
+ * sirve para cualquier servicio: el modelo no tiene que restar duraciones. Es exacto (sale de
+ * `freeStarts`); para un servicio más corto puede haber algún inicio extra que no se muestra.
  */
-export function freeWindows(
+export function startWindows(
   config: AppConfig,
   location: Location,
   day: string,
   occupancy: Occupancy,
-  { now = Date.now(), minMinutes = 0, people = 1 } = {},
+  { now = Date.now(), people = 1, durationMin = longestService(config) } = {},
 ): FreeWindow[] {
-  const cabins = config.cabins[location] ?? 1
-  if (people > cabins) return []
-  const earliest = now + config.leadTimeHours * 3_600_000
-  const slot = config.slotMinutes
+  if (people > (config.cabins[location] ?? 1)) return []
+  const starts = freeStarts(config, location, day, durationMin, occupancy, { now, people }).map(toMinutes)
   const windows: FreeWindow[] = []
-
-  for (const range of openRanges(config.hours, day)) {
-    let open: number | null = null
-    for (let at = range.from; at + slot <= range.to; at += slot) {
-      const usable = cabins - takenAt(occupancy, cabins, at) >= people && timestampOf(day, toClock(at)) >= earliest
-      if (usable) {
-        if (open === null) open = at
-        continue
-      }
-      if (open !== null) windows.push({ day, from: toClock(open), to: toClock(at), minutes: at - open })
-      open = null
+  for (const start of starts) {
+    const last = windows.at(-1)
+    if (last && start - toMinutes(last.to) === config.slotMinutes) {
+      last.to = toClock(start)
+      last.minutes = start - toMinutes(last.from)
+    } else {
+      windows.push({ day, from: toClock(start), to: toClock(start), minutes: 0 })
     }
-    if (open !== null) windows.push({ day, from: toClock(open), to: toClock(range.to), minutes: range.to - open })
   }
-  return windows.filter((window) => window.minutes >= minMinutes)
+  return windows
 }
 
 /** La duración más corta del catálogo: por debajo de eso un hueco no sirve para nada. */
 export function shortestService(config: AppConfig): number {
   return Math.min(...config.services.map((service) => service.durationMin))
+}
+
+export function longestService(config: AppConfig): number {
+  return Math.max(...config.services.map((service) => service.durationMin))
 }

@@ -31,6 +31,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   holdMinutes: 120,
   faq: '',
   promo: '',
+  twoForOne: { services: [], until: '' },
 }
 
 const RANGE = /^([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/
@@ -151,6 +152,16 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
   const services = parseServices(body.services)
   if (!Array.isArray(services)) return services
 
+  // Opcional, como promo. Solo servicios que existen; la fecha es la última sesión incluida.
+  const rawTwoForOne = (body.twoForOne ?? {}) as Record<string, unknown>
+  const twoForOneUntil = String(rawTwoForOne.until ?? '').trim()
+  if (twoForOneUntil && !/^\d{4}-\d{2}-\d{2}$/.test(twoForOneUntil)) return { error: 'La fecha del 2x1 debe tener el formato AAAA-MM-DD.' }
+  const known = new Set(services.map((service) => service.id))
+  const twoForOne = {
+    services: Array.isArray(rawTwoForOne.services) ? rawTwoForOne.services.map(String).filter((id) => known.has(id)) : [],
+    until: twoForOneUntil,
+  }
+
   const hours = parseHours(body.hours)
   if (!Array.isArray(hours)) return hours
 
@@ -183,6 +194,7 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
       systemPrompt,
       faq,
       promo,
+      twoForOne,
       payLink,
       nequiInstructions,
       intlInstructions,
@@ -226,29 +238,65 @@ export function resolveService(config: AppConfig, raw: string): Service | undefi
  */
 export function paymentFor(config: AppConfig, region: Region) {
   const colombia = region === 'CO'
-  /** En Colombia, con Bold configurado, cada reserva genera su propio link (ver lib/bold.ts). */
-  const bold = colombia && Boolean(process.env.BOLD_API_KEY)
+  /**
+   * Con Bold configurado, cada reserva genera su propio link (ver lib/bold.ts), también para
+   * clientes de fuera: Bold acepta tarjetas de crédito internacionales y cobra en pesos.
+   */
+  const bold = Boolean(process.env.BOLD_API_KEY)
+  const instructions = colombia ? config.nequiInstructions : config.intlInstructions
   return {
-    currency: colombia ? 'pesos colombianos (COP)' : 'dólares estadounidenses (USD)',
+    currency: colombia || bold ? 'pesos colombianos (COP)' : 'dólares estadounidenses (USD)',
     methods: bold
-      ? 'link de pago de Bold (tarjeta, PSE o Nequi) o, si el cliente lo prefiere, transferencia directa a Premier (Nequi o llave)'
+      ? colombia
+        ? 'link de pago de Bold (tarjeta, PSE o Nequi) o, si el cliente lo prefiere, transferencia directa a Premier (Nequi o llave)'
+        : `link de pago de Bold con tarjeta de crédito internacional (se cobra en pesos colombianos y su banco hace la conversión)${instructions ? ' o, si lo prefiere, los medios internacionales de Premier' : ''}`
       : colombia
         ? 'Nequi, Bancolombia o Daviplata'
         : 'Binance (USDT), PayPal, transferencia Wise o ACH vía DolarApp',
-    instructions: colombia ? config.nequiInstructions : config.intlInstructions,
+    instructions,
     bold,
     get configured() { return Boolean(config.payLink || this.instructions || this.bold) },
   }
 }
 
+/** Número a partir de un precio escrito ("$130.000", "130000"). 0 si no tiene un número legible. */
+export function amountOf(price: string): number {
+  const digits = price.replace(/[^\d]/g, '')
+  return digits ? Number(digits) : 0
+}
+
+export function pesos(amount: number): string {
+  return `$${amount.toLocaleString('es-CO')}`
+}
+
 /** Anticipo como número a partir del precio configurado. 0 si el precio no tiene un número legible. */
 export function depositAmount(config: AppConfig, price: string): number {
-  const digits = price.replace(/[^\d]/g, '')
-  return digits ? Math.round((Number(digits) * config.depositPercent) / 100) : 0
+  return Math.round((amountOf(price) * config.depositPercent) / 100)
 }
 
 /** Anticipo en texto a partir del precio configurado. Vacío si el precio no tiene un número legible. */
 export function depositOf(config: AppConfig, price: string): string {
   const amount = depositAmount(config, price)
-  return amount ? `$${amount.toLocaleString('es-CO')}` : ''
+  return amount ? pesos(amount) : ''
+}
+
+/** El 2x1 sigue vigente hoy (o no tiene fecha de fin). */
+export function twoForOneLive(config: AppConfig, today: string): boolean {
+  return config.twoForOne.services.length > 0 && (!config.twoForOne.until || today <= config.twoForOne.until)
+}
+
+/** Dos personas a la misma hora pagan una sola sesión: el servicio entra en el 2x1 y la sesión es antes del fin. */
+export function twoForOneApplies(config: AppConfig, serviceId: string, day: string): boolean {
+  return config.twoForOne.services.includes(serviceId) && (!config.twoForOne.until || day <= config.twoForOne.until)
+}
+
+/**
+ * Valor total de una cita: una sesión por persona, salvo pareja con 2x1 (una sola sesión).
+ * Lo calcula el servidor, nunca el modelo.
+ */
+export function bookingPrice(config: AppConfig, service: Service, people: number, day: string): string {
+  const sessions = people > 1 && !twoForOneApplies(config, service.id, day) ? people : 1
+  if (sessions === 1) return service.price
+  const amount = amountOf(service.price)
+  return amount ? String(amount * sessions) : ''
 }

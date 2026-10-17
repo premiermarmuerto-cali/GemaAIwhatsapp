@@ -7,10 +7,10 @@
  * [[RESERVA]]. El servidor es quien aparta la cabina y quien pega el link de pago, así que
  * el modelo no puede inventarse ni un horario ni un cobro.
  */
-import { addDays, clock12, dayKey, dayLabel, freeWindows, nextHumanWindow, shortestService, type Occupancy } from './calendar'
+import { addDays, clock12, dayKey, dayLabel, nextHumanWindow, startWindows, type Occupancy } from './calendar'
 import { LOCATION_LABEL, LOCATIONS, WEEKDAY_LABEL } from './clinic'
-import { depositOf, paymentFor } from './config'
-import { liveBookingOf, serviceText, sweepExpiredHolds } from './booking'
+import { amountOf, bookingPrice, depositOf, paymentFor, pesos, twoForOneApplies } from './config'
+import { chargeText, liveBookingOf, serviceText, sweepExpiredHolds } from './booking'
 import { keys, redis, toHash } from './redis'
 import { formatPhone, countryOf, regionOf } from './phone'
 import type { AppConfig, Booking, Lead, Location } from './types'
@@ -32,24 +32,45 @@ function unconfigured(label: string) {
   return `${label}: NO CONFIGURADO — no des ningún valor; si el cliente lo pregunta, pásalo a un asesor`
 }
 
-function catalogBlock(config: AppConfig): string {
+/**
+ * Precio, anticipo y precio de pareja ya calculados por el servidor: el modelo no hace cuentas.
+ * Con el 2x1 vigente, cada servicio dice si entra o no.
+ */
+function catalogBlock(config: AppConfig, today: string): string {
+  const live = promoLive(config, today)
   return config.services.map((service) => {
-    const price = service.price
-      ? `${service.price} (anticipo ${depositOf(config, service.price)})`
-      : 'precio NO CONFIGURADO: no lo cotices, pasa a un asesor'
-    return `- \`${service.id}\` · *${service.label}* · ${service.durationMin} min · ${price}${service.summary ? ` · ${service.summary}` : ''}`
+    const amount = amountOf(service.price)
+    if (!amount) {
+      return `- \`${service.id}\` · *${service.label}* · ${service.durationMin} min · precio NO CONFIGURADO: no lo cotices, pasa a un asesor`
+    }
+    const pair = bookingPrice(config, service, 2, today)
+    const pairText = live && twoForOneApplies(config, service.id, today)
+      ? `2x1 de pareja: SÍ (dos personas pagan ${pesos(amount)}, anticipo ${depositOf(config, pair)})`
+      : `${live ? 'SIN 2x1; ' : ''}pareja (2 personas a la vez): ${pesos(amountOf(pair))}, anticipo ${depositOf(config, pair)}`
+    return `- \`${service.id}\` · *${service.label}* · ${service.durationMin} min · ${pesos(amount)} (anticipo ${depositOf(config, service.price)}) · ${pairText}${service.summary ? ` · ${service.summary}` : ''}`
   }).join('\n')
+}
+
+/** La promoción se muestra si tiene texto y no pasó la fecha del 2x1: se apaga sola al vencer. */
+function promoLive(config: AppConfig, today: string): boolean {
+  return Boolean(config.promo.trim()) && (!config.twoForOne.until || today <= config.twoForOne.until)
 }
 
 /**
  * La promoción la escribe el operador en el panel. Gema solo puede contar lo que dice ese texto:
- * las condiciones que no estén escritas (vigencia, si se puede compartir, cómo se agenda la segunda
- * sesión…) no las inventa, porque un error ahí es un compromiso comercial con el cliente.
+ * las condiciones que no estén escritas no las inventa, porque un error ahí es un compromiso
+ * comercial con el cliente. Qué servicios entran y hasta cuándo sale de config.twoForOne, que es
+ * lo mismo con lo que el servidor cobra.
  */
-function promoBlock(config: AppConfig): string {
-  if (!config.promo.trim()) {
-    return '- No hay ninguna promoción cargada: no ofrezcas descuentos ni 2x1. Si el cliente pregunta por una promoción (por ejemplo, la de un anuncio), no la confirmes ni la niegues: dile que una asesora se la confirma y usa [[ASESOR]].'
+function promoBlock(config: AppConfig, today: string): string {
+  if (!promoLive(config, today)) {
+    return '- No hay ninguna promoción vigente: no ofrezcas descuentos ni 2x1. Si el cliente pregunta por una promoción (por ejemplo, la de un anuncio), no la confirmes ni la niegues: dile que una asesora se la confirma y usa [[ASESOR]].'
   }
+  const included = config.services.filter((service) => config.twoForOne.services.includes(service.id))
+  const excluded = config.services.filter((service) => !config.twoForOne.services.includes(service.id))
+  const scope = included.length
+    ? `- El 2x1 aplica a: ${included.map((service) => service.label).join(', ')}.${excluded.length ? ` NO aplica a: ${excluded.map((service) => service.label).join(', ')}.` : ''}${config.twoForOne.until ? ` Solo para sesiones hasta el ${dayLabel(config.twoForOne.until)} de ${config.twoForOne.until.slice(0, 4)} inclusive: si la cita es después, ya no aplica.` : ''}`
+    : ''
   // Venir acompañado a la misma hora exige dos cabinas: se dice aquí, donde el modelo mira la promo,
   // porque la nota de la agenda sola no bastó (en una prueba ofreció pareja en la sede de 1 cabina).
   const pairSedes = LOCATIONS.filter((location) => (config.cabins[location] ?? 1) >= 2)
@@ -60,11 +81,12 @@ function promoBlock(config: AppConfig): string {
   return [
     config.promo.trim(),
     '',
-    '- Menciónala en tu primera respuesta sobre cualquier servicio, junto al precio.',
+    scope,
+    '- Menciónala en tu primera respuesta sobre un servicio que la tenga, junto al precio. Si preguntan por un servicio sin 2x1, no se la ofrezcas para ese servicio.',
     pairLine,
-    '- Explícala solo con lo que dice arriba, sin cambiarle condiciones ni añadir otras: nunca digas "por tiempo limitado", "últimos cupos" ni una fecha que no esté escrita. Si preguntan algo que no está ahí (hasta cuándo es, si se puede compartir…), dile que ese detalle se lo confirma una asesora y usa [[ASESOR]].',
-    '- El precio y el anticipo del catálogo no cambian por la promoción, salvo que el texto de arriba diga otra cosa. Si vienen dos personas, es UNA cita con UN anticipo (el de una sesión): nunca digas "por persona" ni "por cada uno" al hablar de precio o anticipo.',
-  ].join('\n')
+    '- Explícala solo con lo que dice arriba, sin cambiarle condiciones ni añadir otras: nunca digas "por tiempo limitado", "últimos cupos" ni una fecha que no esté escrita. Si preguntan algo que no está ahí, dile que ese detalle se lo confirma una asesora y usa [[ASESOR]].',
+    '- Una pareja es UNA cita: con 2x1 paga el precio y el anticipo de una sesión; sin 2x1, los de dos sesiones (el catálogo trae ambos montos). Nunca digas "por persona" ni "por cada uno" al hablar de precio o anticipo.',
+  ].filter(Boolean).join('\n')
 }
 
 /** Cuándo atiende una persona, según el horario de escalación (no el de agendamiento). */
@@ -77,12 +99,13 @@ function humanHoursLine(): string {
 
 /**
  * Horario de agendamiento en lenguaje natural, sacado de config.hours para que nunca se
- * desincronice del calendario: "lunes a jueves 10:00 a.m.–8:30 p.m.; viernes …".
+ * desincronice del calendario: "lunes a jueves de 10:00 a.m. a 6:30 p.m.; viernes …".
+ * Cada franja es primera–última hora de inicio de una cita.
  */
 function hoursSummary(config: AppConfig): string {
   const order = [1, 2, 3, 4, 5, 6, 0]
   const text = (index: number) => config.hours[index]?.length
-    ? config.hours[index].map((range) => range.split('-').map(clock12).join('–')).join(' y ')
+    ? config.hours[index].map((range) => `de ${range.split('-').map(clock12).join(' a ')}`).join(' y ')
     : 'cerrado'
   const groups: Array<{ from: number; to: number; text: string }> = []
   for (const index of order) {
@@ -108,7 +131,7 @@ function paymentBlock(config: AppConfig, phone: string): string {
   const lines = [
     `- País del cliente: ${country === 'CO' ? 'Colombia' : country === 'INTL' ? 'internacional' : country} (${formatPhone(phone)}).`,
     `- Moneda: ${payment.currency}. Cotiza siempre en esta moneda, nunca en otra.`,
-    `- Métodos aceptados para el anticipo: ${payment.methods}. No ofrezcas otros.`,
+    `- Métodos aceptados para pagar la reserva: ${payment.methods}. No ofrezcas otros.`,
   ]
   lines.push(payment.configured
     ? '- Los datos concretos para pagar (número, titular o link) los añade el sistema al final de tu mensaje cuando la reserva queda hecha. Tú solo anuncia que ahí van; NO los escribas ni te los inventes.'
@@ -122,25 +145,26 @@ function paymentBlock(config: AppConfig, phone: string): string {
  * Antes ambas instrucciones convivían sin distinguirse y el modelo se contradecía.
  */
 function cobroBlock(config: AppConfig, phone: string): string {
+  const colombia = regionOf(phone) === 'CO'
   const payment = paymentFor(config, regionOf(phone))
   const common = [
-    `- Reservar exige un anticipo del ${config.depositPercent}% del valor del servicio; el resto se paga en sede.`,
+    `- Para reservar, el cliente elige entre pagar el anticipo del ${config.depositPercent}% (el resto lo paga en sede) o el pago completo de la sesión (no paga nada en sede). Si no lo ha dicho, pregúntaselo antes de reservar, con los dos montos del catálogo. Si elige el pago completo, añade [[COMPLETO]] junto con [[RESERVA]]; si elige el anticipo, no añadas nada.`,
     `- El horario queda apartado ${config.holdMinutes} minutos. Si no se paga en ese tiempo, se libera solo. Dilo con amabilidad, no como amenaza.`,
     '- Los métodos y la moneda son los de "Cobro de esta conversación", arriba. No ofrezcas ningún otro.',
-    '- No escribas el monto del anticipo ni los datos de pago en el mensaje de la reserva: el sistema los añade al final. Nunca digas "aquí va el link" o "te envío los datos" sin la marca que corresponde: sin la marca no se envía nada.',
+    '- No escribas el monto ni los datos de pago en el mensaje de la reserva: el sistema los añade al final. Nunca digas "aquí va el link" o "te envío los datos" sin la marca que corresponde: sin la marca no se envía nada.',
   ]
   const receipt = [
     '- Si dice que ya transfirió y no ha enviado comprobante, pídele la captura.',
-    '- Cuando te envíe el comprobante, agradécele, dile que el equipo lo valida y le confirma la cita en breve, y termina con la marca [[PAGO: plataforma y monto]], por ejemplo [[PAGO: Nequi $45.000]]. Usa "no visible" si no se ve el monto. Nunca digas que el pago ya fue recibido ni que el comprobante es válido.',
+    `- Cuando te envíe el comprobante, agradécele, dile que una asesora lo revisa y le confirma la cita (${humanHoursLine()}), y termina con la marca [[PAGO: plataforma y monto]], por ejemplo [[PAGO: Nequi $45.000]]. Usa "no visible" si no se ve el monto. Nunca digas que el pago ya fue recibido ni que el comprobante es válido.`,
   ]
   if (!payment.bold) {
     return [...common, '- La cita queda confirmada cuando el equipo valida el comprobante.', ...receipt].join('\n')
   }
   return [
     ...common,
-    '- Por defecto el anticipo se paga con el link de Bold que el sistema añade al reservar (tarjeta, PSE o Nequi). Con ese link la cita se confirma sola cuando Bold confirma el pago y al cliente le llega aquí la confirmación: no le pidas comprobante ni le digas que el equipo lo valida. Si dice que ya pagó con el link, dile que apenas Bold lo confirme le llega aquí la confirmación.',
+    `- Por defecto se paga con el link de Bold que el sistema añade al reservar (${colombia ? 'tarjeta, PSE o Nequi' : 'tarjeta de crédito internacional; se cobra en pesos colombianos y su banco hace la conversión'}). Con ese link la cita se confirma sola cuando Bold confirma el pago y al cliente le llega aquí la confirmación: no le pidas comprobante ni le digas que el equipo lo valida. Si dice que ya pagó con el link, dile que apenas Bold lo confirme le llega aquí la confirmación.`,
     '- Si pide el link otra vez o dice que lo perdió, usa la marca [[LINK]]: el sistema lo vuelve a enviar.',
-    '- Solo si el cliente prefiere transferir directo a la cuenta de Premier (Nequi o llave), usa la marca [[TRANSFERENCIA]]: el sistema añade los datos de transferencia. Si lo dice antes de reservar, ponla junto con [[RESERVA]] en el mismo mensaje y el sistema enviará esos datos en vez del link. Por transferencia la cita la confirma el equipo al validar el comprobante:',
+    `- Solo si el cliente prefiere ${colombia ? 'transferir directo a la cuenta de Premier (Nequi o llave)' : 'pagar por otro medio que no sea tarjeta'}, usa la marca [[TRANSFERENCIA]]: el sistema añade los datos para pagar. Si lo dice antes de reservar, ponla junto con [[RESERVA]] en el mismo mensaje y el sistema enviará esos datos en vez del link. Por transferencia la cita la confirma una asesora al revisar el comprobante:`,
     ...receipt,
   ].join('\n')
 }
@@ -149,7 +173,6 @@ function cobroBlock(config: AppConfig, phone: string): string {
 export async function buildAgendaBlock(config: AppConfig, now = Date.now()): Promise<string> {
   const today = dayKey(now)
   const days = Array.from({ length: Math.min(PROMPT_DAYS, config.horizonDays) }, (_, index) => addDays(today, index))
-  const minMinutes = shortestService(config)
 
   // Esto corre en el camino crítico de cada respuesta de WhatsApp: los 15 días × 2 sedes salen en
   // UNA sola petición a Upstash (pipeline) en vez de ~45, después de liberar los apartados vencidos.
@@ -162,7 +185,7 @@ export async function buildAgendaBlock(config: AppConfig, now = Date.now()): Pro
   const occupancies = LOCATIONS.map((_, locationIndex) => days.map((_, dayIndex) =>
     (toHash(rows[days.length + locationIndex * days.length + dayIndex]) ?? {}) as Occupancy))
 
-  const ranges = (windows: Array<{ from: string; to: string }>) => windows.map((window) => `${window.from}–${window.to}`).join(', ')
+  const ranges = (windows: Array<{ from: string; to: string }>) => windows.map((window) => (window.from === window.to ? window.from : `${window.from}–${window.to}`)).join(', ')
 
   return LOCATIONS.map((location, locationIndex) => {
     // Pareja = dos cabinas libres a la vez. Con una sola cabina en la sede no hay huecos de pareja.
@@ -171,9 +194,9 @@ export async function buildAgendaBlock(config: AppConfig, now = Date.now()): Pro
       const closed = closedFlags[dayIndex]
       if (closed) return `  - ${dayLabel(day, { short: true })}: cerrado (${closed})`
       const occupancy = occupancies[locationIndex][dayIndex]
-      const windows = freeWindows(config, location, day, occupancy, { now, minMinutes })
+      const windows = startWindows(config, location, day, occupancy, { now })
       const free = windows.length ? ranges(windows) : 'sin horarios libres'
-      const pairWindows = pairs ? freeWindows(config, location, day, occupancy, { now, minMinutes, people: 2 }) : []
+      const pairWindows = pairs ? startWindows(config, location, day, occupancy, { now, people: 2 }) : []
       const pairText = pairs && windows.length ? ` · parejas: ${pairWindows.length ? ranges(pairWindows) : 'sin horarios'}` : ''
       return `  - ${dayLabel(day, { short: true })}${day === today ? ' (hoy)' : ''}: ${free}${pairText}`
     })
@@ -193,7 +216,7 @@ function bookingBlock(booking: Booking | null): string {
     ? 'ya confirmada (el anticipo está pagado)'
     : booking.paidAt
       ? 'apartada: dice que ya transfirió y el equipo está validando el comprobante'
-      : 'apartada, esperando el pago del anticipo'
+      : `apartada, esperando ${chargeText(booking)} (${booking.deposit})`
   return [
     `El cliente YA tiene una cita ${state}:`,
     `- ${serviceText(booking)} · ${LOCATION_LABEL[booking.location]} · ${dayLabel(booking.day)} a las ${booking.start}`,
@@ -213,20 +236,21 @@ function leadBlock(lead: Lead): string {
 
 /** System prompt final: voz de marca + hechos del negocio + agenda real + reglas duras. */
 export function buildSystemPrompt(config: AppConfig, phone: string, context: PromptContext): string {
+  const today = dayKey()
   return `${config.systemPrompt}
 
 ## Catálogo
-${catalogBlock(config)}
+${catalogBlock(config, today)}
 
 ## Promoción vigente
-${promoBlock(config)}
+${promoBlock(config, today)}
 
 ## Sedes
 ${locationsBlock(config)}
 
 ## Horario
-- Horario de agendamiento de las sedes: ${hoursSummary(config)}
-- Ese es el horario que das si preguntan a qué hora atienden o pueden asistir.
+- Horario de citas de las sedes (primera y última hora a la que puede EMPEZAR una cita): ${hoursSummary(config)}
+- Si preguntan a qué hora atienden o pueden asistir, dilo como primera y última cita, por ejemplo: "de lunes a jueves la primera cita es a las 10:00 a.m. y la última a las 6:30 p.m.". No digas "atendemos de 10 a 6:30": la sesión de la última cita termina después.
 - Tú atiendes por WhatsApp las 24 horas, todos los días, aunque la clínica esté cerrada: responde con normalidad a cualquier hora y agenda para el próximo horario disponible. Nunca digas que estás fuera de horario.
 
 ## Cobro de esta conversación
@@ -237,22 +261,28 @@ Usa SIEMPRE ${dayKey().slice(0, 4)} como año en las fechas que escribas en [[RE
 un año distinto, aunque tu memoria de entrenamiento sugiera otro: hoy es exactamente ${dayKey()}.
 ${context.agenda}
 
-Cada rango es cabina libre continua. Para ofrecer una hora, la sesión completa tiene que caber
-dentro de un rango: una limpieza de 60 min dentro de "10:00–13:00" puede empezar a las 10:00,
-10:15… hasta las 12:00, nunca a las 12:30. No ofrezcas nada fuera de estos rangos, ni "cualquier
-hora de la mañana": siempre dos o tres horas concretas. Se agenda con al menos
+Cada rango es de horas de INICIO libres, en pasos de ${config.slotMinutes} min: cualquier hora dentro
+del rango, incluidos los extremos, sirve para cualquier servicio del catálogo ("10:00–13:30" =
+puede empezar a las 10:00, 10:15… hasta las 13:30). La última hora del rango SÍ está disponible
+aunque la sesión termine después: si el rango es "10:00–18:30" y piden las 6:30 p.m., esa hora
+se puede agendar; no la niegues ni ofrezcas otra. No ofrezcas nada fuera de estos rangos, ni
+"cualquier hora de la mañana": siempre dos o tres horas concretas. Se agenda con al menos
 ${config.leadTimeHours} h de antelación y hasta ${config.horizonDays} días adelante.
 Si vienen dos personas juntas (pareja), cada una va en su cabina a la misma hora: ofrece SOLO
-horas que quepan dentro de los rangos de "parejas" de esa sede. Una sede marcada "aquí NO se
-agendan parejas" no tiene horarios para dos personas: ofrécele la otra sede; si ninguna sede
-tiene rangos de "parejas", dile que una asesora le coordina la cita y usa [[ASESOR]].
+horas de los rangos de "parejas" de esa sede. Una sede marcada "aquí NO se agendan parejas" no
+tiene horarios para dos personas: ofrécele la otra sede; si ninguna sede tiene rangos de
+"parejas", dile que una asesora le coordina la cita y usa [[ASESOR]].
+Si el cliente pide un día y una hora concretos y esa hora está dentro de un rango de ese día (para
+dos personas, de "parejas"), la respuesta es SÍ: díselo y sigue con la reserva (nombre y forma de
+pago). El sistema vuelve a comprobar el cupo al reservar y, si se ocupó, ofrece otras horas solo.
+Nunca digas que una hora "no está disponible" si está dentro de un rango.
 
 ## Estado de este cliente
 ${bookingBlock(context.booking)}
 ${leadBlock(context.lead)}
 
 ## Cómo escribes
-- Responde en el idioma en que escribe el cliente.
+- Responde en el idioma en que escribe el cliente: si escribe en inglés, toda tu respuesta va en inglés, aunque estas instrucciones estén en español.
 - Cada respuesta es UN solo mensaje de WhatsApp, de máximo 3 o 4 frases: cada envío cuesta, así que reúne todo en uno.
 - Para resaltar usa *asteriscos*. Nunca Markdown con #, ni listas numeradas, ni enlaces en formato [texto](url).
 - Las horas de la disponibilidad están en formato 24h (ej. 14:00) solo para que tú las compares
@@ -274,9 +304,10 @@ ${leadBlock(context.lead)}
 2. Si no sabe qué elegir o pide información general, pregúntale qué le preocupa de su piel (acné, manchas, poros, líneas de expresión, resequedad), una pregunta por mensaje, y recomiéndale UN protocolo del catálogo con su precio y la promoción vigente si hay.
 3. Pregunta en qué sede le queda mejor y ofrécele dos o tres horarios concretos de los rangos libres.
 4. Cuando acepte un horario, necesitas su nombre completo. Si no lo tienes, pídelo antes de reservar, y mientras tanto no digas "te agendo" ni des la cita por hecha: todavía no lo está. Si viene en pareja, pide también el nombre de su acompañante.
-5. Con nombre, servicio, sede, día y hora, escribe el mensaje de la regla de abajo y cierra con la marca [[RESERVA]] (más [[PAREJA]] si vienen dos personas, y [[TRANSFERENCIA]] si ya dijo que prefiere transferir).
+5. Pregúntale si prefiere pagar el anticipo o la sesión completa, con los dos montos (puedes hacerlo en el mismo mensaje en que pides el nombre).
+6. Con nombre, servicio, sede, día, hora y forma de pago, escribe el mensaje de la regla de abajo y cierra con la marca [[RESERVA]] (más [[PAREJA]] si vienen dos personas, [[COMPLETO]] si paga la sesión completa, y [[TRANSFERENCIA]] si ya dijo que prefiere transferir).
 
-## Cobro del anticipo
+## Cobro de la reserva
 ${cobroBlock(config, phone)}
 
 ## Marcas (el cliente nunca las ve)
@@ -288,11 +319,13 @@ Van siempre al final del mensaje, después del texto.
 
 - \`[[PAREJA: nombre del acompañante]]\` — va junto con [[RESERVA]] cuando la cita es para dos personas a la misma hora y con el mismo servicio (una cita, dos cabinas). En [[RESERVA]] va el nombre de quien escribe; aquí el de su acompañante, o \`-\` si no lo dio. Sin esta marca el sistema aparta una sola cabina.
 
+- \`[[COMPLETO]]\` — va junto con [[RESERVA]] cuando el cliente eligió pagar la sesión completa en vez del anticipo. El sistema cobra el valor total. Sin esta marca se cobra el anticipo.
+
 - \`[[LINK]]\` — el cliente pide otra vez el link de pago de su cita apartada. El sistema lo añade; tú solo dile que ahí va.
 
 - \`[[TRANSFERENCIA]]\` — el cliente prefiere transferir directo a Premier en vez de pagar con el link. El sistema añade los datos de transferencia; tú pídele que te envíe el comprobante cuando transfiera. Tú NO tienes número de Nequi, llave, cuenta ni titular de Premier: nunca escribas ninguno, ni siquiera de ejemplo.
 
-- \`[[PAGO: plataforma y monto]]\` — cuando ya tienes el comprobante. Después de esta marca no vuelves a escribir en la conversación.
+- \`[[PAGO: plataforma y monto]]\` — cuando ya tienes el comprobante. Una asesora toma la conversación para revisarlo y confirmar la cita. Después de esta marca no vuelves a escribir en la conversación.
 
 - \`[[ASESOR: motivo breve]]\` — pasa a una persona cuando: el cliente lo pide; pregunta un precio o un dato que está NO CONFIGURADO; quiere cambiar o cancelar una cita existente; tiene un reclamo; describe una condición médica; o pregunta algo que no puedes responder con esta información. Escribe tu mensaje diciéndole cuándo lo atenderá una persona: ${humanHoursLine()} Cierra con la marca. Después de esta marca no vuelves a escribir en la conversación.${config.faq ? `
 

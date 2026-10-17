@@ -1,17 +1,17 @@
 import { generateReply } from './ai'
-import { createBooking, liveBookingOf, markDepositClaimed, serviceText, setPaymentLink } from './booking'
+import { chargeText, createBooking, liveBookingOf, markDepositClaimed, serviceText, setPaymentLink } from './booking'
 import { clock12, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
 import { isLocation, LOCATION_LABEL } from './clinic'
 import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead } from './chats'
 import { generarLinkPagoBold } from './bold'
-import { depositAmount, getConfig, paymentFor, resolveService } from './config'
+import { amountOf, getConfig, paymentFor, resolveService } from './config'
 import { mediaBusy } from './media'
 import { regionOf } from './phone'
 import { buildPromptContext, buildSystemPrompt } from './prompt'
 import { rateLimit } from './ratelimit'
 import { keys, redis } from './redis'
 import { sendWhatsAppText } from './whatsapp'
-import { HOLD_STATUSES, type AppConfig, type Booking, type Location } from './types'
+import { HOLD_STATUSES, type AppConfig, type Booking, type Location, type Message } from './types'
 
 const HISTORY_FOR_MODEL = 30
 // Mitigación para el plan Hobby de Vercel: el after() del webhook corre en segundo plano
@@ -41,10 +41,11 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
  *   LINK    reenvía el link de pago de la cita apartada
  *   TRANSFERENCIA  datos para transferir a Premier en vez del link (se valida con comprobante)
  *   PAREJA  acompaña a RESERVA: la cita es para dos personas a la vez (2x1), dos cabinas
+ *   COMPLETO acompaña a RESERVA: el cliente paga la sesión completa en vez del anticipo
  *   PAGO    llegó el comprobante → una persona lo valida
  *   ASESOR  todo lo demás que necesita una persona
  */
-const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA)\s*(?::([^\]]*))?\]\]/gi
+const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO)\s*(?::([^\]]*))?\]\]/gi
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
 const SOUNDS_BOOKED = /\b(te agend[eoé]|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
@@ -64,6 +65,27 @@ function stripInventedPaymentData(phone: string, text: string): string {
   console.warn(`[autoreply] Gema escribió datos de pago para ${phone}; se quitaron ${lines.length - kept.length} línea(s)`)
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim()
 }
+// Montos en pesos escritos por el modelo ("$340.000", "$85.000 COP por persona").
+const AMOUNT = /\$\s?\d[\d.,]*/
+
+/**
+ * En el mensaje de una reserva el monto lo pone el servidor (sale de la cita creada). El modelo
+ * igual escribía montos, a veces mal: "$340.000" por una pareja con 2x1 que paga $170.000. Se
+ * quitan las frases del modelo con montos; el servidor añade el correcto después.
+ */
+function stripModelAmounts(phone: string, text: string): string {
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/)
+  const kept = sentences.filter((sentence) => !AMOUNT.test(sentence))
+  if (kept.length === sentences.length) return text
+  console.warn(`[autoreply] Gema escribió montos en la reserva de ${phone}; se quitaron ${sentences.length - kept.length} frase(s)`)
+  return kept.join(' ').replace(/\s{2,}/g, ' ').trim()
+}
+
+// Lo que dice un cliente que quiere transferir en vez de usar el link. [[TRANSFERENCIA]] solo se
+// respeta si lo dijo: en una prueba el modelo la añadió sola y el cliente habría recibido datos
+// de transferencia en vez del link de Bold.
+const WANTS_TRANSFER = /transf|consign|nequi|daviplata|bancolombia|llave|bre-?b|cuenta|zelle|wise|paypal|binance|other (method|way)|otro (medio|m[eé]todo)/i
+
 // Promete que "una asesora te confirma / te contacta" sin emitir [[ASESOR]]: nadie se entera y el
 // cliente queda esperando (pasó en una prueba con una pregunta sobre una promoción).
 const ADVISOR_VERB = '(confirma|contacta|escribe|atiende|ayuda|responde|comparte|env[ií]a|explica)'
@@ -133,7 +155,14 @@ function parseFicha(payload: string) {
  * Intenta la reserva que pidió el modelo y devuelve lo que hay que añadir al mensaje.
  * Nunca devuelve el link si la cabina no quedó apartada: así el cliente no paga por un horario que no existe.
  */
-type Applied = { append: string; replaceText?: string; escalate?: string }
+/** `summary`: confirmación compuesta por el servidor, por si al texto del modelo no le queda nada. */
+type Applied = { append: string; replaceText?: string; escalate?: string; summary?: string }
+
+/** "Listo, Laura: tu cita de *X* queda apartada para el lunes 19 oct a las 6:30 p.m. en Chipichape." */
+function bookedLine(booking: Booking): string {
+  const firstName = booking.name.split(' ')[0]
+  return `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${serviceText(booking)}* queda apartada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}.`
+}
 
 /** "ahora" o "mañana a las 10:00 a.m.": cuándo atiende una persona, con el mismo horario de agendamiento. */
 export function humanWhen(): string {
@@ -155,13 +184,38 @@ function transferAppend(config: AppConfig, booking: Booking): Applied {
   if (!data) {
     return {
       append: `\n\nUna asesora te comparte los datos para transferir ${humanWhen()} 💛`,
-      escalate: `La clienta quiere pagar el anticipo de la cita ${booking.id} por transferencia, pero los datos de transferencia no están configurados`,
+      escalate: `La clienta quiere pagar ${chargeText(booking)} (${booking.deposit}) de la cita ${booking.id} por transferencia, pero los datos de transferencia no están configurados`,
     }
   }
   const deposit = booking.deposit ? ` de ${booking.deposit}` : ''
   return {
-    append: `\n\nPuedes transferir el anticipo${deposit} a:\n${data}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos. Cuando transfieras, envíame aquí la captura del comprobante para validarlo 💛`,
+    append: `\n\nPuedes transferir ${chargeText(booking)}${deposit} a:\n${data}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos. Cuando transfieras, envíame aquí la captura del comprobante y una asesora lo revisa 💛`,
   }
+}
+
+/**
+ * La descripción de un comprobante entre los últimos mensajes del cliente (los que esta respuesta
+ * contesta). El análisis de imágenes (lib/ai.ts) empieza esas descripciones con "Comprobante de pago".
+ */
+function receiptNote(history: Message[]): string {
+  for (let index = history.length - 1; index >= 0 && history[index].sender === 'user'; index--) {
+    const media = history[index].media
+    if (media?.kind === 'image' && media.status === 'ready' && /^\s*comprobante de pago/i.test(media.note ?? '')) return media.note ?? ''
+  }
+  return ''
+}
+
+/** Con qué se paga el link de Bold según el país: fuera de Colombia, solo tarjeta y en pesos. */
+function linkMethods(phone: string): string {
+  return regionOf(phone) === 'CO' ? 'con tarjeta, PSE o Nequi' : 'con tarjeta de crédito (se cobra en pesos colombianos; tu banco hace la conversión)'
+}
+
+/** Link de Bold por lo que la cita debe pagar para reservar (anticipo o total), que vence con el apartado. */
+async function boldLinkFor(booking: Booking): Promise<string> {
+  const amount = amountOf(booking.deposit)
+  if (!amount) return ''
+  const concept = `${booking.paymentPlan === 'full' ? 'Pago' : 'Anticipo'} ${serviceText(booking)}`
+  return (await generarLinkPagoBold(amount, concept, booking.id, { timeoutMs: BOLD_TIMEOUT_MS, expiraEn: booking.holdUntil })) || ''
 }
 
 /**
@@ -176,8 +230,7 @@ async function resendLink(config: AppConfig, phone: string, { implicit = false }
   }
   let url = booking.paymentLink
   if (!url && paymentFor(config, regionOf(phone)).bold) {
-    const amount = depositAmount(config, booking.price)
-    url = (amount && await generarLinkPagoBold(amount, `Anticipo ${booking.serviceLabel}`, booking.id, { timeoutMs: BOLD_TIMEOUT_MS, expiraEn: booking.holdUntil })) || ''
+    url = await boldLinkFor(booking)
     if (url) await setPaymentLink(booking.id, url)
   }
   if (!url) {
@@ -187,7 +240,7 @@ async function resendLink(config: AppConfig, phone: string, { implicit = false }
     }
   }
   const deposit = booking.deposit ? ` de ${booking.deposit}` : ''
-  return { append: `\n\nAquí tienes el link para pagar el anticipo${deposit} con tarjeta, PSE o Nequi:\n${url}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos.` }
+  return { append: `\n\nAquí tienes el link para pagar ${chargeText(booking)}${deposit} ${linkMethods(phone)}:\n${url}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos.` }
 }
 
 /** Pareja: `companion` es el nombre del acompañante ('' si no lo dio). null = cita individual. */
@@ -195,7 +248,7 @@ export async function applyReserva(
   config: AppConfig,
   phone: string,
   payload: string,
-  { transfer = false, companion = null as string | null } = {},
+  { transfer = false, companion = null as string | null, payFull = false } = {},
 ): Promise<Applied> {
   const parsed = parseReserva(payload)
   if (!parsed) {
@@ -234,6 +287,7 @@ export async function applyReserva(
     notes: pair ? `Pareja 2x1 · acompañante: ${companion || 'sin nombre'}` : '',
     source: 'bot',
     people: pair ? 2 : 1,
+    payFull,
   })
 
   if (!result.ok) {
@@ -264,11 +318,7 @@ export async function applyReserva(
   // lo compone el servidor entero, porque en este paso el modelo tiende a inventarse los datos.
   if (transfer) {
     const result = transferAppend(config, booking)
-    const firstName = booking.name.split(' ')[0]
-    return {
-      ...result,
-      replaceText: `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${serviceText(booking)}* queda apartada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}.${result.append}`,
-    }
+    return { ...result, replaceText: `${bookedLine(booking)}${result.append}` }
   }
 
   const payment = paymentFor(config, regionOf(phone))
@@ -277,20 +327,18 @@ export async function applyReserva(
   }
 
   const deposit = booking.deposit ? ` de ${booking.deposit}` : ''
-  const amount = depositAmount(config, booking.price)
 
   // Link único de Bold con el id de la cita como referencia: así el webhook sabe qué cita
   // confirmar cuando llega el pago. Timeout corto porque esto corre dentro del after() del
   // webhook de WhatsApp, que en el plan Hobby tiene poco margen (ver lib/autoreply.ts arriba).
-  const boldUrl = payment.bold && amount
-    // El link vence junto con el apartado: así nadie puede pagar un horario que ya se liberó.
-    ? await generarLinkPagoBold(amount, `Anticipo ${booking.serviceLabel}`, booking.id, { timeoutMs: BOLD_TIMEOUT_MS, expiraEn: booking.holdUntil })
-    : null
+  // El link vence junto con el apartado: así nadie puede pagar un horario que ya se liberó.
+  const boldUrl = payment.bold ? await boldLinkFor(booking) : ''
   if (boldUrl) {
     // Se guarda en la cita para poder reenviarlo si el cliente lo pierde ([[LINK]]).
     await setPaymentLink(booking.id, boldUrl)
     return {
-      append: `\n\nPara dejarla reservada necesitamos el anticipo${deposit}. Puedes pagarlo aquí con tarjeta, PSE o Nequi:\n${boldUrl}\nTu horario queda apartado ${config.holdMinutes} minutos y apenas se confirme el pago te aviso por aquí 💛`,
+      summary: bookedLine(booking),
+      append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Puedes pagarlo aquí ${linkMethods(phone)}:\n${boldUrl}\nTu horario queda apartado ${config.holdMinutes} minutos y apenas se confirme el pago te aviso por aquí 💛`,
     }
   }
 
@@ -306,7 +354,8 @@ export async function applyReserva(
     }
   }
   return {
-    append: `\n\nPara dejarla reservada necesitamos el anticipo${deposit}.\n${how}\nTu horario queda apartado ${config.holdMinutes} minutos. Cuando pagues, envíame el comprobante por aquí 💛`,
+    summary: bookedLine(booking),
+    append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}.\n${how}\nTu horario queda apartado ${config.holdMinutes} minutos. Cuando pagues, envíame el comprobante por aquí 💛`,
   }
 }
 
@@ -332,8 +381,9 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   const prompt = buildSystemPrompt(config, phone, await buildPromptContext(config, phone, chat.lead))
   let reply: string | null = null
   let answeredUpTo = chat.lastInboundAt
+  let history: Message[] = []
   for (let draft = 0; draft < 2; draft++) {
-    const history = await getHistory(phone, HISTORY_FOR_MODEL)
+    history = await getHistory(phone, HISTORY_FOR_MODEL)
     try {
       reply = await generateReply(prompt, history).catch((error) => {
         console.warn(`[autoreply] reintentando ${phone}:`, error instanceof Error ? error.message : error)
@@ -365,13 +415,16 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // La reserva se intenta antes de enviar: el texto que sale ya refleja lo que de verdad pasó.
   let escalation = markers.find((marker) => marker.kind === 'PAGO') ?? markers.find((marker) => marker.kind === 'ASESOR')
   const reserva = markers.find((marker) => marker.kind === 'RESERVA')
-  const transfer = markers.some((marker) => marker.kind === 'TRANSFERENCIA')
+  const clientSaid = history.filter((message) => message.sender === 'user').slice(-6).map((message) => message.text).join(' ')
+  const transfer = markers.some((marker) => marker.kind === 'TRANSFERENCIA') && WANTS_TRANSFER.test(clientSaid)
+  if (reserva) text = stripModelAmounts(phone, text)
   const pareja = markers.find((marker) => marker.kind === 'PAREJA')
+  const payFull = markers.some((marker) => marker.kind === 'COMPLETO')
   const link = markers.some((marker) => marker.kind === 'LINK')
   let applied: Applied | null = null
   if (reserva) {
     const companion = pareja ? (pareja.payload === '-' ? '' : pareja.payload.slice(0, 80)) : null
-    applied = await applyReserva(config, phone, reserva.payload, { transfer, companion })
+    applied = await applyReserva(config, phone, reserva.payload, { transfer, companion, payFull })
   } else if (transfer) {
     // El mensaje lo compone entero el servidor: el texto del modelo en este paso es justo donde
     // tiende a inventarse números y titulares.
@@ -384,7 +437,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
     applied = await resendLink(config, phone, { implicit: !link })
   }
   if (applied) {
-    text = applied.replaceText ?? text + applied.append
+    text = (applied.replaceText ?? (text || applied.summary || '') + applied.append).trim()
     if (applied.escalate) escalation = { kind: 'ASESOR', payload: applied.escalate }
   }
 
@@ -397,6 +450,14 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // Lo mismo con una asesora prometida sin escalar: la promesa se cumple escalando.
   if (!escalation && PROMISES_ADVISOR.test(text)) {
     escalation = { kind: 'ASESOR', payload: `Gema le dijo al cliente que una asesora lo contacta: "${text.slice(0, 120)}"` }
+  }
+
+  // Comprobante en imagen: pasa a una asesora aunque el modelo no haya puesto [[PAGO]]. Premier
+  // quiere que todo pago por transferencia lo revise una persona. Si la cita ya está confirmada
+  // (Bold la confirmó sola), no hace falta.
+  const receipt = receiptNote(history)
+  if (receipt && escalation?.kind !== 'PAGO' && (await liveBookingOf(phone))?.status !== 'confirmed') {
+    escalation = { kind: 'PAGO', payload: `Comprobante recibido: ${receipt.replace(/\s+/g, ' ').slice(0, 160)}` }
   }
 
   // El cliente dice que pagó: el horario no se puede caer mientras el operador revisa.

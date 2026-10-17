@@ -18,12 +18,16 @@ type Props = {
   onPick: (day: string, start: string) => void
 }
 
-/** Primer y último minuto que hay que pintar: el horario más amplio de la semana. */
+/**
+ * Primer y último minuto que hay que pintar. El horario marca la última hora de INICIO, así que
+ * se deja espacio para que la cita más larga que empiece ahí termine dentro de la grilla.
+ */
 function bounds(week: AgendaWeek) {
   const ranges = week.days.flatMap((day) => openRanges(week.hours, day))
   if (!ranges.length) return { from: 9 * HOUR, to: 20 * HOUR }
+  const longest = Math.max(week.slotMinutes, ...week.services.map((service) => service.durationMin))
   const from = Math.min(...ranges.map((range) => range.from))
-  const to = Math.max(...ranges.map((range) => range.to))
+  const to = Math.max(...ranges.map((range) => range.to)) + longest
   return { from: Math.floor(from / HOUR) * HOUR, to: Math.ceil(to / HOUR) * HOUR }
 }
 
@@ -71,14 +75,15 @@ export function WeekGrid({ week, location, activeId, onSelect, onPick }: Props) 
               ) : (
                 <>
                   <div className={styles.offHours} style={{ top: 0, height: `${(ranges[0].from - from) * PX_PER_MIN}px` }} />
-                  <div className={styles.offHours} style={{ top: `${(ranges[ranges.length - 1].to - from) * PX_PER_MIN}px`, height: `${(to - ranges[ranges.length - 1].to) * PX_PER_MIN}px` }} />
+                  {/* Apagado desde que pasa la última hora de inicio: después de eso no empieza ninguna cita. */}
+                  <div className={styles.offHours} style={{ top: `${(ranges[ranges.length - 1].to + week.slotMinutes - from) * PX_PER_MIN}px`, height: `${(to - ranges[ranges.length - 1].to - week.slotMinutes) * PX_PER_MIN}px` }} />
                 </>
               )}
 
               {/* Franjas clicables de la grilla: el operador agenda a mano pinchando el hueco. */}
               {!closed && ranges.flatMap((range) => {
                 const slots: number[] = []
-                for (let at = range.from; at + week.slotMinutes <= range.to; at += week.slotMinutes) slots.push(at)
+                for (let at = range.from; at <= range.to; at += week.slotMinutes) slots.push(at)
                 return slots.map((minute) => (
                   <button
                     key={minute}

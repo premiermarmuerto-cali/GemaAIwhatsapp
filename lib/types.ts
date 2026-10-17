@@ -118,6 +118,8 @@ export type Booking = {
   cabin: number
   /** Personas atendidas a la vez: 2 en el 2x1 de pareja, cada una en su cabina. */
   people: number
+  /** Qué pagó o debe pagar para reservar: el anticipo o la sesión completa. `deposit` es ese monto. */
+  paymentPlan: 'deposit' | 'full'
   serviceId: string
   serviceLabel: string
   durationMin: number
@@ -158,7 +160,10 @@ export type DayAvailability = { day: string; location: Location; windows: FreeWi
 export type AppConfig = {
   systemPrompt: string
   services: Service[]
-  /** Siete entradas, índice 0 = domingo. Cada franja "HH:MM-HH:MM". */
+  /**
+   * Horario de agendamiento. Siete entradas, índice 0 = domingo. Cada franja "HH:MM-HH:MM" es
+   * primera–última hora de INICIO de una cita: la sesión puede terminar después de la segunda.
+   */
   hours: string[][]
   cabins: Record<Location, number>
   addresses: Record<Location, string>
@@ -182,6 +187,12 @@ export type AppConfig = {
   faq: string
   /** Promoción vigente, tal como Gema la debe comunicar (p. ej. el 2x1). Vacío = no hay promoción. */
   promo: string
+  /**
+   * Reglas del 2x1 de pareja que el servidor aplica al cobrar: dos personas a la misma hora pagan
+   * una sesión solo en estos servicios y para sesiones hasta `until` (YYYY-MM-DD, inclusive).
+   * Fuera de eso una pareja paga dos sesiones. Pasada la fecha, la promoción deja de mostrarse.
+   */
+  twoForOne: { services: string[]; until: string }
 }
 
 /** Lo que el panel necesita para pintar una semana completa. */
