@@ -446,6 +446,9 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // nadie se entera. Mejor escalar a una persona que dejar pasar una confirmación fantasma.
   if (!reserva && !escalation && !chat.bookingId && SOUNDS_BOOKED.test(text) && !ASKS_FOR_NAME.test(text)) {
     escalation = { kind: 'ASESOR', payload: 'Gema pareció confirmar una cita sin generar la marca de reserva' }
+    // El texto del modelo daba la cita por hecha (y a veces traía "[datos de Nequi aquí]" de
+    // relleno): se cambia por uno honesto, porque la cita todavía no existe.
+    text = `¡Gracias! Ya tengo tus datos 💛 Una asesora termina de agendar tu cita y te comparte cómo pagar ${humanWhen()}.`
   }
   // Lo mismo con una asesora prometida sin escalar: la promesa se cumple escalando.
   if (!escalation && PROMISES_ADVISOR.test(text)) {
