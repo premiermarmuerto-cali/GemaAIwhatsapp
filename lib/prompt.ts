@@ -7,15 +7,19 @@
  * [[RESERVA]]. El servidor es quien aparta la cabina y quien pega el link de pago, así que
  * el modelo no puede inventarse ni un horario ni un cobro.
  */
-import { addDays, clock12, dayKey, dayLabel, freeWindows, nextHumanWindow, shortestService } from './calendar'
+import { addDays, clock12, dayKey, dayLabel, freeWindows, nextHumanWindow, shortestService, type Occupancy } from './calendar'
 import { LOCATION_LABEL, LOCATIONS, WEEKDAY_LABEL } from './clinic'
 import { depositOf, paymentFor } from './config'
-import { isClosed, liveBookingOf, occupancyOf, serviceText } from './booking'
+import { liveBookingOf, serviceText, sweepExpiredHolds } from './booking'
+import { keys, redis, toHash } from './redis'
 import { formatPhone, countryOf, regionOf } from './phone'
 import type { AppConfig, Booking, Lead, Location } from './types'
 
-/** Días de agenda que se le muestran al modelo. Más que esto solo gasta tokens. */
-const PROMPT_DAYS = 5
+/**
+ * Días de agenda que se le muestran al modelo. Con 5, un cliente pidió una fecha a dos semanas y
+ * Gema dijo que no había cupo sin poder verlo. 15 cubre lo que se agenda en la práctica.
+ */
+const PROMPT_DAYS = 15
 
 export type PromptContext = {
   /** Huecos por sede, listos para contárselos al cliente. */
@@ -147,11 +151,16 @@ export async function buildAgendaBlock(config: AppConfig, now = Date.now()): Pro
   const days = Array.from({ length: Math.min(PROMPT_DAYS, config.horizonDays) }, (_, index) => addDays(today, index))
   const minMinutes = shortestService(config)
 
-  // Esto corre en el camino crítico de cada respuesta de WhatsApp: todo en paralelo.
-  const [closedFlags, occupancies] = await Promise.all([
-    Promise.all(days.map((day) => isClosed(day))),
-    Promise.all(LOCATIONS.map((location) => Promise.all(days.map((day) => occupancyOf(location, day))))),
-  ])
+  // Esto corre en el camino crítico de cada respuesta de WhatsApp: los 15 días × 2 sedes salen en
+  // UNA sola petición a Upstash (pipeline) en vez de ~45, después de liberar los apartados vencidos.
+  await sweepExpiredHolds(now)
+  const pipe = redis().pipeline()
+  days.forEach((day) => pipe.get(keys.closed(day)))
+  LOCATIONS.forEach((location) => days.forEach((day) => pipe.hgetall(keys.slots(location, day))))
+  const rows = await pipe.exec<unknown[]>()
+  const closedFlags = rows.slice(0, days.length).map((value) => (value ? String(value) : null))
+  const occupancies = LOCATIONS.map((_, locationIndex) => days.map((_, dayIndex) =>
+    (toHash(rows[days.length + locationIndex * days.length + dayIndex]) ?? {}) as Occupancy))
 
   const ranges = (windows: Array<{ from: string; to: string }>) => windows.map((window) => `${window.from}–${window.to}`).join(', ')
 
