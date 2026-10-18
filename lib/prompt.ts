@@ -104,7 +104,8 @@ function promoBlock(config: AppConfig, today: string): string {
     '- Si el cliente pregunta por el 2x1 (o por una promoción) OFRÉCELO tú, no preguntes si le interesa saber más: dile directo en qué servicios aplica, con el precio de cada uno (y la fecha límite si la tiene), y termina preguntando cuál le interesa o con quién viene. Si pregunta por un servicio que no lo tiene, díselo en una frase y ofrécele de una vez los que sí. Ejemplo: "en esa no hay 2x1|||sí lo tienen la de peeling y hidratación, $130.000 hasta el 31 de octubre, y la de líneas de expresión, $200.000|||cuál te gustaría?".',
     pairLine,
     '- Explícala solo con lo que dice arriba, sin cambiarle condiciones ni añadir otras: nunca digas "por tiempo limitado", "últimos cupos" ni una fecha que no esté escrita. Si preguntan algo que no está ahí, dile que ese detalle se lo confirma una asesora y usa [[ASESOR]].',
-    '- Una pareja es UNA cita: con 2x1 paga el precio y el anticipo de una sesión; sin 2x1, los de dos sesiones (el catálogo trae ambos montos). Nunca digas "por persona" ni "por cada uno" al hablar de precio o anticipo.',
+    '- Una pareja es UNA cita con UN solo anticipo: con 2x1 paga el precio y el anticipo de una sesión; sin 2x1, los de dos sesiones (el catálogo trae ambos montos, úsalos tal cual, no hagas cuentas). Nunca digas "cada una", "cada uno" ni "por persona" al hablar del anticipo.',
+    '- Si quieren ir en pareja a un servicio que NO tiene 2x1, respóndeles con el precio de pareja de ESE servicio, el que pidieron. Puedes contar en una frase que el 2x1 está en otros servicios, pero no les cambies el servicio ni les cotices otro si no lo piden.',
   ].filter(Boolean).join('\n')
 }
 

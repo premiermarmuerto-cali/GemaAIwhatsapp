@@ -55,7 +55,7 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
 const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO|REPROGRAMAR|CANCELAR|ASISTE)\s*(?::([^\]]*))?\]\]/gi
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
-const SOUNDS_BOOKED = /\b(te (agend|reserv)[eoé]|(entonces,? )?(agend|reserv)(emos|amos|ar[eé]|o)\b|aqu[ií] (va|est[aá]) tu (reserva|cita)|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
+const SOUNDS_BOOKED = /\b(te (agend|reserv)[eoé]|(entonces,? )?(agend|reserv)(emos|amos|ar[eé]|o)\b|voy a (reservar|agendar|apartar)|aqu[ií] (va|est[aá]) tu (reserva|cita)|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
 // Frases con las que promete un link sin emitir [[LINK]] (pasó en una prueba real: "Aquí va el
 // link" y el mensaje salía sin link). Si hay una cita apartada, el sistema lo reenvía igual.
 // Frases con las que el modelo "entrega" datos de pago escritos por él, sin la marca [[TRANSFERENCIA]]
@@ -143,8 +143,10 @@ function forgotReserva(reply: string, bookingId: string | undefined): boolean {
   // Si está pidiendo un nombre (el suyo o el de quien la acompaña en el 2x1), todavía le faltan datos
   // para reservar: es lo correcto, no un olvido. Premier agenda cada cita con el nombre de cada persona.
   if (ASKS_FOR_NAME.test(plain) || ASKS_COMPANION_NAME.test(plain)) return false
-  const handsOverPaymentData = PROMISES_PAYMENT_DATA.test(plain) || BRACKET_PLACEHOLDER.test(plain)
-  return SOUNDS_BOOKED.test(plain) || handsOverPaymentData || found.some((kind) => ['TRANSFERENCIA', 'PAREJA', 'COMPLETO'].includes(kind))
+  // Entregar datos de pago o un link sin que exista la cita también es un olvido de la reserva
+  // (salió "voy a reservar… aquí va el link" con [[LINK]] y sin [[RESERVA]]).
+  const handsOverPayment = PROMISES_PAYMENT_DATA.test(plain) || BRACKET_PLACEHOLDER.test(plain) || PROMISES_LINK.test(plain)
+  return SOUNDS_BOOKED.test(plain) || handsOverPayment || found.some((kind) => ['TRANSFERENCIA', 'PAREJA', 'COMPLETO', 'LINK'].includes(kind))
 }
 
 /**
@@ -171,6 +173,44 @@ function latestOf<T>(texts: string[], options: Array<[RegExp, T]>): T | null {
     if (best) return best.value
   }
   return null
+}
+
+/**
+ * Palabras que identifican a cada servicio sin confundirlo con otro ("pigmentación", "profunda",
+ * "dispositivo"…): las de su nombre que no aparecen en el nombre de ningún otro servicio.
+ */
+function distinctiveWords(config: AppConfig): Map<string, string[]> {
+  const wordsOf = (label: string) => fold(label).split(/[^a-z0-9]+/).filter((word) => word.length >= 5)
+  return new Map(config.services.map((service) => {
+    const others = new Set(config.services.filter((other) => other.id !== service.id).flatMap((other) => wordsOf(other.label)))
+    return [service.id, wordsOf(service.label).filter((word) => !others.has(word))]
+  }))
+}
+
+const PROMO_WORD = /2\s?x\s?1|dos por uno/i
+const DENIES = /\b(no|sin|tampoco|solo|solamente|unicamente)\b|no aplica|no tiene|no cuenta|no incluye|no entra/i
+
+/**
+ * Red de seguridad del 2x1: el modelo no puede darle la promoción a un servicio que no la tiene.
+ * Se quita la frase que nombra el 2x1 junto a un servicio sin 2x1, salvo que lo niegue ("en esa no
+ * hay 2x1") o que en la misma frase nombre también uno que sí lo tiene ("sí lo tiene la de peeling").
+ */
+export function stripWrongPromo(config: AppConfig, phone: string, text: string): string {
+  if (!PROMO_WORD.test(text)) return text
+  const today = dayKey()
+  const words = distinctiveWords(config)
+  const mentions = (sentence: string, ids: string[]) => ids.some((id) => (words.get(id) ?? []).some((word) => fold(sentence).includes(word)))
+  const withPromo = config.services.filter((service) => twoForOneApplies(config, service.id, today)).map((service) => service.id)
+  const without = config.services.filter((service) => !withPromo.includes(service.id)).map((service) => service.id)
+  let removed = 0
+  const parts = text.split(SEPARATOR).map((part) => part.split(/(?<=[.!?])\s+/).filter((sentence) => {
+    const wrong = PROMO_WORD.test(sentence) && mentions(sentence, without) && !mentions(sentence, withPromo) && !DENIES.test(fold(sentence))
+    if (wrong) removed++
+    return !wrong
+  }).join(' ').trim())
+  if (!removed) return text
+  console.warn(`[autoreply] ${phone}: se quitó un 2x1 ofrecido a un servicio que no lo tiene`)
+  return parts.filter(Boolean).join(SEPARATOR)
 }
 
 // Montos en pesos escritos por el modelo ("$340.000", "$85.000 COP por persona").
@@ -208,7 +248,7 @@ const PROMISES_ADVISOR = new RegExp(
   'i',
 )
 // Si en el mismo mensaje pide el nombre, todavía no está reservando: le faltan datos, y eso es correcto.
-const ASKS_FOR_NAME = /\b(tu|su)\s+nombre\b/i
+const ASKS_FOR_NAME = /\b(tu|su)\s+nombre\b|c[oó]mo te llamas|c[oó]mo se llama usted|a nombre de qui[eé]n|nombre completo\?/i
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -645,7 +685,9 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
     console.warn(`[autoreply] ${phone} superó ${PER_PHONE_LIMIT} respuestas/10 min`)
     return requestAgent(phone, 'Demasiados mensajes seguidos: Gema se pausó para cuidar la cuota')
   }
-  if (!(await rateLimit('ai-global', 'all', GLOBAL_LIMIT, 3600)).ok) {
+  // AI_RATE_BUCKET: las pruebas locales usan su propio contador, para no gastar el tope de producción
+  // (que es compartido: una tanda de pruebas llegó a bloquear las respuestas a clientes reales).
+  if (!(await rateLimit(process.env.AI_RATE_BUCKET || 'ai-global', 'all', GLOBAL_LIMIT, 3600)).ok) {
     console.warn(`[autoreply] tope global de ${GLOBAL_LIMIT} respuestas/hora alcanzado`)
     return requestAgent(phone, 'Se alcanzó el tope de respuestas de IA por hora')
   }
@@ -713,7 +755,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // Lo que viene del modelo pasa por la red de datos de pago; lo que añade el servidor después, no.
   // Después se parte en mensajes (|||) y se le da la puntuación de WhatsApp; los textos del servidor
   // se unen con el mismo separador y viajan enteros.
-  let text = styleModelText(stripInventedPaymentData(phone, reply.replace(MARKERS, '').trim()))
+  let text = stripWrongPromo(config, phone, styleModelText(stripInventedPaymentData(phone, reply.replace(MARKERS, '').trim())))
 
   // FICHA es silenciosa: solo enriquece el panel y el prompt de la próxima vuelta.
   const ficha = markers.find((marker) => marker.kind === 'FICHA')
