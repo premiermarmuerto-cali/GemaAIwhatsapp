@@ -35,6 +35,17 @@ export const PREVIEW_PREFIX: Record<Sender, string> = {
   human: 'Tú: ',
 }
 
+/** Nombres de las automatizaciones (lib/automations.ts) tal como se muestran en el panel. */
+export const AUTO_LABEL: Record<string, string> = {
+  seguimiento_pago: 'Aviso: el horario se libera',
+  seguimiento_22h: 'Seguimiento a las 22 h',
+  retomar_cita_limpieza: 'Plantilla: retomar cita',
+  anticipo_pendiente: 'Plantilla: anticipo pendiente',
+  ultimos_dias_bono: 'Plantilla: últimos días de la promo',
+  recordatorio_cita: 'Recordatorio de la cita',
+  recordatorio_hoy: 'Recordatorio del día',
+}
+
 export const AGENT_LABEL: Record<AgentKind, string> = {
   help: 'Requiere asesor',
   payment: 'Pago por validar',

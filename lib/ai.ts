@@ -76,7 +76,7 @@ export async function generateReply(systemPrompt: string, history: Message[], nu
   ], MAX_OUTPUT_TOKENS, 0.6)
 }
 
-export type ExtractedReserva = { servicio: string; sede: string; fecha: string; hora: string; nombre: string }
+export type ExtractedReserva = { servicio: string; sede: string; fecha: string; hora: string; nombre: string; acompanante: string }
 
 /**
  * Lee la conversación y devuelve los datos de la reserva SOLO si el cliente ya aceptó un día y una
@@ -102,12 +102,13 @@ export async function extractReserva(
     `Sedes (usa el id): ${options.locations.map((location) => `${location.id} = ${location.label}`).join('; ')}.`,
     'ready = true SOLO si en la conversación quedaron definidos los cinco datos: el servicio, la sede, el día, una hora concreta que el cliente aceptó (o pidió y la clínica confirmó) y el nombre del cliente. Si falta cualquiera, ready = false y deja los demás campos vacíos.',
     'hora en formato 24 h HH:MM. nombre: el nombre del cliente que escribe (no el de su acompañante).',
+    'acompanante: si la cita es para dos personas (viene con alguien), el nombre de la otra persona tal como lo escribió el cliente; vacío si es individual o si no lo dio.',
   ].join('\n')
   const transcript = history.map((message) => `${message.sender === 'user' ? 'Cliente' : 'Clínica'}: ${modelText(message)}`).join('\n')
   const schema = {
     type: 'object',
     additionalProperties: false,
-    required: ['ready', 'servicio', 'sede', 'fecha', 'hora', 'nombre'],
+    required: ['ready', 'servicio', 'sede', 'fecha', 'hora', 'nombre', 'acompanante'],
     properties: {
       ready: { type: 'boolean' },
       servicio: { type: 'string', enum: ['', ...options.services.map((service) => service.id)] },
@@ -115,6 +116,7 @@ export async function extractReserva(
       fecha: { type: 'string' },
       hora: { type: 'string' },
       nombre: { type: 'string' },
+      acompanante: { type: 'string' },
     },
   }
   const raw = await complete(
@@ -126,7 +128,7 @@ export async function extractReserva(
   const data = JSON.parse(raw) as ExtractedReserva & { ready: boolean }
   if (!data.ready || !data.servicio || !data.sede || !data.nombre.trim()) return null
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data.fecha) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(data.hora) || data.fecha < options.today) return null
-  return { servicio: data.servicio, sede: data.sede, fecha: data.fecha, hora: data.hora, nombre: data.nombre.trim().slice(0, 80) }
+  return { servicio: data.servicio, sede: data.sede, fecha: data.fecha, hora: data.hora, nombre: data.nombre.trim().slice(0, 80), acompanante: (data.acompanante ?? '').trim().slice(0, 80) }
 }
 
 const IMAGE_PROMPT =`Analizas imágenes que los clientes envían por WhatsApp a Premier Mar Muerto Cali, una clínica de limpiezas y tratamientos faciales.

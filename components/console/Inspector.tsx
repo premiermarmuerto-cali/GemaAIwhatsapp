@@ -7,7 +7,7 @@ import { formatDate, formatDuration } from '@/lib/format'
 import { formatPhone } from '@/lib/phone'
 import type { ChatSummary, Stats } from '@/lib/types'
 import { windowRemainingMs } from '@/lib/window'
-import { AGENT_LABEL, leadSummary, paymentMethods, regionLabel } from './labels'
+import { AGENT_LABEL, AUTO_LABEL, leadSummary, paymentMethods, regionLabel } from './labels'
 import styles from './Inspector.module.css'
 
 type Props = { stats: Stats | null; chat: ChatSummary | null; onOpenSettings: () => void; toast: ShowToast }
@@ -59,6 +59,13 @@ export function Inspector({ stats, chat, onOpenSettings, toast }: Props) {
             {chat.needsAgent && <div><dt>{chat.agentKind === 'payment' ? 'Anticipo' : 'Motivo'}</dt><dd>{chat.agentReason}</dd></div>}
             <div><dt>Ventana 24 h</dt><dd data-closed={!remaining || undefined}>{remaining ? `${formatDuration(remaining)} restantes` : 'Cerrada'}</dd></div>
             <div><dt>Primer contacto</dt><dd>{formatDate(chat.createdAt)}</dd></div>
+            {(chat.adHeadline || chat.adSourceId) && (
+              <div><dt>Anuncio</dt><dd>{chat.adHeadline || 'sin título'}{chat.adSourceId && <span className="mono"> · {chat.adSourceId}</span>}</dd></div>
+            )}
+            {chat.noMarketing && <div><dt>Marketing</dt><dd>No enviar plantillas (tocó "Ahora no")</dd></div>}
+            {Object.keys(chat.autoSent).length > 0 && (
+              <div><dt>Automáticos</dt><dd>{Object.entries(chat.autoSent).map(([kind, at]) => `${AUTO_LABEL[kind] ?? kind} (${formatDate(at)})`).join(' · ')}</dd></div>
+            )}
           </dl>
         ) : (
           <p className={styles.muted}>Selecciona una conversación para ver sus datos.</p>

@@ -20,7 +20,11 @@ export function modelText(message: Message): string {
   const origin = ad
     ? `[El cliente llegó desde un anuncio. Título: "${ad.headline ?? ''}"${ad.body ? `. Texto del anuncio: "${ad.body}"` : ''}]\n`
     : ''
-  return origin + contentText(message)
+  // Botón de una plantilla: Gema sabe que no es texto libre y a qué corresponde.
+  const button = message.buttonPayload !== undefined || /^\s*(ahora no|confirmo mi cita|no podr[eé] asistir|reagendar|cambiar horario|reenviar el link|tengo una (pregunta|duda))\s*$/i.test(message.text)
+    ? '[El cliente tocó un botón de un mensaje automático] '
+    : ''
+  return origin + button + contentText(message)
 }
 
 /** La imagen descrita, el audio transcrito y el resto sin abrir. */

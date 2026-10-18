@@ -1,8 +1,8 @@
 import { extractReserva, generateReply, type ExtractedReserva } from './ai'
-import { chargeText, createBooking, liveBookingOf, markDepositClaimed, serviceText, setPaymentLink } from './booking'
+import { chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
 import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
 import { isLocation, LOCATION_LABEL, LOCATIONS } from './clinic'
-import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead } from './chats'
+import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead, updateChat } from './chats'
 import { generarLinkPagoBold } from './bold'
 import { amountOf, getConfig, paymentFor, pesos, resolveService, twoForOneApplies } from './config'
 import { mediaBusy } from './media'
@@ -46,10 +46,13 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
  *   TRANSFERENCIA  datos para transferir a Premier en vez del link (se valida con comprobante)
  *   PAREJA  acompaña a RESERVA: la cita es para dos personas a la vez (2x1), dos cabinas
  *   COMPLETO acompaña a RESERVA: el cliente paga la sesión completa en vez del anticipo
+ *   REPROGRAMAR mueve la cita viva a otro día/hora/sede conservando el pago
+ *   CANCELAR    cancela la cita viva y libera el cupo; si estaba pagada, una persona hace el reembolso
+ *   ASISTE  el cliente confirmó que asiste a su cita
  *   PAGO    llegó el comprobante → una persona lo valida
  *   ASESOR  todo lo demás que necesita una persona
  */
-const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO)\s*(?::([^\]]*))?\]\]/gi
+const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO|REPROGRAMAR|CANCELAR|ASISTE)\s*(?::([^\]]*))?\]\]/gi
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
 const SOUNDS_BOOKED = /\b(te (agend|reserv)[eoé]|(entonces,? )?(agend|reserv)(emos|amos|ar[eé]|o)\b|aqu[ií] (va|est[aá]) tu (reserva|cita)|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
@@ -58,6 +61,10 @@ const SOUNDS_BOOKED = /\b(te (agend|reserv)[eoé]|(entonces,? )?(agend|reserv)(e
 // Frases con las que el modelo "entrega" datos de pago escritos por él, sin la marca [[TRANSFERENCIA]]
 // ("Aquí están los datos para el anticipo", "datos de la cuenta"). Los datos reales los pega solo el servidor.
 const PROMISES_PAYMENT_DATA = /\b(aqu[ií]|ah[ií])\s+(est[aá]n|van|tienes|te dejo)[^.\n]{0,40}\b(datos|cuenta|n[uú]mero)|\b(te\s+)?(voy a\s+)?(env[ií]o|enviar|mando|mandar|paso|pasar)\s+(los\s+)?datos\b|\bdatos\s+(para|de)\s+(el\s+|la\s+|tu\s+)?(anticipo|transferencia|pago|cuenta)|\bdatos de la cuenta\b/i
+// "te la cambié para el jueves", "quedó para las 4": da por hecho un cambio de horario.
+const CLAIMS_RESCHEDULE = /\b(te la |la )?(cambi[eé]|mov[ií]|reprogram[eé]|pas[eé])\s+(para|al|a las)\b/i
+// Botón del recordatorio o mensaje equivalente.
+const CONFIRMS_ATTENDANCE = /^\s*(s[ií],?\s*)?confirmo( mi (cita|asistencia))?\s*[.!]?\s*$/i
 // "el nombre de tu hermana", "cómo se llama tu novio": pide el nombre del acompañante.
 const ASKS_COMPANION_NAME = /\bnombre\s+(completo\s+)?de\s+(tu|su)\s+\w+|c[oó]mo se llama\s+(tu|su)\s+\w+/i
 // Texto entre corchetes simples ("[datos de la cuenta]"): relleno del modelo, nunca una marca válida.
@@ -133,10 +140,9 @@ function forgotReserva(reply: string, bookingId: string | undefined): boolean {
   const found = [...reply.matchAll(MARKERS)].map((marker) => marker[1].toUpperCase())
   if (found.includes('RESERVA') || found.includes('ASESOR') || found.includes('PAGO')) return false
   const plain = reply.replace(MARKERS, '')
-  // Insiste en el nombre del acompañante cuando el cliente ya dio el suyo: la regla es reservar igual.
-  if (ASKS_COMPANION_NAME.test(plain) && !ASKS_FOR_NAME.test(plain)) return true
-  // Si está pidiendo el nombre, todavía le faltan datos para reservar: es lo correcto, no un olvido.
-  if (ASKS_FOR_NAME.test(plain)) return false
+  // Si está pidiendo un nombre (el suyo o el de quien la acompaña en el 2x1), todavía le faltan datos
+  // para reservar: es lo correcto, no un olvido. Premier agenda cada cita con el nombre de cada persona.
+  if (ASKS_FOR_NAME.test(plain) || ASKS_COMPANION_NAME.test(plain)) return false
   const handsOverPaymentData = PROMISES_PAYMENT_DATA.test(plain) || BRACKET_PLACEHOLDER.test(plain)
   return SOUNDS_BOOKED.test(plain) || handsOverPaymentData || found.some((kind) => ['TRANSFERENCIA', 'PAREJA', 'COMPLETO'].includes(kind))
 }
@@ -409,8 +415,8 @@ export async function applyReserva(
     const state = existing.status === 'confirmed' ? 'confirmada' : 'apartada'
     return {
       append: '',
-      replaceText: `Ya tienes una cita ${state}: *${serviceText(existing)}* el ${dayLabel(existing.day)} a las ${clock12(existing.start)} en ${LOCATION_LABEL[existing.location]}. Si quieres cambiarla o agendar otra, una asesora te ayuda ${humanWhen()}`,
-      escalate: `La clienta pidió otra cita teniendo la ${existing.id} (${existing.day} ${existing.start}) ${state}`,
+      // Gema ya puede mover la cita: no hace falta una asesora para cambiar el horario.
+      replaceText: `Ya tienes una cita ${state}: *${serviceText(existing)}* el ${dayLabel(existing.day)} a las ${clock12(existing.start)} en ${LOCATION_LABEL[existing.location]}\n\nquieres que te la cambie a otro día u hora?`,
     }
   }
 
@@ -418,6 +424,10 @@ export async function applyReserva(
   // (salió "Listo, -: tu cita…"). Se le pide y la reserva se hace en el siguiente mensaje.
   if (!isRealName(parsed.name)) {
     return { append: '', replaceText: 'me das tu nombre completo para dejar la cita apartada?' }
+  }
+  // Premier agenda cada sesión con el nombre de quien se la hace: una pareja del 2x1 lleva los dos.
+  if (companion !== null && !isRealName(companion)) {
+    return { append: '', replaceText: 'me das el nombre completo de la persona que viene contigo? así quedan las dos en la cita' }
   }
 
   const chat = await getSummary(phone)
@@ -430,10 +440,11 @@ export async function applyReserva(
     day: parsed.day,
     start: parsed.start,
     concern: chat?.lead.concern ?? '',
-    notes: pair ? `Pareja 2x1 · acompañante: ${companion || 'sin nombre'}` : '',
+    notes: pair ? 'Pareja 2x1' : '',
     source: 'bot',
     people: pair ? 2 : 1,
     payFull,
+    companion: pair ? companion : '',
   })
 
   if (!result.ok) {
@@ -520,6 +531,70 @@ export async function applyReserva(
   }
 }
 
+/** La cita está pagada (anticipo o completo): Bold la confirmó, un operador la validó o hay comprobante. */
+function isPaid(booking: Booking): boolean {
+  return booking.status === 'confirmed' || booking.paidAt > 0
+}
+
+/**
+ * [[REPROGRAMAR: sede · YYYY-MM-DD · HH:MM]]: mueve la cita viva conservando el pago (anticipo o sesión
+ * completa) y el link de Bold, porque es la misma cita. Si el horario no está libre, ofrece otros.
+ */
+export async function applyReprogram(config: AppConfig, phone: string, payload: string): Promise<Applied> {
+  const booking = await liveBookingOf(phone)
+  if (!booking) return { append: '', replaceText: 'no encuentro una cita activa a tu nombre\n\nquieres que agendemos una?' }
+  const [sedeRaw, day, start] = payload.split('·').map((part) => part.trim())
+  const sede = (sedeRaw || booking.location).toLowerCase()
+  if (!isLocation(sede) || !isDayKey(day) || !isClock(start)) {
+    console.warn(`[autoreply] marca REPROGRAMAR ilegible para ${phone}: "${payload}"`)
+    return { append: '', replaceText: 'para cambiarla, dime qué día y a qué hora te queda mejor' }
+  }
+  const result = await rescheduleBooking(config, booking.id, day, start, sede)
+  if (!result) return { append: '', escalate: `No se encontró la cita ${booking.id} al reprogramar` }
+  if (!result.ok) {
+    if (result.reason === 'closed') return { append: '', replaceText: 'ese día la sede está cerrada\n\nte busco otra fecha?' }
+    if (result.reason === 'cabins') return { append: '', replaceText: `en ${LOCATION_LABEL[sede]} no podemos atender a dos personas a la misma hora\n\nte sirve otra sede?` }
+    const options = result.alternatives.slice(0, 4).map(clock12)
+    return {
+      append: '',
+      replaceText: options.length
+        ? `a las ${clock12(start)} no me queda espacio el ${dayLabel(day)} en ${LOCATION_LABEL[sede]}. Me quedan: ${options.join(', ')}\n\ncuál te sirve?`
+        : `ese día ya no me queda espacio en ${LOCATION_LABEL[sede]}\n\nte busco otro día?`,
+    }
+  }
+  const moved = result.booking
+  const paid = isPaid(moved)
+  const payment = paid
+    ? `Tu ${moved.paymentPlan === 'full' ? 'pago de la sesión completa' : 'anticipo'} queda para la nueva fecha.`
+    : `Tu horario sigue apartado ${holdMinutesLeft(moved)} minutos mientras pagas.`
+  return {
+    append: '',
+    replaceText: `Listo, cambié tu cita de *${serviceText(moved)}* para el ${dayLabel(moved.day)} a las ${clock12(moved.start)} en ${LOCATION_LABEL[moved.location]}. ${payment}`,
+  }
+}
+
+/**
+ * [[CANCELAR: motivo]]: cancela la cita viva y libera el cupo en la agenda. El dinero no lo toca Gema:
+ * si la cita estaba pagada, una asesora gestiona el reembolso.
+ */
+export async function applyCancel(phone: string, reason: string): Promise<Applied> {
+  const booking = await liveBookingOf(phone)
+  if (!booking) return { append: '', replaceText: 'no encuentro una cita activa a tu nombre' }
+  const moved = await moveBooking(booking.id, 'cancelled')
+  if (!moved || 'error' in moved) return { append: '', escalate: `No se pudo cancelar la cita ${booking.id}${moved && 'error' in moved ? `: ${moved.error}` : ''}` }
+  await redis().hset(keys.booking(booking.id), { cancelReason: `Cancelada por la clienta${reason ? `: ${reason.slice(0, 160)}` : ''}` })
+  // El chat deja de estar "agendado": ya no tiene cita.
+  await redis().hdel(keys.chat(phone), 'bookingId')
+  await updateChat(phone, { stage: 'open' })
+  const line = `Listo, cancelé tu cita de *${serviceText(booking)}* del ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}`
+  if (!isPaid(booking)) return { append: '', replaceText: `${line}\n\nsi quieres la agendamos para otro día` }
+  return {
+    append: '',
+    replaceText: `${line}\n\nComo ya habías pagado ${booking.deposit}, una asesora te contacta ${humanWhen()} para el reembolso`,
+    escalate: `Reembolso: la clienta canceló la cita ${booking.id} (${booking.day} ${booking.start}) ya pagada (${booking.paymentPlan === 'full' ? 'sesión completa' : 'anticipo'} ${booking.deposit}${booking.paymentRef ? `, Bold ${booking.paymentRef}` : ''})`,
+  }
+}
+
 /**
  * Un turno de IA para un chat. Exportada (no solo de uso interno) para que
  * scripts/simulate-chat.ts pueda correr la misma lógica inyectando un `send` falso.
@@ -572,7 +647,9 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // no se aparta nada. Pedirle la marca otra vez fallaba a menudo; en cambio, una lectura aparte de la
   // conversación con salida estructurada saca servicio, sede, día, hora y nombre. Si algo falta, no
   // reserva y actúa la red de abajo (mensaje honesto + asesora).
-  if (forgotReserva(reply, chat.bookingId)) {
+  // La cita VIVA del cliente (chat.bookingId queda apuntando a la última aunque se cancele o venza).
+  const liveAtStart = await liveBookingOf(phone)
+  if (forgotReserva(reply, liveAtStart?.id)) {
     const today = dayKey()
     const extracted = await extractReserva([...history, { id: 'draft', sender: 'gem', text: reply.replace(MARKERS, ''), at: Date.now() }], {
       services: config.services.map(({ id, label }) => ({ id, label })),
@@ -587,7 +664,10 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
     const grounded = extracted !== null && groundedInChat(extracted, history)
     console.warn(`[autoreply] ${phone}: el modelo dio la cita por hecha sin [[RESERVA]]; datos leídos: ${extracted ? JSON.stringify(extracted) : 'incompletos'}${extracted && !grounded ? ' (descartados: nombre u hora no los dio el cliente)' : ''}`)
     if (extracted && grounded) {
-      reply = `${reply}\n[[RESERVA: ${extracted.servicio} · ${extracted.sede} · ${extracted.fecha} · ${extracted.hora} · ${extracted.nombre}]]`
+      const companion = extracted.acompanante && isRealName(extracted.acompanante) && fold(history.filter((message) => message.sender === 'user').map((message) => message.text).join(' ')).includes(fold(extracted.acompanante.split(/\s+/)[0]))
+        ? `\n[[PAREJA: ${extracted.acompanante}]]`
+        : ''
+      reply = `${reply}\n[[RESERVA: ${extracted.servicio} · ${extracted.sede} · ${extracted.fecha} · ${extracted.hora} · ${extracted.nombre}]]${companion}`
       recoveredReserva = true
     }
   }
@@ -638,12 +718,14 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
     if (promo) text = insertAfter(text, promo.price, promo.line)
   }
   const pareja = markers.find((marker) => marker.kind === 'PAREJA')
+  const reprogramar = markers.find((marker) => marker.kind === 'REPROGRAMAR')
+  const cancelar = markers.find((marker) => marker.kind === 'CANCELAR')
   const payFull = planChoice ? planChoice === 'full' : markers.some((marker) => marker.kind === 'COMPLETO')
   const link = markers.some((marker) => marker.kind === 'LINK')
   let applied: Applied | null = null
   if (reserva) {
     // Acompañante: el de la marca; si el modelo la olvidó pero el cliente dijo que viene con alguien,
-    // la cita es igual para dos (sin nombre del acompañante).
+    // la cita es para dos y applyReserva pide el nombre que falta ('' = pareja sin nombre todavía).
     const companion = pareja && pairChoice !== 'alone'
       ? (pareja.payload === '-' ? '' : pareja.payload.slice(0, 80))
       : pairChoice === 'pair' ? '' : null
@@ -651,6 +733,10 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
       console.warn(`[autoreply] ${phone}: reserva ajustada a lo que dijo el cliente (pareja ${companion !== null}, completo ${payFull}, transferencia ${transfer})`)
     }
     applied = await applyReserva(config, phone, reserva.payload, { method: methodChoice, companion, payFull })
+  } else if (reprogramar) {
+    applied = await applyReprogram(config, phone, reprogramar.payload)
+  } else if (cancelar) {
+    applied = await applyCancel(phone, cancelar.payload)
   } else if (transfer) {
     // El mensaje lo compone entero el servidor: el texto del modelo en este paso es justo donde
     // tiende a inventarse números y titulares.
@@ -682,11 +768,20 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // Red de seguridad: el modelo a veces "confirma" una cita en el texto sin emitir [[RESERVA]].
   // Sin esto el cliente se queda creyendo que tiene un horario que el sistema nunca creó, y
   // nadie se entera. Mejor escalar a una persona que dejar pasar una confirmación fantasma.
-  if (!reserva && !escalation && !chat.bookingId && SOUNDS_BOOKED.test(text) && !ASKS_FOR_NAME.test(text)) {
+  if (!reserva && !applied && !escalation && !liveAtStart && SOUNDS_BOOKED.test(text) && !ASKS_FOR_NAME.test(text)) {
     escalation = { kind: 'ASESOR', payload: 'Gema pareció confirmar una cita sin generar la marca de reserva' }
     // El texto del modelo daba la cita por hecha (y a veces traía "[datos de Nequi aquí]" de
     // relleno): se cambia por uno honesto, porque la cita todavía no existe.
     text = `Gracias, ya tengo tus datos${SEPARATOR}Una asesora termina de agendar tu cita y te comparte cómo pagar ${humanWhen()}`
+  }
+  // Igual con un cambio de horario: dice que la movió sin [[REPROGRAMAR]] y la cita sigue donde estaba.
+  if (!applied && !escalation && liveAtStart && CLAIMS_RESCHEDULE.test(text)) {
+    escalation = { kind: 'ASESOR', payload: `Gema dijo que cambió la cita ${liveAtStart.id} sin hacerlo` }
+    text = `Para no equivocarme con el cambio, una asesora te lo confirma ${humanWhen()}`
+  }
+  // El cliente confirmó que asiste (botón "Confirmo mi cita" del recordatorio, o la marca de Gema).
+  if ((markers.some((marker) => marker.kind === 'ASISTE') || CONFIRMS_ATTENDANCE.test(lastClientText)) && liveAtStart?.status === 'confirmed' && !liveAtStart.attendanceConfirmedAt) {
+    await confirmAttendance(liveAtStart.id)
   }
   // Lo mismo con una asesora prometida sin escalar: la promesa se cumple escalando.
   if (!escalation && PROMISES_ADVISOR.test(text)) {
@@ -702,7 +797,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   }
 
   // El cliente dice que pagó: el horario no se puede caer mientras el operador revisa.
-  if (escalation?.kind === 'PAGO' && chat.bookingId) await markDepositClaimed(chat.bookingId, config)
+  if (escalation?.kind === 'PAGO' && liveAtStart) await markDepositClaimed(liveAtStart.id, config)
 
   // Cada mensaje sale por separado, con una pausa corta entre uno y otro como si alguien escribiera.
   // Todos van dentro de la ventana de 24 h (la respuesta a un mensaje del cliente), así que no cuestan más.

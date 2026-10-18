@@ -47,6 +47,10 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate }: P
 
       <dl className={styles.facts}>
         <div><dt>Servicio</dt><dd>{booking.serviceLabel}{booking.people > 1 && <span className={styles.dim}> · {booking.people} personas</span>}</dd></div>
+        {booking.companion && <div><dt>Acompañante</dt><dd>{booking.companion}</dd></div>}
+        {booking.status === 'confirmed' && (
+          <div><dt>Asistencia</dt><dd>{booking.attendanceConfirmedAt ? `confirmada · ${new Date(booking.attendanceConfirmedAt).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}` : 'sin confirmar'}</dd></div>
+        )}
         <div><dt>Cuándo</dt><dd>{dayLabel(booking.day)} · {booking.start}–{ends} <span className={styles.dim}>({booking.durationMin} min)</span></dd></div>
         <div><dt>Sede</dt><dd><PinIcon /> {LOCATION_LABEL[booking.location]}{booking.people > 1
           ? ` · cabinas ${booking.cabin}–${booking.cabin + booking.people - 1}`

@@ -1,6 +1,6 @@
 import { after, NextResponse, type NextRequest } from 'next/server'
 import { autoReply, markPendingReply } from '@/lib/autoreply'
-import { recordInbound, requestAgent } from '@/lib/chats'
+import { recordInbound, requestAgent, setNoMarketing } from '@/lib/chats'
 import { beginMediaJob, isStoredKind, processMedia, type StoredKind } from '@/lib/media'
 import { isValidPhone, normalizePhone } from '@/lib/phone'
 import { keys, redis } from '@/lib/redis'
@@ -31,10 +31,11 @@ type WaMessage = {
   timestamp?: string
   type: string
   text?: { body?: string }
-  button?: { text?: string }
-  interactive?: { button_reply?: { title?: string }; list_reply?: { title?: string } }
+  // Respuesta rápida de una plantilla: el texto del botón y, si la plantilla lo define, su payload.
+  button?: { text?: string; payload?: string }
+  interactive?: { button_reply?: { title?: string; id?: string }; list_reply?: { title?: string } }
   // Anuncio de clic a WhatsApp: Meta lo adjunta al primer mensaje del cliente.
-  referral?: { source_type?: string; headline?: string; body?: string }
+  referral?: { source_type?: string; source_id?: string; headline?: string; body?: string; ctwa_clid?: string }
 } & Partial<Record<MediaKind, WaFile>>
 type WaValue = { messages?: WaMessage[]; contacts?: Array<{ wa_id?: string; profile?: { name?: string } }> }
 type WaPayload = { object?: string; entry?: Array<{ changes?: Array<{ field?: string; value?: WaValue }> }> }
@@ -64,8 +65,15 @@ function parseMessage(message: WaMessage): { text: string; media?: MessageMedia;
 function adOf(message: WaMessage): Message['ad'] | undefined {
   const headline = message.referral?.headline?.trim().slice(0, 200)
   const body = message.referral?.body?.trim().slice(0, 500)
-  return headline || body ? { ...(headline ? { headline } : {}), ...(body ? { body } : {}) } : undefined
+  // Atribución: id del anuncio en Meta y del clic, para cruzar con el administrador de anuncios.
+  const sourceId = message.referral?.source_id?.trim().slice(0, 80)
+  const ctwaClid = message.referral?.ctwa_clid?.trim().slice(0, 200)
+  const ad = { ...(headline ? { headline } : {}), ...(body ? { body } : {}), ...(sourceId ? { sourceId } : {}), ...(ctwaClid ? { ctwaClid } : {}) }
+  return Object.keys(ad).length ? ad : undefined
 }
+
+/** "Ahora no" en una plantilla de marketing: la clienta no quiere más plantillas de marketing. */
+const OPT_OUT = /^\s*ahora no\s*$/i
 
 // Verificación del webhook al registrarlo en Meta.
 export async function GET(request: NextRequest) {
@@ -103,8 +111,15 @@ export async function POST(request: NextRequest) {
         const at = Number(message.timestamp) * 1000 || Date.now()
         const { text, media, conversational } = parseMessage(message)
         const ad = adOf(message)
+        const buttonPayload = message.button?.payload ?? message.interactive?.button_reply?.id
         try {
-          await recordInbound(phone, { id: message.id, sender: 'user', text, at, ...(media ? { media } : {}), ...(ad ? { ad } : {}) }, names.get(phone) || undefined)
+          await recordInbound(phone, {
+            id: message.id, sender: 'user', text, at,
+            ...(media ? { media } : {}),
+            ...(ad ? { ad } : {}),
+            ...(buttonPayload ? { buttonPayload: buttonPayload.slice(0, 100) } : {}),
+          }, names.get(phone) || undefined)
+          if (message.type === 'button' && (OPT_OUT.test(text) || /ahora_no$/i.test(buttonPayload ?? ''))) await setNoMarketing(phone)
         } catch (error) {
           await redis().del(seenKey) // permite que el reintento de Meta lo vuelva a intentar
           throw error

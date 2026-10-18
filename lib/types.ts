@@ -29,7 +29,11 @@ export type Message = {
   at: number
   media?: MessageMedia
   /** Anuncio de Meta (clic a WhatsApp) desde el que llegó el cliente; viene solo en el primer mensaje. */
-  ad?: { headline?: string; body?: string }
+  ad?: { headline?: string; body?: string; sourceId?: string; ctwaClid?: string }
+  /** El cliente tocó un botón de una plantilla (respuesta rápida): su payload, si la plantilla lo define. */
+  buttonPayload?: string
+  /** Mensaje enviado por una automatización (seguimiento o plantilla), no por Gema en conversación. */
+  auto?: string
   /** Solo en el cliente: estado del envío optimista. */
   pending?: 'sending' | 'failed'
 }
@@ -61,6 +65,14 @@ export type ChatSummary = {
   /** Último pago confirmado por Bold, para el aviso emergente del panel. */
   paymentNotice: string
   paymentNoticeAt: number
+  /** Tocó "Ahora no" en una plantilla de marketing: no se le vuelven a enviar. */
+  noMarketing: boolean
+  /** Anuncio de origen (atribución): id del anuncio en Meta y clic. */
+  adSourceId: string
+  adHeadline: string
+  ctwaClid: string
+  /** Automatizaciones ya enviadas a este chat: tipo → momento del envío (evita repetirlas). */
+  autoSent: Record<string, number>
 }
 
 export type ChatDetail = ChatSummary & { messages: Message[] }
@@ -148,6 +160,12 @@ export type Booking = {
   paymentRef: string
   /** Link de Bold generado para el anticipo de esta cita; se guarda para poder reenviarlo. */
   paymentLink: string
+  /** Nombre completo de la segunda persona (2x1 de pareja). Vacío si la cita es individual. */
+  companion: string
+  /** El cliente confirmó que asiste (botón "Confirmo mi cita" o mensaje). No es lo mismo que pagada. */
+  attendanceConfirmedAt: number
+  /** Automatizaciones ya enviadas por esta cita (recordatorios, seguimiento del pago): tipo → momento. */
+  autoSent: Record<string, number>
 }
 
 /** Rango continuo de cabina libre dentro de un día. */

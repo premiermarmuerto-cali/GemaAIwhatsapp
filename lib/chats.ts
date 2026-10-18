@@ -1,3 +1,4 @@
+import { parseAutoSent } from './booking'
 import { isLocation } from './clinic'
 import { attachMediaInfo } from './media'
 import { previewOf } from './media-text'
@@ -37,6 +38,11 @@ function toSummary(phone: string, raw: Record<string, string>): ChatSummary {
     bookingId: raw.bookingId ?? '',
     paymentNotice: raw.paymentNotice ?? '',
     paymentNoticeAt: Number(raw.paymentNoticeAt ?? 0),
+    noMarketing: raw.noMarketing === '1',
+    adSourceId: raw.adSourceId ?? '',
+    adHeadline: raw.adHeadline ?? '',
+    ctwaClid: raw.ctwaClid ?? '',
+    autoSent: parseAutoSent(raw.autoSent),
   }
 }
 
@@ -101,6 +107,10 @@ export async function recordInbound(phone: string, message: Message, name?: stri
     lastInboundAt: String(message.at),
     ...(message.media?.kind === 'image' ? { lastImageAt: String(message.at) } : {}),
   })
+  // Atribución: el anuncio con el que llegó por primera vez (no se pisa si vuelve desde otro).
+  if (message.ad?.sourceId) tx.hsetnx(chatKey, 'adSourceId', message.ad.sourceId)
+  if (message.ad?.headline) tx.hsetnx(chatKey, 'adHeadline', message.ad.headline)
+  if (message.ad?.ctwaClid) tx.hsetnx(chatKey, 'ctwaClid', message.ad.ctwaClid)
   tx.hincrby(chatKey, 'unread', 1)
   tx.rpush(keys.messages(phone), JSON.stringify(message))
   tx.ltrim(keys.messages(phone), -HISTORY_LIMIT, -1)
@@ -128,6 +138,16 @@ export async function recordOutbound(phone: string, message: Message) {
   tx.zadd(keys.box('archived'), { xx: true }, { score: message.at, member: phone })
   queueStat(tx, message.sender === 'gem' ? 'aiReplies' : 'humanReplies')
   await tx.exec()
+}
+
+/** Tocó "Ahora no" en una plantilla de marketing: no se le vuelven a enviar plantillas de marketing. */
+export async function setNoMarketing(phone: string): Promise<void> {
+  await redis().hset(keys.chat(phone), { noMarketing: '1' })
+}
+
+/** Deja constancia de que una automatización ya se envió a este chat (no se repite). */
+export async function markChatAuto(chat: Pick<ChatSummary, 'phone' | 'autoSent'>, kind: string): Promise<void> {
+  await redis().hset(keys.chat(chat.phone), { autoSent: JSON.stringify({ ...chat.autoSent, [kind]: Date.now() }) })
 }
 
 /** Guarda lo que Gema averiguó del prospecto. Solo escribe los campos que traen valor nuevo. */

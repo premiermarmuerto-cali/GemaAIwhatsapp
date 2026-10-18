@@ -86,7 +86,26 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     paymentMethod: raw.paymentMethod ?? '',
     paymentRef: raw.paymentRef ?? '',
     paymentLink: raw.paymentLink ?? '',
+    companion: raw.companion ?? '',
+    attendanceConfirmedAt: Number(raw.attendanceConfirmedAt ?? 0),
+    autoSent: parseAutoSent(raw.autoSent),
   }
+}
+
+/** Registro de automatizaciones enviadas, guardado como JSON en un campo del hash. */
+export function parseAutoSent(raw: string | undefined): Record<string, number> {
+  if (!raw) return {}
+  try {
+    const value = JSON.parse(raw) as unknown
+    return value && typeof value === 'object' ? value as Record<string, number> : {}
+  } catch {
+    return {}
+  }
+}
+
+/** Los campos de una cita tal como se guardan en Redis (todo texto; autoSent como JSON). */
+function toFields(booking: Partial<Booking>): Record<string, string> {
+  return Object.fromEntries(Object.entries(booking).map(([field, value]) => [field, typeof value === 'object' ? JSON.stringify(value) : String(value)]))
 }
 
 /** "el anticipo" o "el pago completo": cómo se nombra al cliente lo que paga para reservar. */
@@ -195,6 +214,8 @@ export type NewBooking = {
   people?: number
   /** El cliente prefiere pagar la sesión completa en vez del anticipo. */
   payFull?: boolean
+  /** Nombre completo de la segunda persona (pareja del 2x1). */
+  companion?: string
 }
 
 export type BookingResult =
@@ -263,10 +284,13 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     paymentMethod: '',
     paymentRef: '',
     paymentLink: '',
+    companion: input.companion ?? '',
+    attendanceConfirmedAt: 0,
+    autoSent: {},
   }
 
   const tx = db.multi()
-  tx.hset(keys.booking(id), Object.fromEntries(Object.entries(booking).map(([field, value]) => [field, String(value)])))
+  tx.hset(keys.booking(id), toFields(booking))
   tx.zadd(keys.day(booking.day), { score: booking.startMin, member: id })
   tx.zadd(keys.byStatus(status), { score: booking.startTs, member: id })
   if (booking.holdUntil) tx.zadd(keys.holds, { score: booking.holdUntil, member: id })
@@ -329,38 +353,62 @@ export async function annotateBooking(id: string, notes: string): Promise<void> 
   await redis().hset(keys.booking(id), { notes: notes.slice(0, 1000) })
 }
 
-/** Reprograma: aparta el horario nuevo y solo entonces suelta el viejo. */
+/**
+ * Reprograma MOVIENDO la misma cita (mismo id): conserva el pago, sea anticipo o sesión completa, el
+ * link de Bold (que referencia el id) y el acompañante. Suelta las cabinas viejas, aparta las nuevas
+ * y, si el horario nuevo no está libre, vuelve a apartar las viejas. Lo usan el panel y Gema.
+ */
 export async function rescheduleBooking(config: AppConfig, id: string, day: string, start: string, location?: Location): Promise<BookingResult | null> {
+  const db = redis()
   const booking = await getBooking(id)
   if (!booking) return null
   if (!LIVE_STATUSES.includes(booking.status)) return { ok: false, reason: 'taken', alternatives: [] }
+  const target = location ?? booking.location
+  const cabins = config.cabins[target] ?? 1
+  if (booking.people > cabins) return { ok: false, reason: 'cabins', alternatives: [] }
+  if (booking.kind !== 'block' && await isClosed(day)) return { ok: false, reason: 'closed', alternatives: [] }
 
-  const created = await createBooking(config, {
-    phone: booking.phone,
-    name: booking.name,
-    location: location ?? booking.location,
-    serviceId: booking.serviceId,
-    day,
-    start,
-    concern: booking.concern,
-    notes: booking.notes,
-    source: 'operator',
-    kind: booking.kind,
-    status: booking.status,
-    people: booking.people,
-    payFull: booking.paymentPlan === 'full',
-  })
-  if (!created.ok) return created
+  const oldSlots = slotsOf(config, booking.startMin, booking.durationMin)
+  const reclaimOld = async () => {
+    const cabin = Number(await db.eval(CLAIM, [keys.slots(booking.location, booking.day)], [id, String(config.cabins[booking.location] ?? 1), String(booking.people), ...oldSlots]))
+    if (!cabin) console.error(`[booking] no se pudo volver a apartar el horario original de ${id} (${booking.day} ${booking.start}) tras una reprogramación fallida`)
+  }
 
+  // Se suelta primero el horario viejo: así una cita puede moverse 15 minutos sin chocar consigo misma.
   await releaseSlots(booking)
-  await redis().multi()
-    .hset(keys.booking(id), { status: 'cancelled', holdUntil: '0', cancelReason: `Reprogramada → ${created.booking.id}` })
-    .zrem(keys.byStatus(booking.status), id)
-    .zadd(keys.byStatus('cancelled'), { score: booking.startTs, member: id })
-    .zrem(keys.day(booking.day), id)
-    .zrem(keys.holds, id)
-    .exec()
-  return created
+  const occupancy = await occupancyOf(target, day, { force: true })
+  const free = freeStarts(config, target, day, booking.durationMin, occupancy, { people: booking.people })
+  if (booking.kind !== 'block' && !free.includes(start)) {
+    await reclaimOld()
+    return { ok: false, reason: 'taken', alternatives: free }
+  }
+  const startMin = toMinutes(start)
+  const cabin = Number(await db.eval(CLAIM, [keys.slots(target, day)], [id, String(cabins), String(booking.people), ...slotsOf(config, startMin, booking.durationMin)]))
+  if (!cabin) {
+    await reclaimOld()
+    return { ok: false, reason: 'taken', alternatives: freeStarts(config, target, day, booking.durationMin, await occupancyOf(target, day), { people: booking.people }) }
+  }
+
+  const startTs = timestampOf(day, start)
+  // Recordatorios ya enviados eran para la fecha vieja: se olvidan, y la asistencia se vuelve a confirmar.
+  const moved: Booking = { ...booking, location: target, day, start, startMin, startTs, cabin, autoSent: {}, attendanceConfirmedAt: 0 }
+  const tx = db.multi()
+  tx.hset(keys.booking(id), toFields({ location: target, day, start, startMin, startTs, cabin, autoSent: {}, attendanceConfirmedAt: 0 }))
+  tx.zrem(keys.day(booking.day), id)
+  tx.zadd(keys.day(day), { score: startMin, member: id })
+  tx.zadd(keys.byStatus(booking.status), { score: startTs, member: id })
+  await tx.exec()
+  return { ok: true, booking: moved }
+}
+
+/** El cliente confirmó que asiste (botón de la plantilla de recordatorio o mensaje). */
+export async function confirmAttendance(id: string): Promise<void> {
+  await redis().hset(keys.booking(id), { attendanceConfirmedAt: String(Date.now()) })
+}
+
+/** Deja constancia de que una automatización ya se envió por esta cita (no se repite). */
+export async function markBookingAuto(booking: Pick<Booking, 'id' | 'autoSent'>, kind: string): Promise<void> {
+  await redis().hset(keys.booking(booking.id), { autoSent: JSON.stringify({ ...booking.autoSent, [kind]: Date.now() }) })
 }
 
 /** Citas de un día, ordenadas por hora de inicio. Incluye bloqueos del operador. */
