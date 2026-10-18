@@ -19,15 +19,17 @@ Este manual tiene cuatro partes: **1)** cuánto cuesta mantenerla, **2)** cómo 
 | **Vercel (Pro)** | Aloja a Gema y el panel en internet | **USD 20 / mes** | Fijo |
 | **OpenAI** | El "cerebro" que redacta las respuestas, lee imágenes y transcribe audios | **≈ USD 1 por cada 1.000 respuestas** (ver 1.3) | Variable |
 | **Upstash Redis** | La base de datos: chats, citas, configuración | **USD 0 a ≈ 5 / mes** (ver 1.4) | Casi fijo |
-| **Meta / WhatsApp Cloud API** | El número de WhatsApp de Gema | **USD 0 por las respuestas de Gema** dentro de la ventana de 24 h; las plantillas y la publicidad sí cuestan (ver 1.5) | Variable |
+| **Meta / WhatsApp Cloud API** | El número de WhatsApp de Gema | **USD 0 por las respuestas de Gema** dentro de la ventana de 24 h. Plantillas: **USD 0,0125 cada mensaje de marketing** y **USD 0,0008 cada recordatorio** (ver 1.5) | Variable |
+| **Programador de tareas** | Dispara los recordatorios y seguimientos cada 15 min | **USD 0**: incluido en Vercel Pro, o gratis con cron-job.org | Fijo |
 | **Bold** | Cobrar la reserva | **Sin mensualidad;** comisión por cada pago (ver 1.6) | Variable, la paga Premier por venta |
 | Dominio propio *(opcional)* | Una dirección tipo `gema.premier.co` en vez de `premier-agente.vercel.app` | ≈ USD 15 / año | Fijo |
 
-**Piso mensual realista: ≈ USD 21 a 25 al mes** (≈ COP 85.000–100.000 a una tasa ilustrativa de 4.000), sin contar la publicidad en Meta ni las comisiones de Bold, que dependen de las ventas.
+**Piso mensual realista: ≈ USD 21 a 25 al mes** (≈ COP 85.000–100.000 a una tasa ilustrativa de 4.000), sin contar la publicidad en Meta ni las comisiones de Bold, que dependen de las ventas. Las plantillas de WhatsApp suman poco: ≈ USD 4 por cada 500 enviadas (ver 1.5).
 
 ### 1.2 Vercel — el servidor  ⚠️ **decisión pendiente**
 
 - Hoy Gema corre en el plan **Hobby (gratis)**. Ese plan es **solo para uso personal y no comercial**: según las condiciones de Vercel, un negocio que cobra a clientes debe estar en **Pro**. Para un cliente real recomiendo **pasar a Pro: USD 20 al mes** (incluye 1 usuario que despliega y USD 20 de consumo).
+- Pro también permite **tareas programadas cada pocos minutos** (Vercel Cron), que son las que disparan los recordatorios y seguimientos. En Hobby solo corren una vez al día, así que mientras siga en Hobby hay que usar un programador externo gratuito (cron-job.org, ver 4.1).
 - Beneficio adicional: en Hobby la plataforma recorta en silencio el tiempo que tiene Gema para responder; ya lo mitigamos en el código, pero Pro da más margen.
 - Fuentes de las cifras: [Vercel Pricing 2026 (modelence)](https://modelence.com/compare/vercel-pricing), [Vercel pricing 2026 (deploycloud)](https://deploycloud-shopify.devcloudsoftware.com/blog/vercel-pricing). **Verificar en <https://vercel.com/pricing>.**
 
@@ -57,7 +59,17 @@ Este manual tiene cuatro partes: **1)** cuánto cuesta mantenerla, **2)** cómo 
 ### 1.5 Meta / WhatsApp — el número
 
 - **Las respuestas de Gema a quien escribe primero no cuestan** mientras el cliente haya escrito en las últimas 24 horas (cada mensaje suyo reinicia la ventana).
-- **Sí cuestan** los mensajes que Premier inicia con plantilla (recordatorios, promociones) y la **publicidad** que lleva clientes a WhatsApp. Esos precios dependen del país y la categoría; hay que consultarlos en la tarifa oficial de Meta en pesos: <https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing>.
+- **Sí cuestan** los mensajes que Gema envía con plantilla cuando la ventana de 24 h ya se cerró. Meta cobra **por cada plantilla entregada**, según su categoría. Tarifas de Colombia desde el 1 de octubre de 2026 (comparativas de terceros que coinciden entre sí; la tarifa oficial está en <https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing>):
+
+  | Plantilla de Gema | Categoría | Precio por mensaje entregado |
+  |---|---|---|
+  | `retomar_cita_limpieza`, `anticipo_pendiente`, `ultimos_dias_bono` | Marketing | **USD 0,0125** (≈ COP 50) |
+  | `recordatorio_cita` | Utilidad | **USD 0,0008** (≈ COP 3) |
+
+  Ejemplo: 300 plantillas de marketing y 200 recordatorios al mes son ≈ **USD 3,90** (USD 3,75 + 0,16).
+- **Lo que hace Gema para no gastar de más:** si la clienta escribió en las últimas 24 h, el recordatorio y los seguimientos van como **texto libre, que es gratis**; la plantilla solo se usa con la ventana cerrada. Además envía máximo **una plantilla de marketing por persona cada 3 días** y nunca a quien tocó **"Ahora no"**.
+- **Cuidado con la calidad del número:** si mucha gente bloquea o reporta las plantillas de marketing, Meta baja la calificación del número y limita cuántas puede enviar al día. Por eso los topes de arriba.
+- La **publicidad** que lleva clientes a WhatsApp tiene su propio presupuesto.
 - Los anuncios "Click to WhatsApp" tienen su propio presupuesto de publicidad, **que no está incluido en nada de lo anterior**.
 - Para que Gema funcione hace falta una **cuenta de Meta Business verificada**; verificarla no tiene costo, pero sí requiere documentos de la empresa.
 
@@ -82,10 +94,16 @@ Este manual tiene cuatro partes: **1)** cuánto cuesta mantenerla, **2)** cómo 
 1. **Responde siempre,** a cualquier hora, incluso con la clínica cerrada.
 2. **Primera respuesta directa:** quien llega desde un anuncio o pregunta por un servicio recibe de inmediato en qué consiste, su precio y la promoción vigente, y la pregunta "¿en qué sede te queda mejor?". No lo interroga primero.
 3. **Agenda de verdad:** ve la disponibilidad real de 14 días en las dos sedes y solo ofrece horas libres. Aparta la cabina en el instante en que el cliente acepta.
-4. **Cobra la reserva:** pregunta si prefiere pagar el **anticipo (50 %)** o la **sesión completa** y le envía un **link de Bold único por cita**. Cuando Bold confirma el pago, la cita queda confirmada sola y el cliente recibe el aviso por WhatsApp. Sin intervención del operador.
+4. **Cobra la reserva:** pregunta si prefiere pagar el **anticipo (50 %)** o la **sesión completa**. Al apartar la cita le ofrece los dos medios y espera a que elija:
+   - **Link de Bold** (PSE, tarjeta débito o crédito, Nequi o Daviplata): un link único por cita. Cuando Bold confirma el pago, la cita queda confirmada sola y el cliente recibe el aviso por WhatsApp, sin intervención del operador.
+   - **Transferencia directa** a Nequi 3114644721, Daviplata 3214040436 o la cuenta de ahorros Bancolombia 91232333868: el cliente manda la captura del comprobante y el chat pasa a una asesora para validarlo.
+
+   Si el cliente ya dijo cómo quiere pagar ("por Nequi", "con tarjeta"), Gema le manda ese medio directamente. El link de Bold solo se crea cuando el cliente lo elige, así no quedan links abiertos que nadie usa.
 5. **Parejas (2x1):** agenda dos personas a la misma hora, cada una en su cabina, con el mismo servicio.
 6. **Entiende** notas de voz (las transcribe), fotos y capturas (las lee), y contesta en el idioma del cliente.
-7. **Pasa a una persona** cuando corresponde (ver 2.4).
+7. **Escribe como una persona, no como un bot:** mensajes cortos, informales, a veces en 2 o 3 mensajes seguidos con una pausa de un segundo entre uno y otro, sin signos de apertura (¿ ¡), sin frases de call center ("con gusto te ayudo", "quedo atenta") y sin emojis. Si le preguntan si es un bot, responde que es la asistente virtual de Premier y ofrece pasar con una asesora. El link de pago y las cuentas siempre van completos en un solo mensaje. Estas reglas están en el prompt y además el servidor las refuerza, porque el modelo a veces se desvía.
+7. **Pasa a una persona** cuando corresponde (ver 2.6).
+8. **Cambia, cancela y confirma citas** (ver 2.3) y **escribe sola** recordatorios y seguimientos (ver 2.4).
 
 ### 2.2 Reglas de negocio vigentes (octubre 2026)
 
@@ -98,12 +116,42 @@ Este manual tiene cuatro partes: **1)** cuánto cuesta mantenerla, **2)** cómo 
 | Apartado | El horario se guarda **120 minutos** mientras se paga; si no, se libera solo |
 | Anticipación mínima | 2 horas |
 | Catálogo | Peeling y Hidratación $130.000 (30 min) · Hidratación y Pigmentación $170.000 · Disminución de Líneas de Expresión $200.000 · Hidratación Profunda con Dispositivo Médico $250.000 (45 min cada una). Las duraciones son estándar y aproximadas |
-| **2x1** | Dos personas, mismo servicio, mismo día y misma hora, pagan **una** sesión. Peeling y Hidratación: sesiones **hasta el 31 de octubre de 2026**. Los demás servicios: **sin fecha límite por ahora**. Sin 2x1 (o después de la fecha), una pareja paga dos sesiones |
+| **2x1** | **Solo en dos servicios.** Dos personas, mismo servicio, mismo día y misma hora, pagan **una** sesión. **Peeling y Hidratación:** sesiones **hasta el 31 de octubre de 2026**. **Líneas de Expresión:** sin fecha límite por ahora. **Pigmentación e Hidratación Profunda:** no incluyen 2x1. Sin 2x1 (o después de la fecha), una pareja agenda y paga dos sesiones |
 | Pagos | Bold por defecto (tarjeta, PSE, Nequi; clientes del exterior con tarjeta de crédito, en pesos). También transferencia directa a Bancolombia, Nequi o Daviplata |
 
 > **Importante:** estas reglas se cambian en el panel (⚙ Configuración), no hay que tocar código. Pero un cambio mal hecho cambia lo que Gema promete.
 
-### 2.3 Cómo es una reserva por dentro
+### 2.3 Cambios, cancelaciones y confirmación de asistencia
+
+- **Reprogramar:** si la clienta quiere otro día, hora o sede, Gema le ofrece horas libres y mueve la cita. Es **la misma cita**: se conserva lo que ya pagó (anticipo o sesión completa) y el link de Bold.
+- **Cancelar:** si dice que no podrá asistir, Gema primero ofrece cambiar la fecha (su pago se conserva). Si igual quiere cancelar, Gema cancela la cita y **libera el cupo en la agenda**. Si la cita **ya estaba pagada**, el chat pasa a una asesora como **"Reembolso"**: el dinero lo devuelve siempre una persona, nunca Gema.
+- **Confirmar asistencia:** cuando la clienta responde "Confirmo mi cita" (botón del recordatorio o mensaje), la cita queda con **asistencia confirmada**. Eso es distinto de *pagada* y se ve en la ficha de la cita.
+- **Pareja (2x1):** cada sesión se agenda con el **nombre completo de quien se la hace**. Gema no reserva hasta tener los dos nombres. Solo se guardan los nombres y el número de WhatsApp: ni cédula, ni correo, ni otros datos.
+
+### 2.4 Mensajes automáticos
+
+Gema también escribe sola, sin que la clienta haya escrito. Un programador la despierta cada 15 minutos.
+
+| Mensaje | Cuándo | Cómo |
+|---|---|---|
+| Aviso de pago pendiente | ~30 min antes de que se libere un horario apartado sin pago | Texto libre (gratis) |
+| Recordatorio de la cita | 24 h antes de cada cita **pagada** | Texto libre si la clienta escribió en las últimas 24 h; si no, plantilla `recordatorio_cita` |
+| Recordatorio del día | 2–3 h antes, solo si confirmó asistencia | Texto libre |
+| Seguimiento | ~22 h después de su último mensaje, si no respondió y no tiene cita | Texto libre |
+| Retomar la cita | Más de 24 h sin escribir y sin cita (hasta 7 días) | Plantilla `retomar_cita_limpieza` |
+| Anticipo pendiente | El horario se liberó sin pago hace más de 24 h y la fecha aún no pasa | Plantilla `anticipo_pendiente`. Si toca **"Reenviar el link"**, Gema vuelve a apartar el mismo horario (si sigue libre) y le manda un link nuevo |
+| Últimos días del 2x1 | 2–3 días antes de que venza una promoción, a quien escribió y no agendó | Plantilla `ultimos_dias_bono`. La oferta se arma sola desde la configuración del 2x1 |
+
+**Reglas de cortesía, ya programadas:**
+- Solo se envían entre **8:00 a.m. y 9:00 p.m.**
+- Nunca a un chat que está atendiendo una persona (Gema en pausa o con alerta de asesora).
+- Cada mensaje se envía **una sola vez** y queda registrado en la ficha del chat ("Automáticos").
+- Máximo 25 envíos por corrida y una plantilla de marketing por persona cada 3 días.
+- Si la clienta toca **"Ahora no"**, no recibe más plantillas de marketing; los recordatorios de su cita sí le llegan.
+
+**Interruptores** (variables en Vercel): `AUTOMATIONS=off` apaga todo lo automático; `WHATSAPP_TEMPLATES=on` activa las plantillas. Este último **debe quedar en off hasta que las plantillas estén aprobadas en Meta** y las imágenes subidas.
+
+### 2.5 Cómo es una reserva por dentro
 
 1. El cliente acepta día, hora y sede, y da su nombre.
 2. Gema escribe el mensaje y añade una **marca invisible** para el cliente (por ejemplo `[[RESERVA: …]]`). Gema nunca llama al sistema directamente.
@@ -111,12 +159,12 @@ Este manual tiene cuatro partes: **1)** cuánto cuesta mantenerla, **2)** cómo 
 4. Si el horario se ocupó justo antes, ofrece otras horas automáticamente.
 5. Al llegar el pago, Bold avisa al servidor (webhook) y la cita pasa a **Confirmada**.
 
-### 2.4 Cuándo pasa el chat a una persona
+### 2.6 Cuándo pasa el chat a una persona
 
 Gema escala (el chat aparece marcado en la bandeja) cuando:
 - el cliente pide hablar con una persona;
 - **envía el comprobante de una transferencia** (aparece como *Pago por validar*);
-- quiere **cambiar o cancelar** una cita;
+- **cancela una cita ya pagada** (aparece como *Reembolso*) o pregunta algo sobre su dinero;
 - tiene un reclamo o describe una condición médica;
 - pregunta algo que Gema no sabe (precio no configurado, condiciones de promoción que no están escritas);
 - algo falla (Bold no generó el link, WhatsApp rechazó el mensaje, se superó el tope de respuestas).
@@ -139,15 +187,17 @@ El panel (`https://premier-agente.vercel.app`, con la clave de administrador) ti
 
 **Al abrir (10:00 a.m.)**
 1. Abrir la consola y filtrar **Humano** / buscar chats con etiqueta roja: son los que Gema dejó esperando durante la noche o el domingo.
-2. Atender primero los **Pago por validar** y luego los **Requiere asesor**.
+2. Atender primero los **Pago por validar**, después los **Reembolso** (devolver el dinero desde Bold o por transferencia y avisarle a la clienta) y luego los **Requiere asesor**.
+3. Revisar en la **Agenda** las citas del día: la ficha dice si la clienta **confirmó asistencia** con el recordatorio.
 
 **Durante el día**
-3. Para responder a un cliente basta con **escribir en el chat**: eso pausa a Gema en ese chat automáticamente ("Control humano").
-4. Cuando termines, pulsa **Devolver a Gema** para que retome. Si no lo haces, ese cliente queda sin respuesta automática.
-5. Revisar la **Agenda** de cada sede antes de la jornada.
+4. Para responder a un cliente basta con **escribir en el chat**: eso pausa a Gema en ese chat automáticamente ("Control humano").
+5. Cuando termines, pulsa **Devolver a Gema** para que retome. Si no lo haces, ese cliente queda sin respuesta automática **y tampoco recibe los recordatorios ni seguimientos automáticos**.
 
 **Al cerrar (6:00 p.m.)**
 6. No dejar chats en rojo sin responder: desde las 6:00 p.m. nadie del equipo los verá hasta el día siguiente (domingo, hasta el lunes).
+
+**En la ficha de cada chat (columna derecha de la consola)** se ve el anuncio por el que llegó, si tocó "Ahora no" (no recibe marketing) y qué mensajes automáticos se le enviaron y cuándo.
 
 ### 3.3 Cómo validar una transferencia
 
@@ -175,7 +225,8 @@ Precios, horarios, texto de la promoción, 2x1 por servicio (casilla + fecha), d
 
 ### 3.7 Lo que el operador debe saber del 2x1
 
-- Es **por sesión, no por reserva:** el 31 de octubre vence la promoción del Peeling para sesiones hasta esa fecha, aunque se reserve antes.
+- Solo aplica a **Peeling y Hidratación** y a **Líneas de Expresión**. Pigmentación e Hidratación Profunda no tienen 2x1: si una pareja pregunta por ellas, Gema se lo dice y agenda dos sesiones.
+- Es **por sesión, no por reserva:** el 31 de octubre vence la promoción del Peeling para sesiones hasta esa fecha, aunque se reserve antes. La de Líneas de Expresión no tiene fecha.
 - La pareja va **a la misma hora, en cabinas distintas.** Si una sede no tiene dos cabinas libres a esa hora, Gema ofrece otra hora u otra sede.
 - Cuando el 2x1 de un servicio vence, el sistema deja de ofrecerlo solo y cobra dos sesiones a las parejas. Para apagarlo antes, quita la casilla del servicio en Configuración.
 
@@ -199,8 +250,23 @@ Todas están guardadas como **variables de entorno** en Vercel (*Settings → En
 | `UPSTASH_REDIS_REST_URL` / `_TOKEN` | Acceso a la base de datos | console.upstash.com | No |
 | `ADMIN_PASSWORD` / `AUTH_SECRET` | Clave de la consola y secreto de sesión | La escoge el desarrollador | Cambiarla si alguien sale del equipo |
 | `OPENAI_MODEL` | Modelo (`gpt-4o-mini`) | — | — |
+| `CRON_SECRET` | Clave que debe enviar el programador para disparar los mensajes automáticos | La escoge el desarrollador (texto largo y aleatorio) | No |
+| `AUTOMATIONS` | `on` / `off`: interruptor general de mensajes automáticos | — | — |
+| `WHATSAPP_TEMPLATES` | `on` / `off`: envío de plantillas (se cobran) | — | Dejar en `off` hasta que estén aprobadas |
+| `PUBLIC_APP_URL` | Dirección pública del panel; de ahí Meta descarga las imágenes de las plantillas | — | Cambiarla si se usa un dominio propio |
 
 > Si cambias una variable en Vercel, **hay que volver a desplegar** (Deployments → Redeploy) para que Gema la tome.
+
+**El programador de mensajes automáticos.** Algo tiene que llamar a `https://premier-agente.vercel.app/api/cron` cada 15 minutos con el encabezado `Authorization: Bearer <CRON_SECRET>`. Dos opciones:
+- **Con Vercel Pro:** se configura como Vercel Cron, dentro del mismo proyecto.
+- **Mientras siga en Hobby:** una cuenta gratuita de **cron-job.org** con esa dirección, cada 15 minutos y ese encabezado.
+
+Si el programador se detiene, Gema **sigue respondiendo** con normalidad. Lo único que se pierde son los recordatorios, seguimientos y plantillas.
+
+**Las plantillas en Meta.** Están en WhatsApp Manager → Plantillas de mensajes, en idioma Spanish (COL) `es_CO`:
+- No se les cambia el nombre ni las variables sin avisar al desarrollador.
+- Si Meta rechaza o pausa una, Gema la intenta como máximo una vez al día y el error queda en los registros de Vercel.
+- Las imágenes de encabezado están en la carpeta `public/plantillas/` del proyecto.
 
 ### 4.2 Accesos: dónde se entra a cada sistema
 
@@ -236,6 +302,8 @@ Todas están guardadas como **variables de entorno** en Vercel (*Settings → En
 | **OpenAI sin saldo** | Gema no puede redactar | Chats en rojo "Gema no pudo generar una respuesta" |
 | **Upstash agotado** | Todo falla (chats, citas, panel) | La consola no carga o da errores |
 | **Vercel caído** | Panel y Gema sin servicio | La URL no abre |
+| **Programador detenido** (Vercel Cron o cron-job.org) | No salen recordatorios, seguimientos ni plantillas; Gema sigue respondiendo | La ficha de los chats deja de mostrar "Automáticos" nuevos |
+| **Plantilla rechazada o pausada por Meta** | Esa plantilla no sale | Error en los registros de Vercel; el estado se ve en WhatsApp Manager |
 
 ### 4.4 Revisión semanal (10 minutos)
 
@@ -244,10 +312,11 @@ Todas están guardadas como **variables de entorno** en Vercel (*Settings → En
 3. **OpenAI** → Usage: ¿el consumo está en lo esperado?
 4. **Upstash** → Usage: ¿cuántos comandos van este mes?
 5. **Agenda:** probar enviando un mensaje de prueba a Gema desde un celular propio.
+6. **WhatsApp Manager:** calidad del número (verde) y estado de las plantillas (aprobadas, ninguna pausada).
 
 ### 4.5 Revisión mensual
 
-- Facturas de Vercel, OpenAI y Upstash (ver sección 1).
+- Facturas de Vercel, OpenAI, Upstash y el consumo de plantillas en Meta (ver sección 1).
 - Revisar si **Meta, Bold, OpenAI o Vercel** cambiaron tarifas.
 - Revisar el vencimiento de la **promoción** y actualizar precios, horarios y 2x1.
 - Cambiar la clave del panel si salió alguien del equipo.
@@ -263,23 +332,28 @@ Todas están guardadas como **variables de entorno** en Vercel (*Settings → En
 
 ### 4.7 Seguridad y datos
 
-- Los chats y teléfonos de clientes son **datos personales** (Ley 1581 de 2012, Colombia): no compartir capturas de la consola, y tener una política de tratamiento de datos publicada.
+- Gema guarda **solo lo necesario para agendar**: el nombre completo de quien se hace la sesión (y el de su acompañante en el 2x1) y su número de WhatsApp. No pide cédula, correo ni otros datos.
+- Aun así, los chats son información de las clientas: no compartir capturas de la consola fuera del equipo.
 - El panel pide clave; no dejarlo abierto en computadores compartidos.
 
 ---
 
 ## 5. Estado del proyecto y pendientes
 
-**Avance estimado: ≈ 95 %.** Pendiente para considerarlo cerrado:
+**Avance estimado: ≈ 90 %.** La atención, la agenda, el cobro y las automatizaciones están programados y probados. Lo que falta es sobre todo configuración y la aprobación de las plantillas.
 
+Pendiente para considerarlo cerrado:
+
+- [ ] **ID de la cuenta de WhatsApp Business (WABA)**, para revisar las plantillas aprobadas (textos, botones y estado) contra lo programado.
+- [ ] **Imágenes** `plantilla_retomar_cita.jpg` y `plantilla_ultimos_dias_bono.jpg`, para la carpeta `public/plantillas/`.
+- [ ] Configurar `CRON_SECRET` y el programador (Vercel Cron o cron-job.org), y probar los mensajes automáticos.
+- [ ] Activar `WHATSAPP_TEMPLATES=on` cuando las plantillas estén aprobadas.
 - [ ] Pasar Vercel a **Pro** (sección 1.2).
 - [ ] Activar tope de gasto en **OpenAI** y **Upstash** (secciones 1.3 y 1.4).
 - [ ] Confirmar que el **token de WhatsApp es permanente**.
 - [ ] Confirmar con Bold la **tarifa real** del contrato.
 - [ ] Pasar las cuentas (Meta, Vercel, OpenAI, Upstash, GitHub, Bold) a **titularidad de Premier** y completar la tabla de accesos (sección 4.2).
 - [ ] Guardar las claves en un gestor de contraseñas compartido por dos personas.
-- [ ] Limpiar los datos de la prueba (cita `5cb10822` y el chat del número de prueba).
-- [ ] Decidir si se **mantiene la transferencia** o se deja solo Bold (decisión comercial de Premier).
 - [ ] Segunda versión de este manual, con capturas de pantalla del panel.
 
 *Fin del borrador v1.*
