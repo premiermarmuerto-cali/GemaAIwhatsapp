@@ -28,6 +28,38 @@ export async function downloadMedia(mediaId: string): Promise<{ bytes: Buffer; m
   return { bytes, mime }
 }
 
+/**
+ * Plantilla aprobada en Meta, con variables CON NOMBRE (parameter_name) y, si la plantilla lo tiene,
+ * imagen de encabezado por URL pública. Es la única forma de escribirle a alguien con la ventana de
+ * 24 h cerrada. Los valores no pueden ir vacíos ni con saltos de línea (regla de Meta).
+ */
+export async function sendWhatsAppTemplate(
+  to: string,
+  template: { name: string; language: string; params: Record<string, string>; headerImageUrl?: string },
+): Promise<string | undefined> {
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID
+  const token = accessToken()
+  if (!phoneId) throw new WhatsAppError('WhatsApp no está configurado (WHATSAPP_PHONE_NUMBER_ID).')
+  const clean = (value: string) => value.replace(/[\t\n\r]+/g, ' ').replace(/ {4,}/g, '   ').trim()
+  const params = Object.entries(template.params).map(([name, value]) => {
+    if (!clean(value)) throw new WhatsAppError(`La variable "${name}" de la plantilla ${template.name} está vacía.`)
+    return { type: 'text', parameter_name: name, text: clean(value) }
+  })
+  const components = [
+    ...(template.headerImageUrl ? [{ type: 'header', parameters: [{ type: 'image', image: { link: template.headerImageUrl } }] }] : []),
+    ...(params.length ? [{ type: 'body', parameters: params }] : []),
+  ]
+  const response = await fetch(`https://graph.facebook.com/${version}/${phoneId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'template', template: { name: template.name, language: { code: template.language }, components } }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  const data = await response.json().catch(() => null) as { messages?: Array<{ id: string }>; error?: { message?: string } } | null
+  if (!response.ok) throw new WhatsAppError(data?.error?.message ?? `WhatsApp respondió ${response.status}`)
+  return data?.messages?.[0]?.id
+}
+
 export async function sendWhatsAppText(to: string, body: string): Promise<string | undefined> {
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID
   const token = accessToken()

@@ -407,8 +407,10 @@ export async function confirmAttendance(id: string): Promise<void> {
 }
 
 /** Deja constancia de que una automatización ya se envió por esta cita (no se repite). */
-export async function markBookingAuto(booking: Pick<Booking, 'id' | 'autoSent'>, kind: string): Promise<void> {
-  await redis().hset(keys.booking(booking.id), { autoSent: JSON.stringify({ ...booking.autoSent, [kind]: Date.now() }) })
+export async function markBookingAuto(booking: Pick<Booking, 'id'>, kind: string): Promise<void> {
+  // Se lee el registro actual para no pisar otra marca hecha en la misma corrida.
+  const current = parseAutoSent(await redis().hget<string>(keys.booking(booking.id), 'autoSent') ?? undefined)
+  await redis().hset(keys.booking(booking.id), { autoSent: JSON.stringify({ ...current, [kind]: Date.now() }) })
 }
 
 /** Citas de un día, ordenadas por hora de inicio. Incluye bloqueos del operador. */

@@ -1,7 +1,7 @@
 import { extractReserva, generateReply, type ExtractedReserva } from './ai'
-import { chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
+import { bookingsOfPhone, chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
 import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
-import { isLocation, LOCATION_LABEL, LOCATIONS } from './clinic'
+import { isLocation, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
 import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead, updateChat } from './chats'
 import { generarLinkPagoBold } from './bold'
 import { amountOf, getConfig, paymentFor, pesos, resolveService, twoForOneApplies } from './config'
@@ -318,8 +318,6 @@ function receiptNote(history: Message[]): string {
   return ''
 }
 
-const MONTH_NAME = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-
 /**
  * El 2x1 que el modelo olvidó mencionar. Con un historial largo el modelo imita sus respuestas
  * anteriores y deja de nombrar la promoción aunque el prompt lo exija (medido: 0 de 4). Si la
@@ -368,8 +366,47 @@ async function boldLinkFor(booking: Booking): Promise<string> {
  * la creó un operador) se genera uno nuevo que vence con el apartado.
  * `implicit`: Gema prometió el link sin la marca; si no hay cita apartada, no se hace nada.
  */
+/**
+ * La última cita del cliente se canceló porque no pagó a tiempo y la sesión todavía no pasa: se vuelve
+ * a crear igual (servicio, sede, día, hora, personas, forma de pago). Si el horario ya lo tomó otra
+ * persona, se le ofrecen otras horas ese día.
+ */
+async function rebookExpired(config: AppConfig, phone: string): Promise<{ booking: Booking | null } | { applied: Applied }> {
+  const [last] = await bookingsOfPhone(phone, 1)
+  if (!last || last.status !== 'cancelled' || last.startTs <= Date.now() + config.leadTimeHours * 3_600_000) return { booking: null }
+  const reason = await redis().hget<string>(keys.booking(last.id), 'cancelReason')
+  if (reason !== 'Anticipo no pagado a tiempo') return { booking: null }
+  const result = await createBooking(config, {
+    phone, name: last.name, location: last.location, serviceId: last.serviceId, day: last.day, start: last.start,
+    concern: last.concern, notes: last.notes, source: 'bot', people: last.people, payFull: last.paymentPlan === 'full', companion: last.companion,
+  })
+  if (result.ok) {
+    await attachBooking(phone, result.booking.id, { name: last.name, serviceId: last.serviceId, location: last.location })
+    return { booking: result.booking }
+  }
+  if (result.reason === 'taken') {
+    const options = result.alternatives.slice(0, 4).map(clock12)
+    return {
+      applied: {
+        append: '',
+        replaceText: options.length
+          ? `Tu horario del ${dayLabel(last.day)} a las ${clock12(last.start)} ya lo tomó otra persona. Ese día en ${LOCATION_LABEL[last.location]} me quedan: ${options.join(', ')}\n\ncuál te sirve?`
+          : `Tu horario del ${dayLabel(last.day)} ya no está disponible y ese día no me queda espacio\n\nte busco otro día?`,
+      },
+    }
+  }
+  return { booking: null }
+}
+
 async function resendLink(config: AppConfig, phone: string, { implicit = false } = {}): Promise<Applied> {
-  const booking = await liveBookingOf(phone)
+  let booking = await liveBookingOf(phone)
+  if (!booking && !implicit) {
+    // El horario se liberó sin pago (la plantilla anticipo_pendiente ofrece "Reenviar el link"): se
+    // vuelve a apartar el mismo horario, si sigue libre, y se manda un link nuevo.
+    const rebooked = await rebookExpired(config, phone)
+    if ('applied' in rebooked) return rebooked.applied
+    booking = rebooked.booking
+  }
   if (!booking || !HOLD_STATUSES.includes(booking.status)) {
     return implicit ? { append: '' } : { append: '', escalate: 'Gema quiso reenviar un link de pago, pero no hay una cita apartada' }
   }
@@ -721,7 +758,8 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   const reprogramar = markers.find((marker) => marker.kind === 'REPROGRAMAR')
   const cancelar = markers.find((marker) => marker.kind === 'CANCELAR')
   const payFull = planChoice ? planChoice === 'full' : markers.some((marker) => marker.kind === 'COMPLETO')
-  const link = markers.some((marker) => marker.kind === 'LINK')
+  // Botón "Reenviar el link" de las plantillas: no depende de que el modelo ponga la marca.
+  const link = markers.some((marker) => marker.kind === 'LINK') || /^\s*reenviar (el )?link\s*$/i.test(lastClientText)
   let applied: Applied | null = null
   if (reserva) {
     // Acompañante: el de la marca; si el modelo la olvidó pero el cliente dijo que viene con alguien,

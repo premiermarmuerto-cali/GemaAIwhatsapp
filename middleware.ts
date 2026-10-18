@@ -2,8 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { SESSION_COOKIE, verifySession } from '@/lib/auth'
 import { clientIp, rateLimit } from '@/lib/ratelimit'
 
-// Rutas accesibles sin sesión. Los webhooks (Meta y Bold) se protegen con firma, no con cookie.
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook', '/api/bold/webhook']
+// Rutas accesibles sin sesión. Los webhooks (Meta y Bold) se protegen con firma, y el programador
+// de automatizaciones con CRON_SECRET; ninguno con cookie.
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/webhook', '/api/bold/webhook', '/api/cron']
 const API_LIMIT_PER_MINUTE = 120
 
 function isPublic(pathname: string) {
@@ -44,5 +45,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   runtime: 'nodejs',
-  matcher: ['/((?!_next/static|_next/image|brand/|favicon.ico|robots.txt).*)'],
+  // plantillas/: imágenes de encabezado de las plantillas de WhatsApp; Meta las descarga sin sesión.
+  matcher: ['/((?!_next/static|_next/image|brand/|plantillas/|favicon.ico|robots.txt).*)'],
 }

@@ -146,8 +146,10 @@ export async function setNoMarketing(phone: string): Promise<void> {
 }
 
 /** Deja constancia de que una automatización ya se envió a este chat (no se repite). */
-export async function markChatAuto(chat: Pick<ChatSummary, 'phone' | 'autoSent'>, kind: string): Promise<void> {
-  await redis().hset(keys.chat(chat.phone), { autoSent: JSON.stringify({ ...chat.autoSent, [kind]: Date.now() }) })
+export async function markChatAuto(chat: Pick<ChatSummary, 'phone'>, kind: string): Promise<void> {
+  // Se lee el registro actual (no el de la corrida) para no pisar otra marca hecha en la misma corrida.
+  const current = parseAutoSent(await redis().hget<string>(keys.chat(chat.phone), 'autoSent') ?? undefined)
+  await redis().hset(keys.chat(chat.phone), { autoSent: JSON.stringify({ ...current, [kind]: Date.now() }) })
 }
 
 /** Guarda lo que Gema averiguó del prospecto. Solo escribe los campos que traen valor nuevo. */

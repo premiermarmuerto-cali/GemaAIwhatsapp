@@ -63,8 +63,8 @@ export function Inspector({ stats, chat, onOpenSettings, toast }: Props) {
               <div><dt>Anuncio</dt><dd>{chat.adHeadline || 'sin título'}{chat.adSourceId && <span className="mono"> · {chat.adSourceId}</span>}</dd></div>
             )}
             {chat.noMarketing && <div><dt>Marketing</dt><dd>No enviar plantillas (tocó "Ahora no")</dd></div>}
-            {Object.keys(chat.autoSent).length > 0 && (
-              <div><dt>Automáticos</dt><dd>{Object.entries(chat.autoSent).map(([kind, at]) => `${AUTO_LABEL[kind] ?? kind} (${formatDate(at)})`).join(' · ')}</dd></div>
+            {Object.keys(chat.autoSent).some((kind) => !kind.endsWith(':error')) && (
+              <div><dt>Automáticos</dt><dd>{Object.entries(chat.autoSent).filter(([kind]) => !kind.endsWith(':error')).map(([kind, at]) => `${AUTO_LABEL[kind.split(':')[0]] ?? kind} (${formatDate(at)})`).join(' · ')}</dd></div>
             )}
           </dl>
         ) : (

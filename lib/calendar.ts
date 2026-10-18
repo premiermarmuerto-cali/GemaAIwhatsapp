@@ -5,7 +5,7 @@
  * Toda fecha "del negocio" es un string YYYY-MM-DD en la zona de la clínica, y toda hora
  * un string HH:MM. Colombia no tiene horario de verano, así que el offset es fijo.
  */
-import { CLINIC_TZ, CLINIC_UTC_OFFSET, ESCALATION_HOURS, MONTH_SHORT, WEEKDAY_LABEL, WEEKDAY_SHORT } from './clinic'
+import { CLINIC_TZ, CLINIC_UTC_OFFSET, ESCALATION_HOURS, MONTH_NAME, MONTH_SHORT, WEEKDAY_LABEL, WEEKDAY_SHORT } from './clinic'
 import type { AppConfig, FreeWindow, Location } from './types'
 
 export type Range = { from: number; to: number }
@@ -91,6 +91,12 @@ export function dayLabel(day: string, { short = false } = {}): string {
   const [, month, date] = day.split('-').map(Number)
   const names = short ? WEEKDAY_SHORT : WEEKDAY_LABEL
   return `${names[weekdayOf(day)]} ${date} ${MONTH_SHORT[month - 1]}`
+}
+
+/** "sábado 25 de octubre": como se escribe una fecha en las plantillas de WhatsApp. */
+export function fullDayLabel(day: string): string {
+  const [, month, date] = day.split('-').map(Number)
+  return `${WEEKDAY_LABEL[weekdayOf(day)]} ${date} de ${MONTH_NAME[month - 1]}`
 }
 
 /** Los siete días de la semana que contiene `day`, empezando en lunes. */
