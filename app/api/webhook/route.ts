@@ -83,14 +83,33 @@ export async function GET(request: NextRequest) {
   return new NextResponse(params.get('hub.challenge') ?? '', { status: 200 })
 }
 
+/**
+ * Deja constancia de una entrega de Meta que no se procesó (firma inválida, JSON roto, error al guardar).
+ * Sirve para cruzar con las conversaciones que Meta cuenta y no llegan al panel sin depender de los
+ * logs de Vercel. Guarda solo cuándo, por qué y cuántos mensajes traía, no su contenido.
+ */
+async function logRejected(reason: string, rawBody: string) {
+  const messages = (rawBody.match(/"from"\s*:/g) ?? []).length
+  console.error(`[webhook] entrega rechazada: ${reason} · ${messages} mensaje(s) · ${rawBody.length} bytes`)
+  await redis().multi()
+    .lpush(keys.webhookRejected, JSON.stringify({ at: Date.now(), reason, messages, bytes: rawBody.length }))
+    .ltrim(keys.webhookRejected, 0, 199)
+    .exec()
+    .catch(() => null)
+}
+
 export async function POST(request: NextRequest) {
   const rawBody = await request.text()
   if (!verifyMetaSignature(rawBody, request.headers.get('x-hub-signature-256'))) {
+    await logRejected('firma inválida', rawBody)
     return NextResponse.json({ error: 'Firma inválida.' }, { status: 401 })
   }
 
   let payload: WaPayload
-  try { payload = JSON.parse(rawBody) } catch { return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 }) }
+  try { payload = JSON.parse(rawBody) } catch {
+    await logRejected('JSON inválido', rawBody)
+    return NextResponse.json({ error: 'JSON inválido.' }, { status: 400 })
+  }
   if (payload.object !== 'whatsapp_business_account') return NextResponse.json({ received: true })
 
   const toReply = new Set<string>()
@@ -141,6 +160,7 @@ export async function POST(request: NextRequest) {
     }
   } catch (error) {
     console.error('[webhook] error guardando mensajes:', error)
+    await logRejected(`error al guardar: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200), rawBody)
     return NextResponse.json({ error: 'No se pudo procesar.' }, { status: 500 })
   }
 

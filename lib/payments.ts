@@ -9,6 +9,7 @@ import { confirmPaidByBold, getBooking, serviceText } from './booking'
 import { clock12, dayLabel } from './calendar'
 import { LOCATION_LABEL } from './clinic'
 import { getSummary, notePayment, recordOutbound, requestAgent } from './chats'
+import { trackConversion } from './conversions'
 import { sendWhatsAppText } from './whatsapp'
 import { HOLD_STATUSES } from './types'
 
@@ -62,6 +63,8 @@ export async function handleBoldPayment(event: BoldPayment): Promise<string> {
 
   const method = METHOD_LABEL[event.paymentMethod] ?? event.paymentMethod
   await notePayment(booking.phone, `Pago recibido · ${booking.name || booking.phone} · ${pesos(paid)} · ${method}`)
+  // A Meta: qué anuncio generó este pago (solo si la conversación vino de un anuncio).
+  await trackConversion({ name: 'Purchase', phone: booking.phone, eventId: `pago_${booking.phone}_${booking.id}`, value: paid })
 
   const what = booking.paymentPlan === 'full' ? 'el pago completo de tu sesión' : 'tu anticipo'
   const text = `Listo, ya recibimos ${what} (${pesos(paid)}). Tu cita de *${serviceText(booking)}* quedó confirmada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}. Te esperamos.`

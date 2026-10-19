@@ -21,7 +21,7 @@ import { bookingsOfPhone, getBookings, liveBookingOf, markBookingAuto, serviceTe
 import { clock12, dayKey, dayLabel, fullDayLabel, minuteOfDay } from './calendar'
 import { listChats, markChatAuto, recordOutbound } from './chats'
 import { LOCATION_LABEL, MONTH_NAME } from './clinic'
-import { amountOf, getConfig, pesos } from './config'
+import { getConfig } from './config'
 import { keys, redis } from './redis'
 import { SEPARATOR, toMessages } from './reply-style'
 import { HOLD_STATUSES, type AppConfig, type Booking, type ChatSummary } from './types'
@@ -39,14 +39,23 @@ const SEND_TO_MIN = 21 * 60
 const MAX_SENDS_PER_RUN = 25
 const MESSAGE_GAP_MS = 1_200
 
-export const TEMPLATE_LANGUAGE = 'es_CO'
-/** Plantillas aprobadas en Meta. `image`: archivo en public/plantillas/ (encabezado de imagen). */
+/**
+ * Plantillas aprobadas en Meta (WABA 1997545614294706), tal como están registradas el 18 oct 2026.
+ * `language`: el idioma con el que se REGISTRARON, no el del texto. Tres quedaron como "English"
+ * aunque están en español; si el código no coincide, Meta responde 132001.
+ * `image`: archivo en public/plantillas/ para el encabezado de imagen.
+ * Botones de cada una (llegan al webhook como mensaje de tipo "button" con su texto):
+ *   recordatorio_cita      Confirmo mi cita / Reagendar / No podré asistir
+ *   ultimos_dias_bono      Sí, agéndame / Tengo una duda / Ahora no
+ *   anticipo_pendiente     Enviar link / Cambiar horario / Ahora no
+ *   retomar_cita_limpieza  Sí, quiero agendar / Tengo una pregunta / Ahora no
+ */
 export const TEMPLATES = {
-  retomar_cita_limpieza: { image: 'plantilla_retomar_cita.jpg' },
-  anticipo_pendiente: {},
-  ultimos_dias_bono: { image: 'plantilla_ultimos_dias_bono.jpg' },
-  recordatorio_cita: {},
-} as const satisfies Record<string, { image?: string }>
+  retomar_cita_limpieza: { language: 'es_CO', image: 'plantilla_retomar_cita.jpg' },
+  anticipo_pendiente: { language: 'en' },
+  ultimos_dias_bono: { language: 'en', image: 'plantilla_ultimos_dias_bono.jpg' },
+  recordatorio_cita: { language: 'en' },
+} as const satisfies Record<string, { language: string; image?: string }>
 type TemplateName = keyof typeof TEMPLATES
 /** Plantillas de categoría Marketing (se cobran más y respetan "Ahora no"); recordatorio_cita es Utility. */
 const MARKETING = new Set<TemplateName>(['retomar_cita_limpieza', 'anticipo_pendiente', 'ultimos_dias_bono'])
@@ -113,12 +122,18 @@ class Run {
     // Un error reciente (plantilla no aprobada, imagen caída) no se reintenta cada 15 minutos.
     const failedAt = (booking?.autoSent ?? chat?.autoSent ?? {})[`${kind}:error`] ?? 0
     if (this.now - failedAt < DAY) return false
-    const image = (TEMPLATES[name] as { image?: string }).image
+    const { language, image } = TEMPLATES[name] as { language: string; image?: string }
+    const imageUrl = image ? `${publicUrl()}/plantillas/${image}` : undefined
+    // Sin la imagen publicada, Meta rechaza el envío: no se intenta (ni se cobra) hasta que esté.
+    if (imageUrl && !this.dryRun && !(await imageAvailable(imageUrl))) {
+      this.outcomes.push({ kind, phone, how: 'omitido', detail: `falta la imagen ${image} en public/plantillas/` })
+      return false
+    }
     const summary = `[Plantilla "${name}" enviada · ${Object.entries(params).map(([key, value]) => `${key}: ${value}`).join(' · ')}]`
     if (MARKETING.has(name)) this.marketed.add(phone)
     if (this.dryRun) { this.outcomes.push({ kind, phone, how: 'simulado', detail: summary }); this.sends++; return true }
     try {
-      const id = await sendWhatsAppTemplate(phone, { name, language: TEMPLATE_LANGUAGE, params, ...(image ? { headerImageUrl: `${publicUrl()}/plantillas/${image}` } : {}) })
+      const id = await sendWhatsAppTemplate(phone, { name, language, params, ...(imageUrl ? { headerImageUrl: imageUrl } : {}) })
       if (chat) await recordOutbound(phone, { id: id ?? crypto.randomUUID(), sender: 'gem', text: summary, at: Date.now(), auto: kind })
       if (booking) await markBookingAuto(booking, kind)
       else if (chat) await markChatAuto(chat, kind)
@@ -133,6 +148,16 @@ class Run {
       return false
     }
   }
+}
+
+const imageChecks = new Map<string, boolean>()
+/** La imagen del encabezado responde 200 en su URL pública (se revisa una vez por corrida del servidor). */
+async function imageAvailable(url: string): Promise<boolean> {
+  if (!imageChecks.has(url)) {
+    const ok = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(5_000) }).then((response) => response.ok).catch(() => false)
+    imageChecks.set(url, ok)
+  }
+  return imageChecks.get(url)!
 }
 
 async function chatsByPhone(): Promise<Map<string, ChatSummary>> {
@@ -233,11 +258,14 @@ async function silentProspects(run: Run, chats: Map<string, ChatSummary>) {
   }
 }
 
-/** Más de 24 h sin escribir y sin cita: plantilla retomar_cita_limpieza (una vez por silencio). */
+/**
+ * Entre 24 y 48 h sin escribir y sin cita: plantilla retomar_cita_limpieza (una vez por silencio).
+ * Solo en ese rango porque el texto aprobado dice "Ayer hablamos de tu limpieza facial".
+ */
 async function reengageTemplates(run: Run, chats: Map<string, ChatSummary>) {
   for (const chat of chats.values()) {
     const silence = run.now - chat.lastInboundAt
-    if (!chat.lastInboundAt || silence <= WHATSAPP_WINDOW_MS || silence > 7 * DAY) continue
+    if (!chat.lastInboundAt || silence <= WHATSAPP_WINDOW_MS || silence > 2 * DAY) continue
     if (chat.noMarketing || humanHandling(chat) || (chat.autoSent.retomar_cita_limpieza ?? 0) > chat.lastInboundAt) continue
     // A quien se le venció un horario sin pagar le corresponde anticipo_pendiente, no esta.
     const [last] = await bookingsOfPhone(chat.phone, 1)
@@ -247,26 +275,29 @@ async function reengageTemplates(run: Run, chats: Map<string, ChatSummary>) {
 }
 
 /**
- * Texto de la variable `oferta`, armado desde la configuración del 2x1 (lo mismo con lo que se cobra):
- * "2x1 en la Limpieza Peeling y Hidratación de $130.000, para sesiones hasta el 31 de octubre".
+ * Variable `oferta` de ultimos_dias_bono: es la FECHA de cierre en texto ("31 de octubre"), porque el
+ * texto aprobado dice "el bono 2×1 para limpieza con Peeling Gel … está por terminar el {{oferta}}".
  */
-export function offerText(config: AppConfig, until: string): string {
-  const services = config.services.filter((service) => config.twoForOne[service.id] === until)
-  if (!services.length) return ''
+export function offerText(until: string): string {
   const [, month, day] = until.split('-').map(Number)
-  const names = services.map((service) => `la ${service.label} de ${pesos(amountOf(service.price))}`).join(' y ')
-  return `2x1 en ${names}, para sesiones hasta el ${day} de ${MONTH_NAME[month - 1]}`
+  return `${day} de ${MONTH_NAME[month - 1]}`
 }
 
-/** 2–3 días antes de que venza un 2x1: plantilla ultimos_dias_bono a quien escribió y no agendó. */
+/** El servicio de Peeling (el texto aprobado de ultimos_dias_bono habla solo de él). */
+const PEELING_ID = 'peeling-hidratacion'
+
+/**
+ * 2–3 días antes de que venza el 2x1 del Peeling: plantilla ultimos_dias_bono a quien escribió y no
+ * agendó. Solo para la fecha del Peeling: el texto aprobado nombra el Peeling Gel; si otro servicio
+ * llegara a tener fecha de cierre, haría falta otra plantilla.
+ */
 async function lastDaysTemplates(run: Run, chats: Map<string, ChatSummary>) {
   const today = dayKey(run.now)
-  const ends = [...new Set(Object.values(run.config.twoForOne).filter(Boolean))]
-  for (const until of ends) {
+  const until = run.config.twoForOne[PEELING_ID]
+  if (until) {
     const daysLeft = Math.round((Date.parse(`${until}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / DAY)
-    if (daysLeft < 2 || daysLeft > 3) continue
-    const oferta = offerText(run.config, until)
-    if (!oferta) continue
+    if (daysLeft < 2 || daysLeft > 3) return
+    const oferta = offerText(until)
     const key = `ultimos_dias_bono:${until}`
     for (const chat of chats.values()) {
       if (!chat.lastInboundAt || run.now - chat.lastInboundAt > 30 * DAY || isWindowOpen(chat, run.now)) continue

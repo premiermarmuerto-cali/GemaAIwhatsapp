@@ -79,5 +79,11 @@ export const keys = {
 
   // Bold: notificaciones de pago recibidas (las últimas 200) y deduplicación por id de evento.
   boldEvents: 'pm:bold:events',
+  /** Entregas del webhook de WhatsApp que no se procesaron (últimas 200). */
+  webhookRejected: 'pm:wa:rejected',
+  /** Eventos enviados a la API de conversiones de Meta: evita duplicados por event_id. */
+  capiSent: (eventId: string) => `pm:capi:sent:${eventId}`,
+  /** Registro de envíos a la API de conversiones (últimos 200), con la respuesta de Meta. */
+  capiLog: 'pm:capi:log',
   boldSeen: (eventId: string) => `pm:bold:seen:${eventId}`,
 }

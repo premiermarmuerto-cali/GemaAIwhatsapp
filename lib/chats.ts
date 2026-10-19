@@ -42,6 +42,7 @@ function toSummary(phone: string, raw: Record<string, string>): ChatSummary {
     adSourceId: raw.adSourceId ?? '',
     adHeadline: raw.adHeadline ?? '',
     ctwaClid: raw.ctwaClid ?? '',
+    ctwaAt: Number(raw.ctwaAt ?? 0),
     autoSent: parseAutoSent(raw.autoSent),
   }
 }
@@ -110,7 +111,10 @@ export async function recordInbound(phone: string, message: Message, name?: stri
   // Atribución: el anuncio con el que llegó por primera vez (no se pisa si vuelve desde otro).
   if (message.ad?.sourceId) tx.hsetnx(chatKey, 'adSourceId', message.ad.sourceId)
   if (message.ad?.headline) tx.hsetnx(chatKey, 'adHeadline', message.ad.headline)
-  if (message.ad?.ctwaClid) tx.hsetnx(chatKey, 'ctwaClid', message.ad.ctwaClid)
+  if (message.ad?.ctwaClid) {
+    tx.hsetnx(chatKey, 'ctwaClid', message.ad.ctwaClid)
+    tx.hsetnx(chatKey, 'ctwaAt', String(message.at))
+  }
   tx.hincrby(chatKey, 'unread', 1)
   tx.rpush(keys.messages(phone), JSON.stringify(message))
   tx.ltrim(keys.messages(phone), -HISTORY_LIMIT, -1)

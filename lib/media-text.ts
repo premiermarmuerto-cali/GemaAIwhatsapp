@@ -21,7 +21,8 @@ export function modelText(message: Message): string {
     ? `[El cliente llegó desde un anuncio. Título: "${ad.headline ?? ''}"${ad.body ? `. Texto del anuncio: "${ad.body}"` : ''}]\n`
     : ''
   // Botón de una plantilla: Gema sabe que no es texto libre y a qué corresponde.
-  const button = message.buttonPayload !== undefined || /^\s*(ahora no|confirmo mi cita|no podr[eé] asistir|reagendar|cambiar horario|reenviar el link|tengo una (pregunta|duda))\s*$/i.test(message.text)
+  // Textos de los botones de las plantillas aprobadas (ver TEMPLATES en lib/automations.ts).
+  const button = message.buttonPayload !== undefined || /^\s*(ahora no|confirmo mi cita|no podr[eé] asistir|reagendar|cambiar horario|(re)?enviar (el )?link|tengo una (pregunta|duda)|s[ií], ag[eé]ndame|s[ií], quiero agendar)\s*$/i.test(message.text)
     ? '[El cliente tocó un botón de un mensaje automático] '
     : ''
   return origin + button + contentText(message)

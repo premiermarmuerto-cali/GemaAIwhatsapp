@@ -151,6 +151,8 @@ Gema también escribe sola, sin que la clienta haya escrito. Un programador la d
 
 **Interruptores** (variables en Vercel): `AUTOMATIONS=off` apaga todo lo automático; `WHATSAPP_TEMPLATES=on` activa las plantillas. Este último **debe quedar en off hasta que las plantillas estén aprobadas en Meta** y las imágenes subidas.
 
+**Medición de la campaña.** Cuando una clienta llega desde un anuncio, Gema guarda el anuncio y el clic. Con eso le avisa a Meta cuando esa clienta **agenda** (evento *Schedule*) y cuando **paga** (evento *Purchase*, con el monto pagado): por Bold apenas llega la confirmación, y por transferencia cuando la asesora confirma la cita en la agenda. Así Ads Manager muestra qué anuncio trajo ventas, no solo conversaciones. Funciona en cuanto se configure `META_CAPI_TOKEN`.
+
 ### 2.5 Cómo es una reserva por dentro
 
 1. El cliente acepta día, hora y sede, y da su nombre.
@@ -254,6 +256,8 @@ Todas están guardadas como **variables de entorno** en Vercel (*Settings → En
 | `AUTOMATIONS` | `on` / `off`: interruptor general de mensajes automáticos | — | — |
 | `WHATSAPP_TEMPLATES` | `on` / `off`: envío de plantillas (se cobran) | — | Dejar en `off` hasta que estén aprobadas |
 | `PUBLIC_APP_URL` | Dirección pública del panel; de ahí Meta descarga las imágenes de las plantillas | — | Cambiarla si se usa un dominio propio |
+| `META_CAPI_TOKEN` | Permiso para avisarle a Meta qué anuncio generó cada cita y cada pago | Meta Business → Usuarios del sistema (con acceso al dataset 38756680020642307) | Igual que el token de WhatsApp: debe ser permanente |
+| `META_CAPI_TEST_CODE` | Código de prueba del Administrador de eventos | Administrador de eventos → el dataset → Probar eventos | Solo mientras se prueba; dejarlo vacío en producción |
 
 > Si cambias una variable en Vercel, **hay que volver a desplegar** (Deployments → Redeploy) para que Gema la tome.
 
@@ -263,7 +267,7 @@ Todas están guardadas como **variables de entorno** en Vercel (*Settings → En
 
 Si el programador se detiene, Gema **sigue respondiendo** con normalidad. Lo único que se pierde son los recordatorios, seguimientos y plantillas.
 
-**Las plantillas en Meta.** Están en WhatsApp Manager → Plantillas de mensajes, en idioma Spanish (COL) `es_CO`:
+**Las plantillas en Meta.** Están en WhatsApp Manager → Plantillas de mensajes (cuenta 1997545614294706). Ojo: tres quedaron registradas como **English** aunque el texto está en español (`recordatorio_cita`, `ultimos_dias_bono`, `anticipo_pendiente`), y solo `retomar_cita_limpieza` está en Spanish (COL). Gema ya envía cada una con su idioma registrado; si se recrean en español, hay que avisar al desarrollador para cambiar el código.
 - No se les cambia el nombre ni las variables sin avisar al desarrollador.
 - Si Meta rechaza o pausa una, Gema la intenta como máximo una vez al día y el error queda en los registros de Vercel.
 - Las imágenes de encabezado están en la carpeta `public/plantillas/` del proyecto.

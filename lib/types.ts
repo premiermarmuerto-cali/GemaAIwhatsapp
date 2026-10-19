@@ -71,6 +71,8 @@ export type ChatSummary = {
   adSourceId: string
   adHeadline: string
   ctwaClid: string
+  /** Momento del primer mensaje con ctwa_clid (≈ clic en el anuncio): Meta atribuye hasta 7 días después. */
+  ctwaAt: number
   /** Automatizaciones ya enviadas a este chat: tipo → momento del envío (evita repetirlas). */
   autoSent: Record<string, number>
 }

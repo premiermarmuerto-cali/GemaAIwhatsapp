@@ -3,6 +3,7 @@ import { bookingsOfPhone, chargeText, confirmAttendance, createBooking, liveBook
 import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
 import { isLocation, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
 import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead, updateChat } from './chats'
+import { trackConversion } from './conversions'
 import { generarLinkPagoBold } from './bold'
 import { amountOf, getConfig, paymentFor, pesos, resolveService, twoForOneApplies } from './config'
 import { mediaBusy } from './media'
@@ -441,7 +442,7 @@ async function rebookExpired(config: AppConfig, phone: string): Promise<{ bookin
 async function resendLink(config: AppConfig, phone: string, { implicit = false } = {}): Promise<Applied> {
   let booking = await liveBookingOf(phone)
   if (!booking && !implicit) {
-    // El horario se liberó sin pago (la plantilla anticipo_pendiente ofrece "Reenviar el link"): se
+    // El horario se liberó sin pago (la plantilla anticipo_pendiente ofrece "Enviar link"): se
     // vuelve a apartar el mismo horario, si sigue libre, y se manda un link nuevo.
     const rebooked = await rebookExpired(config, phone)
     if ('applied' in rebooked) return rebooked.applied
@@ -549,6 +550,8 @@ export async function applyReserva(
 
   const { booking } = result
   await attachBooking(phone, booking.id, { name: booking.name, serviceId: booking.serviceId, location: booking.location })
+  // A Meta: cita agendada desde un anuncio (no espera el pago; el pago se reporta aparte como Purchase).
+  await trackConversion({ name: 'Schedule', phone, eventId: `cita_${phone}_${booking.id}` })
 
   // El cobro lo escribe el servidor, nunca el modelo: los datos salen de la config,
   // según el país del número (misma lógica por región que la consola original).
@@ -800,8 +803,8 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   const reprogramar = markers.find((marker) => marker.kind === 'REPROGRAMAR')
   const cancelar = markers.find((marker) => marker.kind === 'CANCELAR')
   const payFull = planChoice ? planChoice === 'full' : markers.some((marker) => marker.kind === 'COMPLETO')
-  // Botón "Reenviar el link" de las plantillas: no depende de que el modelo ponga la marca.
-  const link = markers.some((marker) => marker.kind === 'LINK') || /^\s*reenviar (el )?link\s*$/i.test(lastClientText)
+  // Botón "Enviar link" de la plantilla anticipo_pendiente: no depende de que el modelo ponga la marca.
+  const link = markers.some((marker) => marker.kind === 'LINK') || /^\s*(re)?enviar (el )?link\s*$/i.test(lastClientText)
   let applied: Applied | null = null
   if (reserva) {
     // Acompañante: el de la marca; si el modelo la olvidó pero el cliente dijo que viene con alguien,

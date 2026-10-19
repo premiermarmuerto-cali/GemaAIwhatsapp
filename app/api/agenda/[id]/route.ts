@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server'
 import { annotateBooking, bookingsOfPhone, getBooking, moveBooking, rescheduleBooking } from '@/lib/booking'
 import { isClock, isDayKey } from '@/lib/calendar'
 import { isLocation } from '@/lib/clinic'
-import { getConfig } from '@/lib/config'
+import { amountOf, getConfig } from '@/lib/config'
+import { trackConversion } from '@/lib/conversions'
 import { HttpError, jsonBody, route } from '@/lib/http'
-import { LIVE_STATUSES, type BookingStatus } from '@/lib/types'
+import { HOLD_STATUSES, LIVE_STATUSES, type BookingStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,9 +57,15 @@ export const PATCH = route(async (request: Request, context: Params) => {
   if (body.status !== undefined) {
     const status = String(body.status) as BookingStatus
     if (!STATUSES.includes(status)) throw new HttpError(400, 'Estado inválido.')
+    const before = await getBooking(id)
     const moved = await moveBooking(id, status)
     if (!moved) throw new HttpError(404, 'La cita no existe.')
     if ('error' in moved) throw new HttpError(409, moved.error)
+    // La asesora confirmó un pago por transferencia: se avisa a Meta (si la clienta llegó por un anuncio).
+    // Las que confirma Bold ya se reportan solas; las creadas a mano por el operador no tienen pago.
+    if (status === 'confirmed' && before && HOLD_STATUSES.includes(before.status) && before.phone && !before.paymentRef) {
+      await trackConversion({ name: 'Purchase', phone: before.phone, eventId: `pago_${before.phone}_${before.id}`, value: amountOf(before.deposit) })
+    }
     return NextResponse.json(moved)
   }
 
