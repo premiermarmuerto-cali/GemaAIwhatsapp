@@ -188,6 +188,44 @@ function distinctiveWords(config: AppConfig): Map<string, string[]> {
   }))
 }
 
+// Palabras que acompañan al nombre de un servicio sin decir cuál es ("quiero la de ...", "esa").
+const FILLER_WORDS = new Set(['la', 'el', 'de', 'del', 'e', 'y', 'con', 'esa', 'ese', 'esta', 'este', 'una', 'un', 'quiero', 'me', 'interesa', 'por', 'favor', 'si', 'mejor', 'limpieza', 'facial'])
+
+/**
+ * Nombre de servicio ambiguo. "Limpieza e hidratación" es el comienzo literal de "Limpieza e
+ * Hidratación y Pigmentación", pero también cabe en "Limpieza Peeling y Hidratación": con el
+ * Peeling recién ofrecido, el modelo elegía Pigmentación y le decía a la clienta que no tenía 2x1
+ * (19 oct, 10 de 15 pruebas, y la regla del prompt sola no lo corrigió). Si el último mensaje es
+ * solo un nombre que cabe en varios servicios, el servidor le dice al modelo cuál es: el que Gema
+ * acababa de nombrar o, si no hay uno solo, que pregunte.
+ */
+export function serviceHint(config: AppConfig, history: Message[]): string | undefined {
+  const last = history.at(-1)
+  if (last?.sender !== 'user') return undefined
+  const words = fold(last.text).split(/[^a-z0-9]+/).filter(Boolean)
+  if (!words.length || words.length > 8) return undefined
+  const labelWords = new Map(config.services.map((service) => [service.id, new Set(fold(service.label).split(/[^a-z0-9]+/).filter(Boolean))]))
+  // Solo si el mensaje es un nombre de servicio y nada más ("limpieza e hidratación", "la de hidratación").
+  const allLabelWords = new Set([...labelWords.values()].flatMap((set) => [...set]))
+  if (!words.every((word) => FILLER_WORDS.has(word) || allLabelWords.has(word))) return undefined
+  const key = words.filter((word) => !FILLER_WORDS.has(word))
+  if (!key.length) return undefined
+  const candidates = config.services.filter((service) => key.every((word) => labelWords.get(service.id)!.has(word)))
+  if (candidates.length < 2) return undefined
+
+  const distinctive = distinctiveWords(config)
+  const previous = fold([...history].reverse().find((message) => message.sender === 'gem')?.text ?? '')
+  const named = candidates.filter((service) => (distinctive.get(service.id) ?? []).some((word) => previous.includes(word)))
+  const today = dayKey()
+  if (named.length === 1) {
+    const [service] = named
+    const others = candidates.filter((other) => other.id !== service.id).map((other) => other.label)
+    return `Nota del sistema: con "${last.text.trim()}" el cliente se refiere a *${service.label}* (\`${service.id}\`), el que le nombraste en tu mensaje anterior${twoForOneApplies(config, service.id, today) ? ', y que SÍ tiene 2x1' : ''}. No es ${others.join(' ni ')}. Sigue con ese servicio.`
+  }
+  const options = (named.length ? named : candidates).map((service) => service.label)
+  return `Nota del sistema: "${last.text.trim()}" puede ser ${options.join(', ').replace(/, ([^,]*)$/, ' o $1')}. No elijas tú ni digas que no tiene 2x1: pregúntale cuál, en una frase y con los nombres completos.`
+}
+
 // "2×1" con el signo de multiplicar es como lo escribe el anuncio (y lo copian los clientes).
 const PROMO_WORD = /2\s?[x×]\s?1|dos por uno/i
 const DENIES = /\b(no|sin|tampoco|solo|solamente|unicamente)\b|no aplica|no tiene|no cuenta|no incluye|no entra/i
@@ -706,10 +744,12 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   let history: Message[] = []
   for (let draft = 0; draft < 2; draft++) {
     history = await getHistory(phone, HISTORY_FOR_MODEL)
+    const hint = serviceHint(config, history)
+    if (hint && draft === 0) console.log(`[autoreply] ${phone}: nombre de servicio ambiguo → ${hint.slice(0, 160)}`)
     try {
-      reply = await generateReply(prompt, history).catch((error) => {
+      reply = await generateReply(prompt, history, hint).catch((error) => {
         console.warn(`[autoreply] reintentando ${phone}:`, error instanceof Error ? error.message : error)
-        return generateReply(prompt, history)
+        return generateReply(prompt, history, hint)
       })
     } catch (error) {
       console.error(`[autoreply] Gema no pudo responder a ${phone}:`, error)
