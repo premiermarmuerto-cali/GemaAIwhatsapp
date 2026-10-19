@@ -47,12 +47,45 @@ function withoutFiller(part: string): string {
   return (kept.length ? kept : sentences).map((sentence) => sentence.replace(FILLER_OPENER, '')).join(' ')
 }
 
+const LIST_ITEM = /^\s*(?:\d{1,2}[.)]|[-•*])\s+/
+
+/**
+ * Una lista (numerada o con viñetas) → una frase: "tengo:\n1. 10:00 a.m.\n2. 4:00 p.m." →
+ * "tengo: 10:00 a.m. y 4:00 p.m.". El prompt prohíbe listas, pero el modelo a veces las escribe.
+ */
+function flattenLists(part: string): string {
+  const lines = part.split('\n')
+  if (lines.filter((line) => LIST_ITEM.test(line)).length < 2) return part.replace(new RegExp(LIST_ITEM.source, 'gm'), '')
+  const out: string[] = []
+  let items: string[] = []
+  const flush = () => {
+    if (!items.length) return
+    const joined = items.length > 1 ? `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}` : items[0]
+    out.push(out.length && /:$/.test(out[out.length - 1]) ? `${out.pop()} ${joined}` : joined)
+    items = []
+  }
+  for (const line of lines) {
+    if (LIST_ITEM.test(line)) items.push(line.replace(LIST_ITEM, '').trim().replace(/(?<![ap]\.m)[.,;]$/i, ''))
+    else { flush(); if (line.trim()) out.push(line.trim()) }
+  }
+  flush()
+  return out.join('\n')
+}
+
+/**
+ * Horas de 24 h que el modelo copia de la agenda ("18:30") → "6:30 p.m.". Solo de 13 a 23, que no
+ * son ambiguas: "6:30" a secas ya es como habla la gente y queda igual.
+ */
+function twelveHour(part: string): string {
+  return part.replace(/\b(1[3-9]|2[0-3]):([0-5]\d)\b(?:\s*(?:p\.?\s?m\.?|hrs?\b|h\b))?/gi, (_, hour: string, minute: string) => `${Number(hour) - 12}:${minute} p.m.`)
+}
+
 /** Reglas mecánicas de puntuación sobre un mensaje del modelo. */
 function casual(part: string, isLast: boolean): string {
-  let out = withoutFiller(part)
+  // Las listas van primero: withoutFiller une las frases con espacios y se pierden los saltos de línea.
+  let out = twelveHour(withoutFiller(flattenLists(part)))
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // Markdown **negrita** → *negrita* de WhatsApp
     .replace(/(\$\s?[\d.]+\*?)\s*COP\b/g, '$1') // "$130.000 COP" → "$130.000"
-    .replace(/^\s*[-•]\s+/gm, '') // sin viñetas
     .replace(/\[(?!\[)[^\]\n]{2,60}\]/g, '') // relleno tipo "[datos de la cuenta]"
     .replace(/[¿¡]/g, '')
     .replace(/\s*—\s*/g, ', ')
@@ -60,8 +93,8 @@ function casual(part: string, isLast: boolean): string {
     .replace(/ {2,}/g, ' ')
     .replace(/([:,;])\s*([:,;.])/g, '$2') // restos de puntuación al quitar relleno ("Nequi:.")
     .trim()
-  // El último mensaje no lleva punto final (pero sí los puntos suspensivos).
-  if (isLast) out = out.replace(/(?<!\.)\.$/, '')
+  // El último mensaje no lleva punto final (pero sí los puntos suspensivos y el de "p.m.").
+  if (isLast) out = out.replace(/(?<!\.|[ap]\.m)\.$/i, '')
   return out
 }
 

@@ -46,7 +46,7 @@ function catalogBlock(config: AppConfig, today: string): string {
     const pair = bookingPrice(config, service, 2, today)
     const until = config.twoForOne[service.id]
     const pairText = live && twoForOneApplies(config, service.id, today)
-      ? `2x1 de pareja: SÍ, ${until ? `para sesiones hasta el ${untilText(until)}` : 'sin fecha límite por ahora'} (dos personas pagan ${pesos(amount)}, anticipo ${depositOf(config, pair)})`
+      ? `2x1 (dos personas juntas, con cualquier acompañante): SÍ, ${until ? `para sesiones hasta el ${untilText(until)}` : 'sin fecha límite por ahora'} (dos personas pagan ${pesos(amount)}, anticipo ${depositOf(config, pair)})`
       : `${live ? 'SIN 2x1; ' : ''}pareja (2 personas a la vez): ${pesos(amountOf(pair))}, anticipo ${depositOf(config, pair)}`
     return `- \`${service.id}\` · *${service.label}* · ${service.durationMin} min · ${pesos(amount)} (anticipo ${depositOf(config, service.price)}) · ${pairText}${service.summary ? ` · ${service.summary}` : ''}`
   }).join('\n')
@@ -87,6 +87,8 @@ function promoBlock(config: AppConfig, today: string): string {
       }).join('; ')}.`,
       excluded.length ? `- NO aplica a: ${excluded.map((service) => service.label).join(', ')}.` : '',
       '- Si la cita es después de la fecha límite de ese servicio, ya no aplica: la pareja paga dos sesiones.',
+      // Una clienta preguntó por su hijo y Gema le inventó que era "solo para amigas o parejas".
+      '- El 2x1 es para dos personas cualquiera que vengan juntas: pareja, amiga, mamá, hijo, hermana, compañera. Aquí "pareja" solo quiere decir "dos personas". Nunca digas que es solo para parejas, amigas o mujeres.',
     ].filter(Boolean).join('\n')
     : ''
   // Venir acompañado a la misma hora exige dos cabinas: se dice aquí, donde el modelo mira la promo,
@@ -246,7 +248,7 @@ function bookingBlock(booking: Booking | null): string {
       : `apartada, esperando ${chargeText(booking)} (${booking.deposit})`
   return [
     `El cliente YA tiene una cita ${state}:`,
-    `- ${serviceText(booking)} · ${LOCATION_LABEL[booking.location]} · ${dayLabel(booking.day)} a las ${booking.start}`,
+    `- ${serviceText(booking)} · ${LOCATION_LABEL[booking.location]} · ${dayLabel(booking.day)} a las ${clock12(booking.start)}`,
     '- No crees otra cita. Si quiere cambiarla de día, hora o sede, ofrécele horas libres y, cuando acepte una, usa [[REPROGRAMAR]]: el pago que ya hizo se conserva. Si dice que no podrá asistir, ofrécele primero cambiarla de fecha (su pago se conserva); si prefiere cancelar, usa [[CANCELAR]].',
     ...(booking.status === 'confirmed' && !booking.attendanceConfirmedAt ? ['- Si confirma que asiste ("confirmo", "sí voy"), agradécele y usa [[ASISTE]].'] : []),
     ...(booking.status !== 'confirmed' && !booking.paidAt ? ['- Si pide el link de pago otra vez, usa [[LINK]]; si prefiere transferir, [[TRANSFERENCIA]].'] : []),
@@ -279,6 +281,7 @@ ${locationsBlock(config)}
 ## Horario
 - Horario de citas de las sedes (primera y última hora a la que puede EMPEZAR una cita): ${hoursSummary(config)}
 - Si preguntan a qué hora atienden o pueden asistir, dilo como primera y última cita, por ejemplo: "de lunes a jueves la primera cita es a las 10:00 a.m. y la última a las 6:30 p.m.". No digas "atendemos de 10 a 6:30": la sesión de la última cita termina después.
+- Ese horario general es solo para cuando preguntan a qué hora atienden. Si preguntan qué horarios hay, o por un día, ofrece dos o tres horas concretas de la disponibilidad de abajo, nunca "de lunes a jueves de 10 a 6:30".
 - Tú atiendes por WhatsApp las 24 horas, todos los días, aunque la clínica esté cerrada: responde con normalidad a cualquier hora y agenda para el próximo horario disponible. Nunca digas que estás fuera de horario.
 
 ## Cobro de esta conversación
@@ -391,6 +394,10 @@ Bien: está en $170.000, y para reservar se deja la mitad
 Cliente: y cómo pago?
 Mal: Con gusto te explico. Puedes pagar mediante tarjeta, PSE o Nequi a través de nuestro link de pago, o por transferencia. ¿Cuál método prefieres? Quedo atenta a tu respuesta.
 Bien: te mando un link para pagar con tarjeta, PSE o Nequi, o si prefieres transfieres directo|||cuál te queda mejor?
+
+Cliente: en Chipichape, qué horarios tienen?
+Mal: los horarios son de lunes a jueves de 10:00 a 6:30 p.m., y viernes y sábado de 10:00 a 8:00 p.m.
+Bien: una frase con el día más cercano y dos o tres horas sueltas que estén libres ese día en esa sede según la disponibilidad de arriba (no copies horas de un ejemplo), y luego "cuál te sirve?"
 
 Cliente: eres un bot?
 Bien: soy la asistente virtual de Premier|||si prefieres hablar con una persona del equipo, te paso con una asesora

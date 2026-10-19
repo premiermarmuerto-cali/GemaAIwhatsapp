@@ -188,7 +188,8 @@ function distinctiveWords(config: AppConfig): Map<string, string[]> {
   }))
 }
 
-const PROMO_WORD = /2\s?x\s?1|dos por uno/i
+// "2×1" con el signo de multiplicar es como lo escribe el anuncio (y lo copian los clientes).
+const PROMO_WORD = /2\s?[x×]\s?1|dos por uno/i
 const DENIES = /\b(no|sin|tampoco|solo|solamente|unicamente)\b|no aplica|no tiene|no cuenta|no incluye|no entra/i
 
 /**
@@ -367,7 +368,7 @@ function receiptNote(history: Message[]): string {
 function missingPromo(config: AppConfig, text: string): { price: string; line: string } | null {
   const today = dayKey()
   // Mientras se cierra la reserva (anticipo, pago completo) no se interrumpe con la promoción.
-  if (!promoLive(config, today) || /2\s?x\s?1|dos por uno|anticipo|completo/i.test(text)) return null
+  if (!promoLive(config, today) || PROMO_WORD.test(text) || /anticipo|completo/i.test(text)) return null
   const service = config.services.find((item) => {
     const amount = amountOf(item.price)
     return amount && twoForOneApplies(config, item.id, today) && text.includes(pesos(amount))
