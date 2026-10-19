@@ -274,16 +274,17 @@ Si el programador se detiene, Gema **sigue respondiendo** con normalidad. Lo ún
 
 ### 4.2 Accesos: dónde se entra a cada sistema
 
-> 🔒 **Regla de oro: en este documento NO se escriben contraseñas.** El manual se guarda en el repositorio de GitHub y se comparte; si una clave queda aquí, queda expuesta. Aquí solo van la dirección, el correo de la cuenta y **dónde está guardada la clave** (un gestor de contraseñas como Bitwarden o 1Password, con acceso para al menos **dos personas** de Premier). Completa las celdas en blanco con tu información.
+> 🔒 **Regla de oro: en este documento NO se escriben contraseñas.** El manual se guarda en el repositorio de GitHub y se comparte; si una clave queda aquí, queda expuesta. Aquí solo van la dirección, el correo de la cuenta y **dónde está guardada la clave** (un gestor de contraseñas como Bitwarden o 1Password, con acceso para al menos **dos personas** de Premier). Completa las celdas en blanco con tu información. Las claves, los costos resumidos y las instrucciones del día a día están en el archivo privado `docs/ACCESOS-Y-COSTOS.local.md`, que existe solo en el computador de Premier.
 
 | Sistema | Para qué lo usas | Dirección | Cómo se entra | Cuenta (correo) | Clave guardada en | Responsable |
 |---|---|---|---|---|---|---|
+| **Gmail de Premier** (cuenta maestra) | Con este correo se entra a GitHub, Vercel, OpenAI y Upstash ("Continuar con Google"). Quien lo controla, controla todo el sistema | <https://mail.google.com> | Correo + clave + verificación en 2 pasos | premiermarmuerto0@gmail.com | `docs/ACCESOS-Y-COSTOS.local.md`, solo en el computador de Premier (no se sube a GitHub) | _completar_ |
 | **Panel de Gema** (consola y agenda) | El día a día del operador | <https://premier-agente.vercel.app> | Clave de administrador (la variable `ADMIN_PASSWORD`) | *(no usa correo)* | _completar_ | _completar_ |
-| **Vercel** | El servidor donde corre Gema; variables de entorno; redeploy | <https://vercel.com/login> | Correo + clave (o inicio con GitHub) | _completar_ | _completar_ | _completar_ |
-| **GitHub** | El código de Gema | <https://github.com/premiermarmuerto-cali/GemaAIwhatsapp> | Correo/usuario + clave + verificación en 2 pasos | _completar_ | _completar_ | _completar_ |
+| **Vercel** | El servidor donde corre Gema; variables de entorno; redeploy | <https://vercel.com/login> | Con el Gmail de Premier | premiermarmuerto0@gmail.com | _completar_ | _completar_ |
+| **GitHub** | El código de Gema | <https://github.com/premiermarmuerto-cali/GemaAIwhatsapp> | Con el Gmail de Premier | premiermarmuerto0@gmail.com | _completar_ | _completar_ |
 | **Meta Business / for Developers** | El número de WhatsApp, el webhook, los tokens | <https://business.facebook.com> y <https://developers.facebook.com> | Facebook personal del administrador de la cuenta de Meta Business | _completar_ | _completar_ | _completar_ |
-| **OpenAI Platform** | Llave de la IA, saldo y consumo | <https://platform.openai.com> | Correo + clave | _completar_ | _completar_ | _completar_ |
-| **Upstash** | La base de datos y su consumo | <https://console.upstash.com> | Correo + clave (o inicio con Google/GitHub) | _completar_ | _completar_ | _completar_ |
+| **OpenAI Platform** | Llave de la IA, saldo y consumo | <https://platform.openai.com> | Con el Gmail de Premier | premiermarmuerto0@gmail.com | _completar_ | _completar_ |
+| **Upstash** | La base de datos y su consumo | <https://console.upstash.com> | Con el Gmail de Premier | premiermarmuerto0@gmail.com | _completar_ | _completar_ |
 | **Bold** | Pagos recibidos, comisiones, devoluciones y llaves de integración | Portal de comercios de Bold (la dirección que Bold le dio a Premier) | Correo + clave | _completar_ | _completar_ | _completar_ |
 | **Cuentas bancarias de transferencia** | Validar que llegó el dinero (Bancolombia, Nequi, Daviplata) | Apps de cada banco | Las de Premier | — | Cada titular | _completar_ |
 
@@ -291,7 +292,7 @@ Si el programador se detiene, Gema **sigue respondiendo** con normalidad. Lo ún
 
 1. **Cuentas a nombre de Premier**, no del desarrollador ni de una persona que pueda irse. Un error típico es que Vercel, Meta u OpenAI queden en el correo personal de quien montó el sistema.
 2. **Dos personas con acceso** a cada sistema (el dueño y una persona de confianza). Si solo una persona tiene la clave y no está, nadie puede arreglar nada.
-3. **Verificación en dos pasos** activada en GitHub, Vercel, Meta y Bold. Estos cuatro permiten cobrar, enviar mensajes y cambiar el código; son los más delicados.
+3. **Verificación en dos pasos** activada en el Gmail de Premier (es la llave de GitHub, Vercel, OpenAI y Upstash a la vez), y en Meta y Bold. Estos cuatro permiten cobrar, enviar mensajes y cambiar el código; son los más delicados.
 4. **Un solo correo "dueño"** de la cuenta de Meta Business (recomendado: uno de la empresa, no personal) para recibir los avisos de verificación y facturación.
 5. **Cuando alguien sale del equipo:** cambiar la clave del panel (`ADMIN_PASSWORD`), quitarlo de Vercel, GitHub, Meta y Bold, y rotar las llaves que conocía (sección 4.1).
 6. **Qué hacer si se pierde una clave:** cada sistema tiene "olvidé mi contraseña" al correo de la cuenta; por eso es importante saber **cuál correo** es el de cada cuenta.

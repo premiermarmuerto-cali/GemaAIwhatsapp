@@ -4,3 +4,6 @@ node_modules
 *.tsbuildinfo
 next-env.d.ts
 .env
+
+# Accesos y claves: solo en este computador, nunca en GitHub
+docs/*.local.md
