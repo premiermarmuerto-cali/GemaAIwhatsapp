@@ -7,7 +7,8 @@
  *
  *   Purchase  pago confirmado: por Bold al llegar su confirmación, por transferencia cuando la asesora
  *             confirma la cita en la consola. `value` = lo que se pagó (anticipo o sesión completa).
- *   Schedule  cita agendada por Gema (sin esperar el pago).
+ *   LeadSubmitted  cita agendada por Gema (sin esperar el pago). Meta no acepta "Schedule" con
+ *             action_source business_messaging (error 2804066): solo Purchase, LeadSubmitted y similares.
  *
  * Sin META_CAPI_TOKEN no envía nada. Cada evento se envía una sola vez (event_id) y queda registrado
  * con la respuesta de Meta en pm:capi:log. Un error nunca interrumpe la reserva ni el pago.
@@ -20,7 +21,7 @@ const DEFAULT_DATASET_ID = '38756680020642307'
 const DEFAULT_WABA_ID = '1997545614294706'
 
 export type ConversionEvent = {
-  name: 'Purchase' | 'Schedule'
+  name: 'Purchase' | 'LeadSubmitted'
   phone: string
   /** Único por pago o por cita: así Meta no cuenta dos veces si Bold reintenta su aviso. */
   eventId: string

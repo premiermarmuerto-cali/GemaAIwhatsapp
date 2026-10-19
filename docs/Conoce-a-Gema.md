@@ -151,7 +151,7 @@ Gema también escribe sola, sin que la clienta haya escrito. Un programador la d
 
 **Interruptores** (variables en Vercel): `AUTOMATIONS=off` apaga todo lo automático; `WHATSAPP_TEMPLATES=on` activa las plantillas. Este último **debe quedar en off hasta que las plantillas estén aprobadas en Meta** y las imágenes subidas.
 
-**Medición de la campaña.** Cuando una clienta llega desde un anuncio, Gema guarda el anuncio y el clic. Con eso le avisa a Meta cuando esa clienta **agenda** (evento *Schedule*) y cuando **paga** (evento *Purchase*, con el monto pagado): por Bold apenas llega la confirmación, y por transferencia cuando la asesora confirma la cita en la agenda. Así Ads Manager muestra qué anuncio trajo ventas, no solo conversaciones. Funciona en cuanto se configure `META_CAPI_TOKEN`.
+**Medición de la campaña.** Cuando una clienta llega desde un anuncio, Gema guarda el anuncio y el clic. Con eso le avisa a Meta cuando esa clienta **agenda** (evento *LeadSubmitted*, "cliente potencial") y cuando **paga** (evento *Purchase*, con el monto pagado): por Bold apenas llega la confirmación, y por transferencia cuando la asesora confirma la cita en la agenda. Así Ads Manager muestra qué anuncio trajo ventas, no solo conversaciones. Funciona en cuanto se configure `META_CAPI_TOKEN`.
 
 ### 2.5 Cómo es una reserva por dentro
 

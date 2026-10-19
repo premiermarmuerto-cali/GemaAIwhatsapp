@@ -590,7 +590,7 @@ export async function applyReserva(
   const { booking } = result
   await attachBooking(phone, booking.id, { name: booking.name, serviceId: booking.serviceId, location: booking.location })
   // A Meta: cita agendada desde un anuncio (no espera el pago; el pago se reporta aparte como Purchase).
-  await trackConversion({ name: 'Schedule', phone, eventId: `cita_${phone}_${booking.id}` })
+  await trackConversion({ name: 'LeadSubmitted', phone, eventId: `cita_${phone}_${booking.id}` })
 
   // El cobro lo escribe el servidor, nunca el modelo: los datos salen de la config,
   // según el país del número (misma lógica por región que la consola original).
