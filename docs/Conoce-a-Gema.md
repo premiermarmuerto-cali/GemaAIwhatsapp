@@ -137,7 +137,7 @@ Gema también escribe sola, sin que la clienta haya escrito. Un programador la d
 | **Bienvenida en bloques** | Primer mensaje de cada cliente nuevo, mientras haya algún 2x1 vigente | Texto libre (gratis): imagen del bono con las promociones 2x1 de HOY (valor por persona y días que quedan si tiene fecha), qué incluye cada limpieza con sus productos del Mar Muerto, el anticipo que se descuenta, las sedes y horas libres para dos personas, y "cuál te separo?". Lo arma el servidor con la configuración y la agenda; si el primer mensaje pregunta algo más, Gema lo responde después |
 | Aviso de pago pendiente | ~30 min antes de que se libere un horario apartado sin pago | Texto libre (gratis) |
 | Recordatorio de la cita | 24 h antes de cada cita **pagada** | Texto libre si la clienta escribió en las últimas 24 h; si no, plantilla `recordatorio_cita` |
-| Recordatorio del día | 2–3 h antes, si confirmó asistencia o si **paga en efectivo** | Texto libre; a la cita en efectivo con la ventana cerrada le llega la plantilla `recordatorio_cita` |
+| Recordatorio del día | 2–3 h antes, si confirmó asistencia o si **paga en efectivo** | Texto libre. A las citas en efectivo, este y el del día anterior les llegan siempre con la plantilla aprobada `recordatorio_cita` (≈ COP 3 cada uno) |
 | Seguimiento con horas | ~45 min sin responder después de la respuesta de Gema, sin cita | Texto libre: si recibió la bienvenida, un cierre con una hora concreta ("te lo separo?"); si no, dos horas libres de su sede |
 | Seguimiento con el 2x1 | ~3 h sin responder, sin cita | Texto libre: el 2x1 vigente del servicio que le interesa y la pregunta de sede |
 | Seguimiento | ~22 h después de su último mensaje, si no respondió y no tiene cita | Texto libre |

@@ -11,8 +11,9 @@
  *                      todo en efectivo, si nadie del equipo le escribió: Gema retoma con el anticipo
  *                      y un horario concreto, y vuelve a atender el chat
  *   recordatorio_hoy   2–3 h antes de una cita con la asistencia confirmada, o de TODA cita en efectivo
- *                      (no pagó nada antes: es la que más riesgo tiene de no llegar). Con la ventana
- *                      cerrada, a la de efectivo le llega como plantilla recordatorio_cita
+ *                      (no pagó nada antes: es la que más riesgo tiene de no llegar). A las citas en
+ *                      efectivo los dos recordatorios (día antes y 2 h) les llegan SIEMPRE con la
+ *                      plantilla aprobada recordatorio_cita, con sus botones, aunque la ventana esté abierta
  *   recordatorio_cita  24 h antes de cada cita pagada (si la ventana está cerrada, va como plantilla)
  *
  * Plantillas (se cobran; solo con la ventana cerrada y si WHATSAPP_TEMPLATES=on):
@@ -221,10 +222,10 @@ async function dayBeforeReminders(run: Run, chats: Map<string, ChatSummary>) {
     const chat = chats.get(booking.phone) ?? null
     if (chat && humanHandling(chat)) continue
     const name = firstName(booking.name) || firstName(chat?.name ?? '')
-    if (chat && isWindowOpen(chat, run.now)) {
-      const cashNote = booking.paymentPlan === 'cash' ? `. El pago${amountOf(booking.price) ? ` de ${pesos(amountOf(booking.price))}` : ''} lo haces allá, en efectivo o como prefieras` : ''
+    // En efectivo siempre va la plantilla aprobada (con sus botones), aunque la ventana esté abierta.
+    if (chat && isWindowOpen(chat, run.now) && booking.paymentPlan !== 'cash') {
       await run.text(chat, 'recordatorio_cita',
-        `Hola${name ? ` ${name}` : ''}, te recuerdo tu cita de ${serviceText(booking)} el ${fullDayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${cashNote}${SEPARATOR}me confirmas que asistes?`,
+        `Hola${name ? ` ${name}` : ''}, te recuerdo tu cita de ${serviceText(booking)} el ${fullDayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${SEPARATOR}me confirmas que asistes?`,
         booking)
     } else {
       await run.template(booking.phone, chat, 'recordatorio_cita', 'recordatorio_cita', {
@@ -245,20 +246,19 @@ async function sameDayReminders(run: Run, chats: Map<string, ChatSummary>) {
     const chat = chats.get(booking.phone) ?? null
     if (chat && humanHandling(chat)) continue
     const name = firstName(booking.name)
-    if (chat && isWindowOpen(chat, run.now)) {
-      const address = run.config.addresses[booking.location]
-      const pay = cash ? `. El pago${amountOf(booking.price) ? ` de ${pesos(amountOf(booking.price))}` : ''} lo haces allá, en efectivo o como prefieras` : ''
-      await run.text(chat, 'recordatorio_hoy',
-        `Hola${name ? ` ${name}` : ''}, hoy te esperamos a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${address ? ` (${address})` : ''}${pay}. Cualquier cambio me avisas por aquí`,
-        booking)
-    } else if (cash) {
-      // Ventana cerrada: la plantilla de utilidad (≈ COP 3) para no perder a quien no pagó nada antes.
+    if (cash) {
+      // Efectivo: siempre la plantilla aprobada recordatorio_cita (utilidad, ≈ COP 3), con fecha "hoy".
       await run.template(booking.phone, chat, 'recordatorio_hoy', 'recordatorio_cita', {
         nombre_cliente: name || 'de nuevo',
         fecha_cita: 'hoy',
         hora_cita: templateClock(booking.start),
         sede: LOCATION_LABEL[booking.location],
       }, booking)
+    } else if (chat && isWindowOpen(chat, run.now)) {
+      const address = run.config.addresses[booking.location]
+      await run.text(chat, 'recordatorio_hoy',
+        `Hola${name ? ` ${name}` : ''}, hoy te esperamos a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${address ? ` (${address})` : ''}. Cualquier cambio me avisas por aquí`,
+        booking)
     }
   }
 }
