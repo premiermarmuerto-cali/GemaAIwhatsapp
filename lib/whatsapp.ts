@@ -81,6 +81,22 @@ export async function sendWhatsAppText(to: string, body: string): Promise<string
   return data?.messages?.[0]?.id
 }
 
+/** Imagen por URL pública con texto al pie (dentro de la ventana de 24 h: no se cobra). */
+export async function sendWhatsAppImage(to: string, link: string, caption: string): Promise<string | undefined> {
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID
+  const token = accessToken()
+  if (!phoneId) throw new WhatsAppError('WhatsApp no está configurado (WHATSAPP_PHONE_NUMBER_ID).')
+  const response = await fetch(`https://graph.facebook.com/${version}/${phoneId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', ...destination(to), type: 'image', image: { link, caption: caption.slice(0, 1024) } }),
+    signal: AbortSignal.timeout(15_000),
+  })
+  const data = await response.json().catch(() => null) as { messages?: Array<{ id: string }>; error?: { message?: string } } | null
+  if (!response.ok) throw new WhatsAppError(data?.error?.message ?? `WhatsApp respondió ${response.status}`)
+  return data?.messages?.[0]?.id
+}
+
 /** Verifica X-Hub-Signature-256 = "sha256=" + HMAC-SHA256(app secret, cuerpo crudo). */
 export function verifyMetaSignature(rawBody: string, header: string | null): boolean {
   const secret = process.env.WHATSAPP_APP_SECRET

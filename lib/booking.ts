@@ -192,14 +192,15 @@ export async function occupancyOf(location: Location, day: string, { force = fal
  * Horas concretas para ofrecer sin que el cliente las pida (seguimientos): la primera libre y otra
  * al menos 3 h después, o la primera del día siguiente. Con la duración más larga del catálogo, así
  * sirven para cualquier servicio. Es la misma disponibilidad que ve Gema y que comprueba la reserva.
+ * `people: 2`: horas en que caben dos personas a la vez (2x1).
  */
-export async function suggestStarts(config: AppConfig, location: Location, { now = Date.now(), count = 2 } = {}): Promise<Array<{ day: string; start: string }>> {
+export async function suggestStarts(config: AppConfig, location: Location, { now = Date.now(), count = 2, people = 1 } = {}): Promise<Array<{ day: string; start: string }>> {
   const out: Array<{ day: string; start: string }> = []
   const today = dayKey(now)
   for (let offset = 0; offset < Math.min(7, config.horizonDays) && out.length < count; offset++) {
     const day = addDays(today, offset)
     if (await isClosed(day)) continue
-    for (const start of freeStarts(config, location, day, longestService(config), await occupancyOf(location, day), { now })) {
+    for (const start of freeStarts(config, location, day, longestService(config), await occupancyOf(location, day), { now, people })) {
       const last = out.at(-1)
       if (!last || last.day !== day || toMinutes(start) - toMinutes(last.start) >= 180) out.push({ day, start })
       if (out.length >= count) break

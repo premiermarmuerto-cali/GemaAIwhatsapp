@@ -310,6 +310,13 @@ async function earlyFollowUps(run: Run, chats: Map<string, ChatSummary>) {
     const name = firstName(chat.name)
     const hi = name ? `${name}, ` : ''
     if (await waitingProspect(chat, run, 'seguimiento_45m', 40 * MINUTE, 3 * HOUR)) {
+      // Con la bienvenida ya tiene la lista de horas: el seguimiento es un cierre con UNA hora concreta.
+      if (chat.autoSent.bienvenida) {
+        const location = chat.lead.location || LOCATIONS.find((sede) => (run.config.cabins[sede] ?? 1) >= 2) || LOCATIONS[0]
+        const [first] = await suggestStarts(run.config, location, { now: run.now, count: 1 })
+        if (first) await run.text(chat, 'seguimiento_45m', `${hi}alcanzaste a ver los horarios? te puedo separar ${whenText(run.now, first)} en ${LOCATION_LABEL[location]} y te paso el link del anticipo${SEPARATOR}te lo separo?`)
+        continue
+      }
       const offer = await hoursOffer(run, chat.lead.location)
       if (offer.text) await run.text(chat, 'seguimiento_45m', `${hi}por si te sirve para organizarte, ${offer.text}${SEPARATOR}${offer.location ? 'te separo alguno?' : 'cuál te queda mejor?'}`)
       continue

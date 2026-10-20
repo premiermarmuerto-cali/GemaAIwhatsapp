@@ -2,7 +2,7 @@ import { extractReserva, generateReply, type ExtractedReserva } from './ai'
 import { bookingsOfPhone, chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
 import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
 import { isLocation, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
-import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead, setObjection, updateChat } from './chats'
+import { attachBooking, getHistory, getSummary, markChatAuto, recordOutbound, requestAgent, saveLead, setObjection, updateChat } from './chats'
 import { trackConversion } from './conversions'
 import { generarLinkPagoBold } from './bold'
 import { amountOf, getConfig, paymentFor, pesos, resolveService, twoForOneApplies } from './config'
@@ -12,7 +12,8 @@ import { buildPromptContext, buildSystemPrompt, promoLive } from './prompt'
 import { rateLimit } from './ratelimit'
 import { insertAfter, SEPARATOR, styleModelText, toMessages } from './reply-style'
 import { keys, redis } from './redis'
-import { sendWhatsAppText } from './whatsapp'
+import { sendWhatsAppImage, sendWhatsAppText } from './whatsapp'
+import { buildWelcome, needsAnswerAfterWelcome, WELCOME_KIND } from './welcome'
 import { HOLD_STATUSES, type AppConfig, type Booking, type Location, type Message } from './types'
 
 const HISTORY_FOR_MODEL = 30
@@ -260,6 +261,19 @@ export function paymentNote(history: Message[]): string | undefined {
   return undefined
 }
 
+/**
+ * La bienvenida ofrece dos servicios y el cliente elige horario sin decir cuál limpieza: el modelo
+ * suponía uno (en una prueba cotizó Líneas a quien no la había pedido). Mientras ningún mensaje
+ * del cliente nombre un servicio, se le recuerda preguntarlo.
+ */
+export function serviceChoiceNote(config: AppConfig, history: Message[]): string | undefined {
+  if (!history.some((message) => message.auto === WELCOME_KIND)) return undefined
+  const words = distinctiveWords(config)
+  const said = fold(history.filter((message) => message.sender === 'user').map((message) => message.text).join(' '))
+  if ([...words.values()].some((list) => list.some((word) => said.includes(word))) || /arruga|anti ?edad|acne|grasa|mancha/.test(said)) return undefined
+  return 'Nota del sistema: el cliente todavía no dijo cuál limpieza quiere. No supongas ninguna: antes de reservar, pregúntale cuál de las de la bienvenida (con su nombre corto, por ejemplo "la de Peeling o la de Líneas"), en el mismo mensaje en que pidas los nombres.'
+}
+
 // "2×1" con el signo de multiplicar es como lo escribe el anuncio (y lo copian los clientes).
 const PROMO_WORD = /2\s?[x×]\s?1|dos por uno/i
 const DENIES = /\b(no|sin|tampoco|solo|solamente|unicamente)\b|no aplica|no tiene|no cuenta|no incluye|no entra/i
@@ -328,6 +342,41 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** Firma de sendWhatsAppText: se puede inyectar otra (p. ej. scripts/simulate-chat.ts) para probar sin llamar a Meta. */
 export type SendFn = (to: string, body: string) => Promise<string | undefined>
+export type SendImageFn = (to: string, link: string, caption: string) => Promise<string | undefined>
+
+const WELCOME_GAP_MS = 1_500
+
+/**
+ * Cliente nuevo (nadie le ha escrito todavía): la bienvenida en bloques de lib/welcome.ts. La arma
+ * el servidor, así que no gasta IA ni puede inventar precios. Devuelve 'none' si no corresponde,
+ * 'answer' si además hay una pregunta que los bloques no responden (la contesta Gema) u 'only'.
+ */
+async function sendWelcome(phone: string, send: SendFn, sendImage: SendImageFn): Promise<'none' | 'answer' | 'only'> {
+  const history = await getHistory(phone, 20)
+  if (!history.length || history.some((message) => message.sender !== 'user')) return 'none'
+  const welcome = await buildWelcome(await getConfig(), process.env.PUBLIC_APP_URL || 'https://premier-agente.vercel.app')
+  if (!welcome) return 'none'
+  const record = (id: string | undefined, text: string) => recordOutbound(phone, { id: id ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now(), auto: WELCOME_KIND })
+  try {
+    // Si la imagen falla (Meta no la pudo descargar), el texto sale igual sin ella.
+    const imageId = await sendImage(phone, welcome.imageUrl, welcome.caption).catch(async (error) => {
+      console.warn(`[autoreply] ${phone}: la imagen de bienvenida no salió, va solo el texto:`, error instanceof Error ? error.message : error)
+      return send(phone, welcome.caption)
+    })
+    await record(imageId, welcome.caption)
+    for (const message of welcome.messages) {
+      await sleep(WELCOME_GAP_MS)
+      await record(await send(phone, message), message)
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    await requestAgent(phone, `WhatsApp rechazó la bienvenida: ${detail}`)
+    return 'only'
+  }
+  await markChatAuto({ phone }, WELCOME_KIND)
+  const clientTexts = history.filter((message) => message.sender === 'user')
+  return clientTexts.some((message) => message.media) || needsAnswerAfterWelcome(clientTexts.map((message) => message.text).join(' ')) ? 'answer' : 'only'
+}
 
 /** El webhook lo llama tras guardar un mensaje del cliente que merece respuesta. */
 export async function markPendingReply(phone: string) {
@@ -765,9 +814,14 @@ export async function applyCancel(phone: string, reason: string): Promise<Applie
  * Un turno de IA para un chat. Exportada (no solo de uso interno) para que
  * scripts/simulate-chat.ts pueda correr la misma lógica inyectando un `send` falso.
  */
-export async function replyOnce(phone: string, { send = sendWhatsAppText }: { send?: SendFn } = {}) {
+export async function replyOnce(phone: string, { send = sendWhatsAppText, sendImage }: { send?: SendFn; sendImage?: SendImageFn } = {}) {
   const chat = await getSummary(phone)
   if (!chat?.botActive) return
+
+  // Con un envío simulado (pruebas) la imagen tampoco sale a Meta: va como texto por el mismo envío.
+  const image = sendImage ?? (send === sendWhatsAppText ? sendWhatsAppImage : (to: string, _link: string, caption: string) => send(to, caption))
+  const welcome = await sendWelcome(phone, send, image)
+  if (welcome === 'only') return
 
   // Protecciones contra gasto de cuota: si se superan, el chat pasa a una persona en vez de quedar sin respuesta.
   if (!(await rateLimit('ai-phone', phone, PER_PHONE_LIMIT, 600)).ok) {
@@ -791,8 +845,16 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   let history: Message[] = []
   for (let draft = 0; draft < 2; draft++) {
     history = await getHistory(phone, HISTORY_FOR_MODEL)
+    // La bienvenida salió después del primer mensaje: para el modelo va antes, así la pregunta del
+    // cliente queda al final y Gema la contesta (si no, ve su propio mensaje como el último y calla).
+    if (welcome === 'answer') history = [...history.filter((message) => message.auto === WELCOME_KIND), ...history.filter((message) => message.auto !== WELCOME_KIND)]
     // Notas del servidor justo antes de responder: cuando la regla del prompt sola no bastó.
-    const hint = [serviceHint(config, history), paymentNote(history)].filter(Boolean).join('\n') || undefined
+    const hint = [
+      welcome === 'answer' ? 'Nota del sistema: acabas de enviar la bienvenida automática (las promociones 2x1, precios, qué incluye cada limpieza, el anticipo y horarios libres). No repitas nada de eso: responde solo lo que preguntó y no está ahí, en una o dos frases, y termina preguntando cuál de esos horarios le separas.' : '',
+      serviceHint(config, history),
+      serviceChoiceNote(config, history),
+      paymentNote(history),
+    ].filter(Boolean).join('\n') || undefined
     if (hint && draft === 0) console.log(`[autoreply] ${phone}: nota del servidor → ${hint.slice(0, 160)}`)
     try {
       reply = await generateReply(prompt, history, hint).catch((error) => {
