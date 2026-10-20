@@ -55,35 +55,45 @@ export function hasRedis(): boolean {
  *   holds         ZSet   bookingIds con horario apartado sin pagar, ordenados por holdUntil
  *   closed        String día cerrado manualmente; el valor es el motivo
  */
+/**
+ * Prefijo de todas las llaves. En producción es `pm:`. Las pruebas locales usan otro
+ * (REDIS_KEY_PREFIX=pmtest:) para que sus chats, citas y agenda no aparezcan en el panel ni ocupen
+ * cabinas reales: un chat de prueba borrado mientras alguien lo miraba dejó la consola en blanco
+ * (20 oct). Se lee en cada uso, así una prueba puede cambiarlo después de cargar el .env.
+ */
+const prefix = () => process.env.REDIS_KEY_PREFIX || 'pm:'
+
 export const keys = {
-  chat: (phone: string) => `pm:chat:${phone}`,
-  messages: (phone: string) => `pm:chat:${phone}:msgs`,
-  box: (box: 'inbox' | 'archived') => `pm:box:${box}`,
-  config: 'pm:config',
-  stats: (day: string) => `pm:stats:${day}`,
-  seen: (waMessageId: string) => `pm:wa:seen:${waMessageId}`,
-  replyLock: (phone: string) => `pm:lock:reply:${phone}`,
-  replyPending: (phone: string) => `pm:pending:reply:${phone}`,
-  mediaInfo: (mediaId: string) => `pm:media:${mediaId}`,
-  mediaBin: (mediaId: string) => `pm:media:${mediaId}:bin`,
-  mediaBusy: (phone: string) => `pm:media:busy:${phone}`,
-  rate: (bucket: string, id: string, window: number) => `pm:rl:${bucket}:${id}:${window}`,
+  chat: (phone: string) => `${prefix()}chat:${phone}`,
+  messages: (phone: string) => `${prefix()}chat:${phone}:msgs`,
+  box: (box: 'inbox' | 'archived') => `${prefix()}box:${box}`,
+  get config() { return `${prefix()}config` },
+  stats: (day: string) => `${prefix()}stats:${day}`,
+  seen: (waMessageId: string) => `${prefix()}wa:seen:${waMessageId}`,
+  replyLock: (phone: string) => `${prefix()}lock:reply:${phone}`,
+  replyPending: (phone: string) => `${prefix()}pending:reply:${phone}`,
+  mediaInfo: (mediaId: string) => `${prefix()}media:${mediaId}`,
+  mediaBin: (mediaId: string) => `${prefix()}media:${mediaId}:bin`,
+  mediaBusy: (phone: string) => `${prefix()}media:busy:${phone}`,
+  rate: (bucket: string, id: string, window: number) => `${prefix()}rl:${bucket}:${id}:${window}`,
 
-  slots: (location: Location, day: string) => `pm:slots:${location}:${day}`,
-  booking: (id: string) => `pm:booking:${id}`,
-  day: (day: string) => `pm:day:${day}`,
-  byStatus: (status: BookingStatus) => `pm:bookings:status:${status}`,
-  byPhone: (phone: string) => `pm:bookings:phone:${phone}`,
-  holds: 'pm:holds',
-  closed: (day: string) => `pm:closed:${day}`,
+  slots: (location: Location, day: string) => `${prefix()}slots:${location}:${day}`,
+  booking: (id: string) => `${prefix()}booking:${id}`,
+  day: (day: string) => `${prefix()}day:${day}`,
+  byStatus: (status: BookingStatus) => `${prefix()}bookings:status:${status}`,
+  byPhone: (phone: string) => `${prefix()}bookings:phone:${phone}`,
+  get holds() { return `${prefix()}holds` },
+  closed: (day: string) => `${prefix()}closed:${day}`,
 
+  /** Candado de una corrida de lib/automations.ts (no corren dos a la vez). */
+  get automationsLock() { return `${prefix()}lock:automations` },
   // Bold: notificaciones de pago recibidas (las últimas 200) y deduplicación por id de evento.
-  boldEvents: 'pm:bold:events',
+  get boldEvents() { return `${prefix()}bold:events` },
   /** Entregas del webhook de WhatsApp que no se procesaron (últimas 200). */
-  webhookRejected: 'pm:wa:rejected',
+  get webhookRejected() { return `${prefix()}wa:rejected` },
   /** Eventos enviados a la API de conversiones de Meta: evita duplicados por event_id. */
-  capiSent: (eventId: string) => `pm:capi:sent:${eventId}`,
+  capiSent: (eventId: string) => `${prefix()}capi:sent:${eventId}`,
   /** Registro de envíos a la API de conversiones (últimos 200), con la respuesta de Meta. */
-  capiLog: 'pm:capi:log',
-  boldSeen: (eventId: string) => `pm:bold:seen:${eventId}`,
+  get capiLog() { return `${prefix()}capi:log` },
+  boldSeen: (eventId: string) => `${prefix()}bold:seen:${eventId}`,
 }
