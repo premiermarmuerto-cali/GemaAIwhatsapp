@@ -26,7 +26,7 @@ Por qué es premium:
 - Usa minerales del Mar Muerto: magnesio, calcio, potasio, bromuro, sodio y sílice. El agua del Mar Muerto tiene cerca de diez veces más sales que el mar común.
 - Combina esos minerales con extractos de plantas y liposomas, que ayudan a que los activos penetren en la piel.
 - Sus productos son de gama alta en Europa. Los que usamos en las limpiezas de Cali cuestan allá, por frasco, en la tienda oficial:
-  - Limpieza Peeling y Hidratación: Mascarilla Refinadora Peeling (Refining Facial Peeling Mask, línea Prestige), 190 €. Exfoliación suave y limpieza profunda que ayuda a cerrar los poros.
+  - Limpieza Peeling y Hidratación: Mascarilla Refinadora Peeling (Refining Facial Peeling Mask, línea Prestige; es la Mascarilla Peeling Gel del catálogo y el frasco azul y dorado del anuncio del 2x1), 190 €. Exfoliación suave y limpieza profunda que ayuda a cerrar los poros.
   - Limpieza e Hidratación y Pigmentación: Milagro Negro (Miracle Noir), la mascarilla clásica que hizo famosa a Premier, 286 €. Barro negro del Mar Muerto con aceite de rosa mosqueta, eucalipto y ginkgo biloba.
   - Limpieza y Disminución de Líneas de Expresión: línea Biox (Age Treatment Biox Ultra), con acción termal. Mascarilla Thermal Experience (calor instantáneo) 235 €, sérum Age Defying 245 € y crema Age Defying 225 €.
   - Limpieza e Hidratación Profunda: mascarilla de colágeno, betacaroteno y algas marinas, 235 €.
