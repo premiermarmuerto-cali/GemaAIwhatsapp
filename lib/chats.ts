@@ -23,6 +23,7 @@ function toSummary(phone: string, raw: Record<string, string>): ChatSummary {
     needsAgent: raw.needsAgent === '1',
     agentKind: raw.agentKind === 'payment' ? 'payment' : 'help',
     agentReason: raw.agentReason ?? '',
+    agentAt: Number(raw.agentAt ?? 0),
     unread: Number(raw.unread ?? 0),
     lastMessage: raw.lastMessage ?? '',
     lastSender: (raw.lastSender as Sender) ?? 'user',
@@ -44,6 +45,8 @@ function toSummary(phone: string, raw: Record<string, string>): ChatSummary {
     ctwaClid: raw.ctwaClid ?? '',
     ctwaAt: Number(raw.ctwaAt ?? 0),
     autoSent: parseAutoSent(raw.autoSent),
+    objection: raw.objection ?? '',
+    capiStatus: raw.capiStatus ?? '',
   }
 }
 
@@ -147,6 +150,16 @@ export async function recordOutbound(phone: string, message: Message) {
 /** Tocó "Ahora no" en una plantilla de marketing: no se le vuelven a enviar plantillas de marketing. */
 export async function setNoMarketing(phone: string): Promise<void> {
   await redis().hset(keys.chat(phone), { noMarketing: '1' })
+}
+
+/** La primera objeción que frenó la venta queda en el chat ("efectivo"), para medir cuántos caen ahí. */
+export async function setObjection(phone: string, objection: string): Promise<void> {
+  await redis().hsetnx(keys.chat(phone), 'objection', objection)
+}
+
+/** Estado del último evento de conversión enviado a Meta, para auditarlo desde el panel. */
+export async function setCapiStatus(phone: string, status: { event: string; ok: boolean; reason?: string; at: number }): Promise<void> {
+  if (await redis().exists(keys.chat(phone))) await redis().hset(keys.chat(phone), { capiStatus: JSON.stringify(status) })
 }
 
 /** Deja constancia de que una automatización ya se envió a este chat (no se repite). */

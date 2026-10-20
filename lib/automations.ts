@@ -4,7 +4,12 @@
  *
  * Texto libre (gratis, solo con la ventana de 24 h abierta):
  *   seguimiento_pago   ~30 min antes de que se libere un horario apartado sin pago
+ *   seguimiento_45m    ~45 min sin respuesta tras la respuesta de Gema, sin cita: dos horas concretas
+ *   seguimiento_3h     ~3 h sin respuesta, sin cita: el 2x1 vigente y la pregunta de sede
  *   seguimiento_22h    ~22 h después del último mensaje del cliente, si quedó sin responder y sin cita
+ *   efectivo_retoma    30 min (en horario de asesoras) después de pasar a Johanna a quien quería pagar
+ *                      todo en efectivo, si nadie del equipo le escribió: Gema retoma con el anticipo
+ *                      y un horario concreto, y vuelve a atender el chat
  *   recordatorio_hoy   2–3 h antes de una cita con la asistencia confirmada
  *   recordatorio_cita  24 h antes de cada cita pagada (si la ventana está cerrada, va como plantilla)
  *
@@ -17,14 +22,14 @@
  * Nada se envía a chats que atiende una persona (Gema en pausa o pidiendo asesor), ni de noche, y
  * cada automatización queda registrada para no repetirse. Las de marketing respetan "Ahora no".
  */
-import { bookingsOfPhone, getBookings, liveBookingOf, markBookingAuto, serviceText, sweepExpiredHolds } from './booking'
-import { clock12, dayKey, dayLabel, fullDayLabel, minuteOfDay } from './calendar'
-import { listChats, markChatAuto, recordOutbound } from './chats'
-import { LOCATION_LABEL, MONTH_NAME } from './clinic'
-import { getConfig } from './config'
+import { bookingsOfPhone, getBookings, liveBookingOf, markBookingAuto, serviceText, suggestStarts, sweepExpiredHolds } from './booking'
+import { addDays, clock12, dayKey, dayLabel, fullDayLabel, minuteOfDay, nextHumanWindow } from './calendar'
+import { listChats, markChatAuto, recordOutbound, updateChat } from './chats'
+import { ESCALATION_HOURS, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
+import { amountOf, depositOf, getConfig, pesos, serviceById, twoForOneApplies } from './config'
 import { keys, redis } from './redis'
 import { SEPARATOR, toMessages } from './reply-style'
-import { HOLD_STATUSES, type AppConfig, type Booking, type ChatSummary } from './types'
+import { HOLD_STATUSES, type AppConfig, type Booking, type ChatSummary, type Location } from './types'
 import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsapp'
 import { isWindowOpen, WHATSAPP_WINDOW_MS } from './window'
 
@@ -258,6 +263,113 @@ async function silentProspects(run: Run, chats: Map<string, ChatSummary>) {
   }
 }
 
+/** "hoy a las 4:00 p.m.", "mañana a las 10:00 a.m.", "el jueves 23 oct a las 11:00 a.m.". */
+function whenText(now: number, { day, start }: { day: string; start: string }): string {
+  const today = dayKey(now)
+  const label = day === today ? 'hoy' : day === addDays(today, 1) ? 'mañana' : `el ${dayLabel(day)}`
+  return `${label} a las ${clock12(start)}`
+}
+
+/**
+ * Horas concretas libres de verdad: dos en la sede que eligió el cliente o, si todavía no la dijo, la
+ * primera de cada sede. Texto vacío si no hay ninguna (entonces el seguimiento no se envía).
+ */
+async function hoursOffer(run: Run, location: Location | ''): Promise<{ text: string; location: Location | '' }> {
+  if (location) {
+    const options = await suggestStarts(run.config, location, { now: run.now })
+    return { text: options.length ? `en ${LOCATION_LABEL[location]} tengo ${options.map((option) => whenText(run.now, option)).join(' o ')}` : '', location }
+  }
+  const firsts: Array<{ sede: Location; when: string }> = []
+  for (const sede of LOCATIONS) {
+    const [first] = await suggestStarts(run.config, sede, { now: run.now, count: 1 })
+    if (first) firsts.push({ sede, when: whenText(run.now, first) })
+  }
+  if (!firsts.length) return { text: '', location: '' }
+  // La misma hora en las dos sedes se dice una vez: "hoy a las 5:00 p.m. en Unicentro o en Chipichape".
+  if (firsts.length > 1 && firsts.every((item) => item.when === firsts[0].when)) {
+    return { text: `tengo espacio ${firsts[0].when} en ${firsts.map((item) => LOCATION_LABEL[item.sede]).join(' o en ')}`, location: '' }
+  }
+  return { text: `tengo espacio ${firsts.map((item) => `en ${LOCATION_LABEL[item.sede]} ${item.when}`).join(' y ')}`, location: '' }
+}
+
+/** El cliente no contestó desde la última respuesta de Gema y no tiene cita: candidato a seguimiento. */
+async function waitingProspect(chat: ChatSummary, run: Run, kind: string, fromMs: number, toMs: number): Promise<boolean> {
+  const silence = run.now - chat.lastInboundAt
+  if (!chat.lastInboundAt || silence < fromMs || silence >= toMs || !isWindowOpen(chat, run.now)) return false
+  if (chat.lastSender !== 'gem' || humanHandling(chat) || (chat.autoSent[kind] ?? 0) > chat.lastInboundAt) return false
+  return !(await liveBookingOf(chat.phone))
+}
+
+/**
+ * Seguimientos dentro de la ventana de 24 h (gratis). La mitad de los chats dejaba de responder
+ * después de la primera respuesta y solo había un seguimiento a las 22 h (VIRAND, 19 oct). Cada uno
+ * trae algo nuevo: primero dos horas concretas, después el 2x1 vigente con la pregunta de sede.
+ */
+async function earlyFollowUps(run: Run, chats: Map<string, ChatSummary>) {
+  for (const chat of chats.values()) {
+    const name = firstName(chat.name)
+    const hi = name ? `${name}, ` : ''
+    if (await waitingProspect(chat, run, 'seguimiento_45m', 40 * MINUTE, 3 * HOUR)) {
+      const offer = await hoursOffer(run, chat.lead.location)
+      if (offer.text) await run.text(chat, 'seguimiento_45m', `${hi}por si te sirve para organizarte, ${offer.text}${SEPARATOR}${offer.location ? 'te separo alguno?' : 'cuál te queda mejor?'}`)
+      continue
+    }
+    if (await waitingProspect(chat, run, 'seguimiento_3h', 3 * HOUR, 22 * HOUR)) {
+      const promo = promoReminder(run, chat)
+      if (!promo) continue
+      const sede = chat.lead.location
+      await run.text(chat, 'seguimiento_3h', `${hi}${promo}${SEPARATOR}${sede ? `te separo un espacio en ${LOCATION_LABEL[sede]}?` : 'en qué sede te queda mejor, Unicentro o Chipichape?'}`)
+    }
+  }
+}
+
+/** "te recuerdo que el 2x1 de la X va hasta el 31 de octubre: vienes con alguien y pagan una sola sesión de $130.000". */
+function promoReminder(run: Run, chat: ChatSummary): string {
+  const today = dayKey(run.now)
+  const live = run.config.services.filter((service) => twoForOneApplies(run.config, service.id, today) && amountOf(service.price))
+  if (!live.length) return ''
+  // El servicio que le interesa, si tiene 2x1; si no, el que vence primero (el que tiene fecha).
+  const interest = chat.lead.serviceId ? serviceById(run.config, chat.lead.serviceId) : undefined
+  const service = live.find((item) => item.id === interest?.id)
+    ?? [...live].sort((a, b) => (run.config.twoForOne[a.id] || '9999').localeCompare(run.config.twoForOne[b.id] || '9999'))[0]
+  const until = run.config.twoForOne[service.id]
+  return `te recuerdo que el 2x1 de la ${service.label} ${until ? `va hasta el ${offerText(until)}` : 'sigue vigente'}: vienes con alguien y pagan una sola sesión de ${pesos(amountOf(service.price))}`
+}
+
+/** Minutos de horario de asesoras transcurridos entre dos momentos (de 5 en 5). */
+function humanMinutesBetween(from: number, to: number): number {
+  let minutes = 0
+  for (let at = from; at < to && minutes < 24 * 60; at += 5 * MINUTE) if (nextHumanWindow(ESCALATION_HOURS, at) === 'ahora') minutes += 5
+  return minutes
+}
+
+/**
+ * Quien quería pagar todo en efectivo se pasó a Johanna ([[EFECTIVO]] en lib/autoreply.ts). Si en 30
+ * minutos de horario de asesoras nadie del equipo le escribió, Gema retoma con la opción estándar y
+ * un horario concreto, y vuelve a atender el chat (decisión de Premier, 20 oct).
+ */
+async function cashRetakes(run: Run, chats: Map<string, ChatSummary>) {
+  for (const chat of chats.values()) {
+    if (!chat.needsAgent || !/^pago en efectivo/i.test(chat.agentReason) || !chat.agentAt) continue
+    if ((chat.autoSent.efectivo_retoma ?? 0) > chat.agentAt || !isWindowOpen(chat, run.now)) continue
+    if (chat.lastSender === 'human' && chat.lastAt > chat.agentAt) continue // Johanna ya le escribió
+    if (humanMinutesBetween(chat.agentAt, run.now) < 30) continue
+    if (await liveBookingOf(chat.phone)) continue
+    const offer = await hoursOffer(run, chat.lead.location)
+    if (!offer.text) continue
+    const service = chat.lead.serviceId ? serviceById(run.config, chat.lead.serviceId) : undefined
+    const deposit = service ? depositOf(run.config, service.price) : run.config.depositFixed ? pesos(run.config.depositFixed) : ''
+    const name = firstName(chat.name)
+    const sent = await run.text(chat, 'efectivo_retoma', [
+      `${name ? `${name}, ` : ''}todavía no me confirman lo del pago sin anticipo`,
+      `para que no pierdas el cupo, ${offer.text}, y se separa con el anticipo${deposit ? ` de ${deposit}` : ''}, que se descuenta del valor de tu limpieza. El resto lo pagas en la sede en efectivo o como prefieras`,
+      offer.location ? 'te lo separo?' : 'cuál te queda mejor?',
+    ].join(SEPARATOR))
+    // Gema vuelve a atender el chat: la respuesta del cliente la contesta ella.
+    if (sent && !run.dryRun) await updateChat(chat.phone, { botActive: true })
+  }
+}
+
 /**
  * Entre 24 y 48 h sin escribir y sin cita: plantilla retomar_cita_limpieza (una vez por silencio).
  * Solo en ese rango porque el texto aprobado dice "Ayer hablamos de tu limpieza facial".
@@ -326,8 +438,10 @@ export async function runAutomations({ now = Date.now(), dryRun = false } = {}):
     const chats = await chatsByPhone()
     // Primero lo más urgente (pagos y citas), al final el marketing: si se llega al tope, cae lo menos importante.
     await holdNudges(run, chats)
+    await cashRetakes(run, chats)
     await dayBeforeReminders(run, chats)
     await sameDayReminders(run, chats)
+    await earlyFollowUps(run, chats)
     await silentProspects(run, chats)
     await expiredHoldTemplates(run, chats)
     // Cerca del fin de una promo, el aviso de últimos días va antes que el genérico de retomar.

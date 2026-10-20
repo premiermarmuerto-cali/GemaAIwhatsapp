@@ -36,14 +36,17 @@ export function splitMessages(text: string): string[] {
   return [parts[0], middle, parts[parts.length - 1]]
 }
 
-/** Quita frases de relleno de un mensaje; si no queda nada, lo deja como estaba. */
-function withoutFiller(part: string): string {
+/**
+ * Quita frases de relleno de un mensaje; si no queda nada, lo deja como estaba. `keepLater`: el
+ * anuncio de que le escribe después es real (pasó el chat a Johanna por el pago en efectivo).
+ */
+function withoutFiller(part: string, keepLater = false): string {
   const sentences = part.split(/(?<=[.!?])\s+/)
-  const isFiller = (sentence: string) => ANNOUNCES_LATER.test(sentence.trim())
+  const isFiller = (sentence: string) => (!keepLater && ANNOUNCES_LATER.test(sentence.trim()))
     || (FILLER_SENTENCE.test(sentence) && sentence.split(/\s+/).length <= SHORT_SENTENCE_WORDS)
   const kept = sentences.filter((sentence) => !isFiller(sentence))
   // Un mensaje que solo anuncia algo para después se elimina entero; uno que solo es cortesía se deja.
-  if (!kept.length && sentences.every((sentence) => ANNOUNCES_LATER.test(sentence.trim()))) return ''
+  if (!kept.length && !keepLater && sentences.every((sentence) => ANNOUNCES_LATER.test(sentence.trim()))) return ''
   return (kept.length ? kept : sentences).map((sentence) => sentence.replace(FILLER_OPENER, '')).join(' ')
 }
 
@@ -81,9 +84,9 @@ function twelveHour(part: string): string {
 }
 
 /** Reglas mecánicas de puntuación sobre un mensaje del modelo. */
-function casual(part: string, isLast: boolean): string {
+function casual(part: string, isLast: boolean, keepLater = false): string {
   // Las listas van primero: withoutFiller une las frases con espacios y se pierden los saltos de línea.
-  let out = twelveHour(withoutFiller(flattenLists(part)))
+  let out = twelveHour(withoutFiller(flattenLists(part), keepLater))
     .replace(/\*\*([^*\n]+)\*\*/g, '*$1*') // Markdown **negrita** → *negrita* de WhatsApp
     .replace(/(\$\s?[\d.]+\*?)\s*COP\b/g, '$1') // "$130.000 COP" → "$130.000"
     .replace(/\[(?!\[)[^\]\n]{2,60}\]/g, '') // relleno tipo "[datos de la cuenta]"
@@ -102,9 +105,32 @@ function casual(part: string, isLast: boolean): string {
  * Lo que escribió el modelo, ya en su forma final: partido en mensajes y con la puntuación de
  * WhatsApp. Devuelve los mensajes unidos por ||| para poder seguir tratándolo como un solo texto.
  */
-export function styleModelText(text: string): string {
+// Pregunta genérica de sí o no ("te gustaría agendar?", "quieres saber más?"): sobra si hay otra más concreta.
+const GENERIC_QUESTION = /^(y\s+)?(te\s+gustar[ií]a|quieres|quisieras|deseas|te\s+interesa(r[ií]a)?|te\s+animas|te\s+parece)\b[^?]{0,70}\?$/i
+
+/**
+ * Una sola pregunta por respuesta. Con dos ("te gustaría agendarla? en qué sede te queda mejor?") el
+ * cliente no sabe cuál contestar y muchas veces no contesta ninguna (VIRAND, 19 oct: 21 de 26
+ * primeras respuestas traían dos). Se quitan las preguntas genéricas de sí o no y queda la concreta;
+ * si todas son genéricas, la última.
+ */
+function oneQuestion(parts: string[]): string[] {
+  // "hola, cómo estás?" también es una pregunta: con otra pregunta en la respuesta queda solo el saludo.
+  const questionCount = parts.join(' ').split('?').length - 1
+  if (questionCount >= 2) parts = parts.map((part) => part.replace(/^(hola[^?]{0,20}?),?\s*(c[oó]mo\s+est[aá]s|qu[eé]\s+tal)\?\s*/i, '$1, '))
+  const sentences = parts.map((part) => part.split(/(?<=[.!?])\s+/))
+  const questions = sentences.flat().filter((sentence) => /\?$/.test(sentence.trim()))
+  if (questions.length < 2) return parts
+  const concrete = questions.filter((sentence) => !GENERIC_QUESTION.test(sentence.trim()))
+  const keep = concrete.length ? concrete[concrete.length - 1] : questions[questions.length - 1]
+  return sentences
+    .map((list) => list.filter((sentence) => sentence === keep || !GENERIC_QUESTION.test(sentence.trim())).join(' ').trim())
+    .filter(Boolean)
+}
+
+export function styleModelText(text: string, { keepLater = false } = {}): string {
   const parts = splitMessages(text)
-  const styled = parts.map((part, index) => casual(part, index === parts.length - 1)).filter(Boolean)
+  const styled = oneQuestion(parts.map((part, index) => casual(part, index === parts.length - 1, keepLater)).filter(Boolean))
   // Nunca se deja una respuesta vacía por limpiar de más.
   return styled.length ? styled.join(SEPARATOR) : parts.join(SEPARATOR)
 }

@@ -50,6 +50,8 @@ export type ChatSummary = {
   needsAgent: boolean
   agentKind: AgentKind
   agentReason: string
+  /** Cuándo se pidió el asesor (0 si nunca). */
+  agentAt: number
   unread: number
   lastMessage: string
   lastSender: Sender
@@ -75,6 +77,10 @@ export type ChatSummary = {
   ctwaAt: number
   /** Automatizaciones ya enviadas a este chat: tipo → momento del envío (evita repetirlas). */
   autoSent: Record<string, number>
+  /** Objeción que frenó la venta, para medirla (hoy: 'efectivo', quiso pagar en efectivo). */
+  objection: string
+  /** Último evento de conversión enviado a Meta (JSON: evento, ok, motivo, momento). '' si ninguno. */
+  capiStatus: string
 }
 
 export type ChatDetail = ChatSummary & { messages: Message[] }
@@ -195,6 +201,11 @@ export type AppConfig = {
   intlInstructions: string
   /** Porcentaje del anticipo que se exige para reservar. */
   depositPercent: number
+  /**
+   * Anticipo fijo en pesos por cita (p. ej. 50000), igual para todos los servicios. 0 = se usa
+   * depositPercent. Nunca supera el valor de la cita.
+   */
+  depositFixed: number
   /** Granularidad de la grilla en minutos. */
   slotMinutes: number
   /** Antelación mínima para agendar, en horas. */

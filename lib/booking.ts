@@ -4,7 +4,7 @@
  * esos campos solo si ninguno existe, y eso se hace con un script Lua para que sea atómico:
  * dos clientes que aceptan el mismo horario a la vez no pueden quedar los dos.
  */
-import { freeStarts, slotsOf, timestampOf, toMinutes, type Occupancy } from './calendar'
+import { addDays, dayKey, freeStarts, longestService, slotsOf, timestampOf, toMinutes, type Occupancy } from './calendar'
 import { amountOf, bookingPrice, depositOf, pesos, serviceById } from './config'
 import { keys, redis, toHash } from './redis'
 import { HOLD_STATUSES, LIVE_STATUSES, type AppConfig, type Booking, type BookingStatus, type Location } from './types'
@@ -186,6 +186,26 @@ export async function sweepExpiredHolds(now = Date.now(), { force = false } = {}
 export async function occupancyOf(location: Location, day: string, { force = false } = {}): Promise<Occupancy> {
   await sweepExpiredHolds(Date.now(), { force })
   return toHash(await redis().hgetall(keys.slots(location, day))) ?? {}
+}
+
+/**
+ * Horas concretas para ofrecer sin que el cliente las pida (seguimientos): la primera libre y otra
+ * al menos 3 h después, o la primera del día siguiente. Con la duración más larga del catálogo, así
+ * sirven para cualquier servicio. Es la misma disponibilidad que ve Gema y que comprueba la reserva.
+ */
+export async function suggestStarts(config: AppConfig, location: Location, { now = Date.now(), count = 2 } = {}): Promise<Array<{ day: string; start: string }>> {
+  const out: Array<{ day: string; start: string }> = []
+  const today = dayKey(now)
+  for (let offset = 0; offset < Math.min(7, config.horizonDays) && out.length < count; offset++) {
+    const day = addDays(today, offset)
+    if (await isClosed(day)) continue
+    for (const start of freeStarts(config, location, day, longestService(config), await occupancyOf(location, day), { now })) {
+      const last = out.at(-1)
+      if (!last || last.day !== day || toMinutes(start) - toMinutes(last.start) >= 180) out.push({ day, start })
+      if (out.length >= count) break
+    }
+  }
+  return out
 }
 
 export async function isClosed(day: string): Promise<string | null> {

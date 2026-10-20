@@ -137,7 +137,10 @@ Gema también escribe sola, sin que la clienta haya escrito. Un programador la d
 | Aviso de pago pendiente | ~30 min antes de que se libere un horario apartado sin pago | Texto libre (gratis) |
 | Recordatorio de la cita | 24 h antes de cada cita **pagada** | Texto libre si la clienta escribió en las últimas 24 h; si no, plantilla `recordatorio_cita` |
 | Recordatorio del día | 2–3 h antes, solo si confirmó asistencia | Texto libre |
+| Seguimiento con horas | ~45 min sin responder después de la respuesta de Gema, sin cita | Texto libre: dos horas concretas libres de su sede (o la primera de cada sede) |
+| Seguimiento con el 2x1 | ~3 h sin responder, sin cita | Texto libre: el 2x1 vigente del servicio que le interesa y la pregunta de sede |
 | Seguimiento | ~22 h después de su último mensaje, si no respondió y no tiene cita | Texto libre |
+| Gema retoma (efectivo) | 30 min en horario de asesoras después de pasar a Johanna a quien quería pagar todo en efectivo, si nadie le escribió | Texto libre con el anticipo y dos horas concretas; Gema vuelve a atender ese chat |
 | Retomar la cita | Más de 24 h sin escribir y sin cita (hasta 7 días) | Plantilla `retomar_cita_limpieza` |
 | Anticipo pendiente | El horario se liberó sin pago hace más de 24 h y la fecha aún no pasa | Plantilla `anticipo_pendiente`. Si toca **"Reenviar el link"**, Gema vuelve a apartar el mismo horario (si sigue libre) y le manda un link nuevo |
 | Últimos días del 2x1 | 2–3 días antes de que venza una promoción, a quien escribió y no agendó | Plantilla `ultimos_dias_bono`. La oferta se arma sola desde la configuración del 2x1 |
@@ -149,9 +152,9 @@ Gema también escribe sola, sin que la clienta haya escrito. Un programador la d
 - Máximo 25 envíos por corrida y una plantilla de marketing por persona cada 3 días.
 - Si la clienta toca **"Ahora no"**, no recibe más plantillas de marketing; los recordatorios de su cita sí le llegan.
 
-**Interruptores** (variables en Vercel): `AUTOMATIONS=off` apaga todo lo automático; `WHATSAPP_TEMPLATES=on` activa las plantillas. Este último **debe quedar en off hasta que las plantillas estén aprobadas en Meta** y las imágenes subidas.
+**Interruptores** (variables en Vercel): `AUTOMATIONS=off` apaga todo lo automático; `WHATSAPP_TEMPLATES=on` activa las plantillas (activas desde el 19 de octubre de 2026).
 
-**Medición de la campaña.** Cuando una clienta llega desde un anuncio, Gema guarda el anuncio y el clic. Con eso le avisa a Meta cuando esa clienta **agenda** (evento *LeadSubmitted*, "cliente potencial") y cuando **paga** (evento *Purchase*, con el monto pagado): por Bold apenas llega la confirmación, y por transferencia cuando la asesora confirma la cita en la agenda. Así Ads Manager muestra qué anuncio trajo ventas, no solo conversaciones. Funciona en cuanto se configure `META_CAPI_TOKEN`.
+**Medición de la campaña.** Cuando una clienta llega desde un anuncio, Gema guarda el anuncio y el clic. Con eso le avisa a Meta cuando esa clienta **agenda** (evento *LeadSubmitted*, "cliente potencial") y cuando **paga** (evento *Purchase*, con el monto pagado): por Bold apenas llega la confirmación, y por transferencia cuando la asesora confirma la cita en la agenda. Así Ads Manager muestra qué anuncio trajo ventas, no solo conversaciones. Los eventos van al dataset **1636157554637715**, el que está vinculado a la cuenta de WhatsApp (el 38756680020642307 no lo estaba y Meta los rechazaba). En la ficha de cada chat, "Conversión Meta" dice si el último evento se envió o por qué no.
 
 ### 2.5 Cómo es una reserva por dentro
 
@@ -167,6 +170,7 @@ Gema escala (el chat aparece marcado en la bandeja) cuando:
 - el cliente pide hablar con una persona;
 - **envía el comprobante de una transferencia** (aparece como *Pago por validar*);
 - **cancela una cita ya pagada** (aparece como *Reembolso*) o pregunta algo sobre su dinero;
+- **insiste en pagar todo en efectivo, sin anticipo** (aparece como *Pago en efectivo*). Antes, Gema ya le explicó que el resto se paga en la sede en efectivo y que el anticipo se descuenta del valor. Johanna decide si hace una excepción; si nadie le escribe en 30 minutos de horario de asesoras, Gema retoma con el anticipo y un horario concreto;
 - tiene un reclamo o describe una condición médica;
 - pregunta algo que Gema no sabe (precio no configurado, condiciones de promoción que no están escritas);
 - algo falla (Bold no generó el link, WhatsApp rechazó el mensaje, se superó el tope de respuestas).
@@ -199,7 +203,9 @@ El panel (`https://premier-agente.vercel.app`, con la clave de administrador) ti
 **Al cerrar (6:00 p.m.)**
 6. No dejar chats en rojo sin responder: desde las 6:00 p.m. nadie del equipo los verá hasta el día siguiente (domingo, hasta el lunes).
 
-**En la ficha de cada chat (columna derecha de la consola)** se ve el anuncio por el que llegó, si tocó "Ahora no" (no recibe marketing) y qué mensajes automáticos se le enviaron y cuándo.
+**En la ficha de cada chat (columna derecha de la consola)** se ve el anuncio por el que llegó, el estado del evento de conversión a Meta, la objeción si la hubo (por ejemplo "Quiere pagar en efectivo"), si tocó "Ahora no" (no recibe marketing) y qué mensajes automáticos se le enviaron y cuándo.
+
+**Clientes con número oculto.** Algunas personas usan nombre de usuario de WhatsApp y no muestran su número. Aparecen como "Usuario de WhatsApp (número oculto)" y Gema les responde igual. No se les puede llamar ni abrir por wa.me: solo se les escribe desde el panel.
 
 ### 3.3 Cómo validar una transferencia
 
@@ -216,7 +222,7 @@ El panel (`https://premier-agente.vercel.app`, con la clave de administrador) ti
 
 ### 3.5 Cambios que SÍ puede hacer el operador en Configuración
 
-Precios, horarios, texto de la promoción, 2x1 por servicio (casilla + fecha), datos de transferencia, preguntas frecuentes, días cerrados.
+Precios, horarios, texto de la promoción, 2x1 por servicio (casilla + fecha), datos de transferencia, preguntas frecuentes, días cerrados, y el **anticipo**: porcentaje ("Anticipo %") o un valor fijo por cita ("Anticipo fijo ($)", por ejemplo 50000; en 0 se usa el porcentaje). El anticipo fijo es igual para todos los servicios, nunca pasa del precio y una pareja paga uno solo.
 
 ### 3.6 Lo que NO debe hacer
 

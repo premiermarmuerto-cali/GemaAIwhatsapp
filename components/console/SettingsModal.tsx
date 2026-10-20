@@ -9,8 +9,9 @@ import type { AppConfig, Location, Region, Service } from '@/lib/types'
 import styles from './SettingsModal.module.css'
 
 /** Campos numéricos con su rango y su explicación: evita repetir el mismo bloque cinco veces. */
-const NUMBERS: Array<{ key: 'depositPercent' | 'slotMinutes' | 'leadTimeHours' | 'horizonDays' | 'holdMinutes'; label: string; min: number; max: number; hint: string }> = [
+const NUMBERS: Array<{ key: 'depositPercent' | 'depositFixed' | 'slotMinutes' | 'leadTimeHours' | 'horizonDays' | 'holdMinutes'; label: string; min: number; max: number; hint: string }> = [
   { key: 'depositPercent', label: 'Anticipo %', min: 1, max: 100, hint: 'Porcentaje que se cobra para reservar.' },
+  { key: 'depositFixed', label: 'Anticipo fijo ($)', min: 0, max: 5000000, hint: 'Pesos por cita, igual en todos los servicios (ej. 50000). En 0 se usa el porcentaje.' },
   { key: 'slotMinutes', label: 'Grilla (min)', min: 5, max: 60, hint: 'Cada duración de servicio debe ser múltiplo de este número.' },
   { key: 'leadTimeHours', label: 'Antelación (h)', min: 0, max: 72, hint: 'Lo mínimo que debe faltar para poder agendar.' },
   { key: 'horizonDays', label: 'Horizonte (días)', min: 1, max: 90, hint: 'Hasta cuándo se puede agendar hacia adelante.' },

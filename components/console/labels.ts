@@ -38,12 +38,34 @@ export const PREVIEW_PREFIX: Record<Sender, string> = {
 /** Nombres de las automatizaciones (lib/automations.ts) tal como se muestran en el panel. */
 export const AUTO_LABEL: Record<string, string> = {
   seguimiento_pago: 'Aviso: el horario se libera',
+  seguimiento_45m: 'Seguimiento: horas concretas',
+  seguimiento_3h: 'Seguimiento: 2x1 y sede',
   seguimiento_22h: 'Seguimiento a las 22 h',
+  efectivo_retoma: 'Gema retomó (pago en efectivo)',
   retomar_cita_limpieza: 'Plantilla: retomar cita',
   anticipo_pendiente: 'Plantilla: anticipo pendiente',
   ultimos_dias_bono: 'Plantilla: últimos días de la promo',
   recordatorio_cita: 'Recordatorio de la cita',
   recordatorio_hoy: 'Recordatorio del día',
+}
+
+export const OBJECTION_LABEL: Record<string, string> = {
+  efectivo: 'Quiere pagar en efectivo',
+}
+
+/**
+ * Evento de conversión a Meta, para auditarlo: "Cita (LeadSubmitted) enviada" o el motivo por el que
+ * no salió. Sin clic de anuncio no hay evento posible.
+ */
+export function capiLabel(chat: Pick<ChatSummary, 'capiStatus' | 'ctwaClid'>): string {
+  if (!chat.capiStatus) return chat.ctwaClid ? 'Sin eventos todavía (se envían al agendar y al pagar)' : 'No aplica: no llegó desde un anuncio'
+  try {
+    const status = JSON.parse(chat.capiStatus) as { event: string; ok: boolean; reason?: string; at: number }
+    const name = status.event === 'Purchase' ? 'Pago (Purchase)' : status.event === 'LeadSubmitted' ? 'Cita (LeadSubmitted)' : status.event
+    return status.ok ? `${name} enviado` : `${name} no enviado: ${status.reason ?? 'error'}`
+  } catch {
+    return chat.capiStatus
+  }
 }
 
 export const AGENT_LABEL: Record<AgentKind, string> = {

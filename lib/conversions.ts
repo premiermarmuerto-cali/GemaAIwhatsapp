@@ -13,7 +13,7 @@
  * Sin META_CAPI_TOKEN no envía nada. Cada evento se envía una sola vez (event_id) y queda registrado
  * con la respuesta de Meta en pm:capi:log. Un error nunca interrumpe la reserva ni el pago.
  */
-import { getSummary } from './chats'
+import { getSummary, setCapiStatus } from './chats'
 import { keys, redis } from './redis'
 
 const ATTRIBUTION_WINDOW_MS = 7 * 24 * 60 * 60_000
@@ -36,6 +36,15 @@ export type ConversionEvent = {
 export type ConversionResult = { sent: boolean; reason?: string; response?: unknown }
 
 export async function sendConversion(event: ConversionEvent): Promise<ConversionResult> {
+  const result = await send(event)
+  // Visible en el panel (Inspector) para auditar: enviado, error o por qué no se envió.
+  if (result.reason !== 'sin META_CAPI_TOKEN' && result.reason !== 'ya enviado') {
+    await setCapiStatus(event.phone, { event: event.name, ok: result.sent, ...(result.reason ? { reason: result.reason } : {}), at: Date.now() }).catch(() => null)
+  }
+  return result
+}
+
+async function send(event: ConversionEvent): Promise<ConversionResult> {
   const token = process.env.META_CAPI_TOKEN
   if (!token) return { sent: false, reason: 'sin META_CAPI_TOKEN' }
 

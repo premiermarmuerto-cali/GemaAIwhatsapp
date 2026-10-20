@@ -2,7 +2,7 @@ import { extractReserva, generateReply, type ExtractedReserva } from './ai'
 import { bookingsOfPhone, chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
 import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
 import { isLocation, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
-import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead, updateChat } from './chats'
+import { attachBooking, getHistory, getSummary, recordOutbound, requestAgent, saveLead, setObjection, updateChat } from './chats'
 import { trackConversion } from './conversions'
 import { generarLinkPagoBold } from './bold'
 import { amountOf, getConfig, paymentFor, pesos, resolveService, twoForOneApplies } from './config'
@@ -51,9 +51,16 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
  *   CANCELAR    cancela la cita viva y libera el cupo; si estaba pagada, una persona hace el reembolso
  *   ASISTE  el cliente confirmó que asiste a su cita
  *   PAGO    llegó el comprobante → una persona lo valida
+ *   EFECTIVO insiste en pagar todo en la sede, sin anticipo → Johanna decide si hace la excepción
+ *           (si nadie responde en 30 min, Gema retoma: ver cashRetakes en lib/automations.ts)
  *   ASESOR  todo lo demás que necesita una persona
  */
-const MARKERS = /\[\[\s*(ASESOR|PAGO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO|REPROGRAMAR|CANCELAR|ASISTE)\s*(?::([^\]]*))?\]\]/gi
+const MARKERS = /\[\[\s*(ASESOR|PAGO|EFECTIVO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO|REPROGRAMAR|CANCELAR|ASISTE)\s*(?::([^\]]*))?\]\]/gi
+
+// El cliente quiere pagar en efectivo o en la sede: la objeción que más frena la venta (VIRAND, 19 oct).
+const SAYS_CASH = /\befectivo\b|\bpag(o|ar|amos|aria)\s+(all[aá]|en\s+(el\s+local|la\s+sede|la\s+cl[ií]nica|cabina|el\s+sitio))|contra\s*entrega/i
+/** Motivo con el que el chat pasa a Johanna; lib/automations.ts lo reconoce para retomar a los 30 min. */
+export const CASH_REASON = 'Pago en efectivo: quiere pagar todo en la sede, sin anticipo'
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
 const SOUNDS_BOOKED = /\b(te (agend|reserv)[eoé]|(entonces,? )?(agend|reserv)(emos|amos|ar[eé]|o)\b|voy a (reservar|agendar|apartar)|aqu[ií] (va|est[aá]) tu (reserva|cita)|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
@@ -139,7 +146,7 @@ export function groundedInChat(extracted: ExtractedReserva, history: Message[]):
 function forgotReserva(reply: string, bookingId: string | undefined): boolean {
   if (bookingId) return false
   const found = [...reply.matchAll(MARKERS)].map((marker) => marker[1].toUpperCase())
-  if (found.includes('RESERVA') || found.includes('ASESOR') || found.includes('PAGO')) return false
+  if (found.includes('RESERVA') || found.includes('ASESOR') || found.includes('PAGO') || found.includes('EFECTIVO')) return false
   const plain = reply.replace(MARKERS, '')
   // Si está pidiendo un nombre (el suyo o el de quien la acompaña en el 2x1), todavía le faltan datos
   // para reservar: es lo correcto, no un olvido. Premier agenda cada cita con el nombre de cada persona.
@@ -224,6 +231,33 @@ export function serviceHint(config: AppConfig, history: Message[]): string | und
   }
   const options = (named.length ? named : candidates).map((service) => service.label)
   return `Nota del sistema: "${last.text.trim()}" puede ser ${options.join(', ').replace(/, ([^,]*)$/, ' o $1')}. No elijas tú ni digas que no tiene 2x1: pregúntale cuál, en una frase y con los nombres completos.`
+}
+
+// Pregunta cuánto hay que dejar para apartar: el anticipo.
+const ASKS_DEPOSIT = /anticipo|abono|apart(ar|o)|separ(ar|o)|reserv(ar|a)\b.*(cu[aá]nto|pag)|cu[aá]nto\s+(hay\s+que|toca|se\s+(deja|paga)|debo|tengo\s+que)\s+(dejar|pagar|abonar)/i
+// Ya le explicó que el anticipo se descuenta del valor (lo que hay que decir la primera vez).
+const EXPLAINED_DEPOSIT = /descuenta|parte del valor|no es un (costo|cobro)/i
+// Insiste en no pagar nada antes.
+const INSISTS_CASH = /\bnada\s+antes|\bsolo\s+(en\s+)?efectivo|\btodo\s+(en\s+efectivo|all[aá])|\bno\s+(pago|voy\s+a\s+pagar|quiero\s+pagar)\b/i
+
+/**
+ * Pago en efectivo y anticipo. Con solo la regla del prompt, a "yo pago en efectivo allá" el modelo
+ * contestaba "el anticipo se debe pagar antes" (0 de 5 decían que se descuenta del valor, 20 oct): el
+ * encuadre que VIRAND pidió evitar. La nota llega después del historial, justo antes de responder.
+ */
+export function paymentNote(history: Message[]): string | undefined {
+  const last = history.at(-1)
+  if (last?.sender !== 'user') return undefined
+  const explained = history.slice(0, -1).some((message) => message.sender === 'gem' && EXPLAINED_DEPOSIT.test(message.text) && /efectivo|en la sede/i.test(message.text))
+  if (SAYS_CASH.test(last.text) || (explained && INSISTS_CASH.test(last.text))) {
+    return explained && INSISTS_CASH.test(last.text)
+      ? 'Nota del sistema: ya le explicaste que el anticipo se descuenta del valor y el cliente insiste en no pagar nada antes. No le discutas: dile que lo confirmas con la sede y cuándo le respondes, y usa la marca [[EFECTIVO]].'
+      : 'Nota del sistema: el cliente quiere pagar en efectivo o en la sede. Respóndele que sí: el resto lo paga en la sede el día de la cita, en efectivo o como prefiera. Solo el anticipo se paga antes, porque separa su cupo, y se descuenta del valor de su limpieza: no es un costo adicional. Dilo con esas palabras, con la cuenta del catálogo para su servicio, y una sola pregunta (por ejemplo si le envías el link para separarlo). No uses [[EFECTIVO]] todavía.'
+  }
+  if (ASKS_DEPOSIT.test(last.text)) {
+    return 'Nota del sistema: al hablar del anticipo di que se descuenta del valor de la limpieza (no es un cobro extra), con la cuenta del catálogo para ese servicio: cuánto deja ahora, cuánto paga en la sede y el total. No ofrezcas reservar sin anticipo ni pagar todo en la sede: esa opción no existe.'
+  }
+  return undefined
 }
 
 // "2×1" con el signo de multiplicar es como lo escribe el anuncio (y lo copian los clientes).
@@ -369,6 +403,19 @@ function holdMinutesLeft(booking: Booking): number {
 }
 
 /**
+ * " de $65.000, que se descuenta del valor de tu limpieza ($65.000 ahora y $65.000 en la sede, total
+ * $130.000)". El anticipo asustaba como si fuera un cobro aparte (VIRAND, 19 oct): se dice siempre
+ * que es parte del precio, con la cuenta. Con pago completo, solo el monto.
+ */
+export function amountLine(booking: Pick<Booking, 'deposit' | 'price' | 'paymentPlan'>): string {
+  if (!booking.deposit) return ''
+  const paid = amountOf(booking.deposit)
+  const total = amountOf(booking.price)
+  if (booking.paymentPlan === 'full' || !paid || !total || paid >= total) return ` de ${booking.deposit}`
+  return ` de ${booking.deposit}, que se descuenta del valor de tu limpieza (${pesos(paid)} ahora y ${pesos(total - paid)} en la sede, total ${pesos(total)})`
+}
+
+/**
  * El cliente prefiere transferir directo a Premier (Nequi o llave) en vez del link: el servidor
  * pega los datos de la configuración y la cita la confirma el operador al validar el comprobante.
  */
@@ -380,7 +427,7 @@ function transferAppend(config: AppConfig, booking: Booking): Applied {
       escalate: `La clienta quiere pagar ${chargeText(booking)} (${booking.deposit}) de la cita ${booking.id} por transferencia, pero los datos de transferencia no están configurados`,
     }
   }
-  const deposit = booking.deposit ? ` de ${booking.deposit}` : ''
+  const deposit = amountLine(booking)
   return {
     append: `\n\nPuedes transferir ${chargeText(booking)}${deposit} a:\n${data}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos. Cuando transfieras, mándame aquí la captura del comprobante y una asesora lo revisa`,
   }
@@ -501,7 +548,7 @@ async function resendLink(config: AppConfig, phone: string, { implicit = false }
       escalate: `La clienta pidió el link de pago de la cita ${booking.id}, pero no hay ninguno para reenviar`,
     }
   }
-  const deposit = booking.deposit ? ` de ${booking.deposit}` : ''
+  const deposit = amountLine(booking)
   const what = booking.paymentPlan === 'full' ? 'pagar la sesión completa' : 'pagar el anticipo'
   return { append: `\n\nAquí tienes el link para ${what}${deposit} ${linkMethods(phone)}:\n${url}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos y apenas se confirme el pago te aviso por aquí` }
 }
@@ -606,7 +653,7 @@ export async function applyReserva(
     return { append: '', escalate: `Cita ${booking.id} apartada, pero los datos de cobro de ${regionOf(phone)} no están configurados` }
   }
 
-  const deposit = booking.deposit ? ` de ${booking.deposit}` : ''
+  const deposit = amountLine(booking)
 
   // El cliente todavía no dijo cómo paga y hay dos caminos (link de Bold o transferencia directa):
   // se le ofrecen los dos y se espera su respuesta. El link no se genera hasta que lo elija, así no
@@ -744,8 +791,9 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   let history: Message[] = []
   for (let draft = 0; draft < 2; draft++) {
     history = await getHistory(phone, HISTORY_FOR_MODEL)
-    const hint = serviceHint(config, history)
-    if (hint && draft === 0) console.log(`[autoreply] ${phone}: nombre de servicio ambiguo → ${hint.slice(0, 160)}`)
+    // Notas del servidor justo antes de responder: cuando la regla del prompt sola no bastó.
+    const hint = [serviceHint(config, history), paymentNote(history)].filter(Boolean).join('\n') || undefined
+    if (hint && draft === 0) console.log(`[autoreply] ${phone}: nota del servidor → ${hint.slice(0, 160)}`)
     try {
       reply = await generateReply(prompt, history, hint).catch((error) => {
         console.warn(`[autoreply] reintentando ${phone}:`, error instanceof Error ? error.message : error)
@@ -799,14 +847,23 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText }: { se
   // Lo que viene del modelo pasa por la red de datos de pago; lo que añade el servidor después, no.
   // Después se parte en mensajes (|||) y se le da la puntuación de WhatsApp; los textos del servidor
   // se unen con el mismo separador y viajan enteros.
-  let text = stripWrongPromo(config, phone, styleModelText(stripInventedPaymentData(phone, reply.replace(MARKERS, '').trim())))
+  // Con [[EFECTIVO]] el "lo confirmo con la sede y te escribo" es verdad: no se quita como relleno.
+  const keepLater = markers.some((marker) => marker.kind === 'EFECTIVO')
+  let text = stripWrongPromo(config, phone, styleModelText(stripInventedPaymentData(phone, reply.replace(MARKERS, '').trim()), { keepLater }))
 
   // FICHA es silenciosa: solo enriquece el panel y el prompt de la próxima vuelta.
   const ficha = markers.find((marker) => marker.kind === 'FICHA')
   if (ficha) await saveLead(phone, parseFicha(ficha.payload))
 
   // La reserva se intenta antes de enviar: el texto que sale ya refleja lo que de verdad pasó.
-  let escalation = markers.find((marker) => marker.kind === 'PAGO') ?? markers.find((marker) => marker.kind === 'ASESOR')
+  const cash = markers.some((marker) => marker.kind === 'EFECTIVO')
+  let escalation = markers.find((marker) => marker.kind === 'PAGO')
+    ?? (cash ? { kind: 'ASESOR', payload: CASH_REASON } : undefined)
+    ?? markers.find((marker) => marker.kind === 'ASESOR')
+  // Se mide cuántos clientes frenan por querer pagar en efectivo (la primera objeción queda en el chat).
+  if (cash || history.filter((message) => message.sender === 'user').slice(-3).some((message) => SAYS_CASH.test(message.text))) {
+    await setObjection(phone, 'efectivo')
+  }
   const reserva = markers.find((marker) => marker.kind === 'RESERVA')
   const clientTexts = history.filter((message) => message.sender === 'user').slice(-8).map((message) => message.text)
   // Cómo quiere pagar y con quién viene, según lo que ESCRIBIÓ el cliente (gana lo último que dijo).

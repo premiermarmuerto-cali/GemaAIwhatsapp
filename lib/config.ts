@@ -25,6 +25,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   nequiInstructions: '',
   intlInstructions: '',
   depositPercent: 50,
+  depositFixed: 0,
   slotMinutes: 15,
   leadTimeHours: 2,
   horizonDays: 14,
@@ -199,6 +200,9 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
     holdMinutes: int(body, 'holdMinutes', 15, 2880),
   }
   for (const value of Object.values(numbers)) if (typeof value === 'object') return value
+  // Opcional: un panel abierto antes de que existiera el campo no lo envía (queda en 0, el porcentaje).
+  const depositFixed = body.depositFixed === undefined || body.depositFixed === '' ? 0 : int(body, 'depositFixed', 0, 5_000_000)
+  if (typeof depositFixed === 'object') return depositFixed
 
   // Una duración que no es múltiplo de la grilla dejaría huecos imposibles de reservar.
   const slot = numbers.slotMinutes as number
@@ -219,6 +223,7 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
       cabins: cabins as Record<Location, number>,
       addresses: addresses as Record<Location, string>,
       depositPercent: numbers.depositPercent as number,
+      depositFixed,
       slotMinutes: slot,
       leadTimeHours: numbers.leadTimeHours as number,
       horizonDays: numbers.horizonDays as number,
@@ -311,9 +316,14 @@ export function pesos(amount: number): string {
   return `$${amount.toLocaleString('es-CO')}`
 }
 
-/** Anticipo como número a partir del precio configurado. 0 si el precio no tiene un número legible. */
+/**
+ * Anticipo como número a partir del precio de la cita (una sesión o la pareja). 0 si el precio no
+ * tiene un número legible. Con anticipo fijo es ese valor por cita, sin pasar del precio.
+ */
 export function depositAmount(config: AppConfig, price: string): number {
-  return Math.round((amountOf(price) * config.depositPercent) / 100)
+  const amount = amountOf(price)
+  if (config.depositFixed > 0) return Math.min(config.depositFixed, amount)
+  return Math.round((amount * config.depositPercent) / 100)
 }
 
 /** Anticipo en texto a partir del precio configurado. Vacío si el precio no tiene un número legible. */

@@ -7,7 +7,7 @@ import { formatDate, formatDuration } from '@/lib/format'
 import { formatPhone } from '@/lib/phone'
 import type { ChatSummary, Stats } from '@/lib/types'
 import { windowRemainingMs } from '@/lib/window'
-import { AGENT_LABEL, AUTO_LABEL, leadSummary, paymentMethods, regionLabel } from './labels'
+import { AGENT_LABEL, AUTO_LABEL, capiLabel, leadSummary, OBJECTION_LABEL, paymentMethods, regionLabel } from './labels'
 import styles from './Inspector.module.css'
 
 type Props = { stats: Stats | null; chat: ChatSummary | null; onOpenSettings: () => void; toast: ShowToast }
@@ -62,6 +62,8 @@ export function Inspector({ stats, chat, onOpenSettings, toast }: Props) {
             {(chat.adHeadline || chat.adSourceId) && (
               <div><dt>Anuncio</dt><dd>{chat.adHeadline || 'sin título'}{chat.adSourceId && <span className="mono"> · {chat.adSourceId}</span>}</dd></div>
             )}
+            <div><dt>Conversión Meta</dt><dd>{capiLabel(chat)}</dd></div>
+            {chat.objection && <div><dt>Objeción</dt><dd>{OBJECTION_LABEL[chat.objection] ?? chat.objection}</dd></div>}
             {chat.noMarketing && <div><dt>Marketing</dt><dd>No enviar plantillas (tocó "Ahora no")</dd></div>}
             {Object.keys(chat.autoSent).some((kind) => !kind.endsWith(':error')) && (
               <div><dt>Automáticos</dt><dd>{Object.entries(chat.autoSent).filter(([kind]) => !kind.endsWith(':error')).map(([kind, at]) => `${AUTO_LABEL[kind.split(':')[0]] ?? kind} (${formatDate(at)})`).join(' · ')}</dd></div>

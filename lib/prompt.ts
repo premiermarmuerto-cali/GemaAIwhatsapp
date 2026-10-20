@@ -36,6 +36,13 @@ function unconfigured(label: string) {
  * Precio, anticipo y precio de pareja ya calculados por el servidor: el modelo no hace cuentas.
  * Con el 2x1 vigente, cada servicio dice si entra o no.
  */
+/** "anticipo $65.000 + $65.000 en la sede": la cuenta hecha, para decirla tal cual. */
+function depositSplit(config: AppConfig, price: string): string {
+  const total = amountOf(price)
+  const deposit = amountOf(depositOf(config, price))
+  return deposit && deposit < total ? `anticipo ${pesos(deposit)} + ${pesos(total - deposit)} en la sede` : `anticipo ${pesos(deposit)}`
+}
+
 function catalogBlock(config: AppConfig, today: string): string {
   const live = promoLive(config, today)
   return config.services.map((service) => {
@@ -46,9 +53,9 @@ function catalogBlock(config: AppConfig, today: string): string {
     const pair = bookingPrice(config, service, 2, today)
     const until = config.twoForOne[service.id]
     const pairText = live && twoForOneApplies(config, service.id, today)
-      ? `2x1 (dos personas juntas, con cualquier acompañante): SÍ, ${until ? `para sesiones hasta el ${untilText(until)}` : 'sin fecha límite por ahora'} (dos personas pagan ${pesos(amount)}, anticipo ${depositOf(config, pair)})`
-      : `${live ? 'SIN 2x1; ' : ''}pareja (2 personas a la vez): ${pesos(amountOf(pair))}, anticipo ${depositOf(config, pair)}`
-    return `- \`${service.id}\` · *${service.label}* · ${service.durationMin} min · ${pesos(amount)} (anticipo ${depositOf(config, service.price)}) · ${pairText}${service.summary ? ` · ${service.summary}` : ''}`
+      ? `2x1 (dos personas juntas, con cualquier acompañante): SÍ, ${until ? `para sesiones hasta el ${untilText(until)}` : 'sin fecha límite por ahora'} (dos personas pagan ${pesos(amount)}: ${depositSplit(config, pair)})`
+      : `${live ? 'SIN 2x1; ' : ''}pareja (2 personas a la vez): ${pesos(amountOf(pair))}: ${depositSplit(config, pair)}`
+    return `- \`${service.id}\` · *${service.label}* · ${service.durationMin} min · ${pesos(amount)} (${depositSplit(config, service.price)}) · ${pairText}${service.summary ? ` · ${service.summary}` : ''}`
   }).join('\n')
 }
 
@@ -170,7 +177,11 @@ function cobroBlock(config: AppConfig, phone: string): string {
   const colombia = regionOf(phone) === 'CO'
   const payment = paymentFor(config, regionOf(phone))
   const common = [
-    `- Para reservar, el cliente elige entre pagar el anticipo del ${config.depositPercent}% (el resto lo paga en sede) o el pago completo de la sesión (no paga nada en sede). Si no lo ha dicho, pregúntaselo antes de reservar, con los dos montos del catálogo. Si elige el pago completo, añade [[COMPLETO]] junto con [[RESERVA]]; si elige el anticipo, no añadas nada.`,
+    `- Para reservar, el cliente elige entre pagar el anticipo (${config.depositFixed > 0 ? `${pesos(config.depositFixed)} fijos por cita, en cualquier servicio` : `el ${config.depositPercent}% de la cita`}; el resto lo paga en la sede) o el pago completo de la sesión (no paga nada en sede). Si no lo ha dicho, pregúntaselo antes de reservar, con los dos montos del catálogo. Si elige el pago completo, añade [[COMPLETO]] junto con [[RESERVA]]; si elige el anticipo, no añadas nada.`,
+    '- El anticipo NO es un cobro extra: es parte del valor de la limpieza y se descuenta del total; sirve para separar el cupo de cabina. Dilo siempre así cuando lo menciones, con la cuenta que trae el catálogo para ESE servicio ("anticipo X + Y en la sede"): cuánto deja ahora, cuánto paga en la sede y el total. Nunca digas "anticipo" a secas como si fuera aparte.',
+    '- Antes de pedir el anticipo, di en una frase corta qué incluye esa limpieza, con tus palabras y sin prometer resultados.',
+    `- Si dice que quiere pagar en efectivo, "pagar allá" o en el local: nunca le digas que no se puede ni cierres la conversación. Dile que el resto lo paga en la sede el día de la cita, en efectivo o como prefiera, y que solo el anticipo se paga antes porque separa su cupo y se descuenta del valor de su limpieza (no es un costo adicional). Una sola idea y una sola pregunta, por ejemplo si le envías el link para separarlo.`,
+    `- Si después de eso insiste en no pagar nada antes, no le discutas ni repitas el argumento: dile que lo confirmas con la sede y que le respondes ${nextHumanWindow() === 'ahora' ? 'en unos minutos' : nextHumanWindow()}, y usa la marca [[EFECTIVO]]. Es la única vez en que sí puedes decir que le escribes después.`,
     `- El horario queda apartado ${config.holdMinutes} minutos. Si no se paga en ese tiempo, se libera solo. Dilo con amabilidad, no como amenaza.`,
     '- Los métodos y la moneda son los de "Cobro de esta conversación", arriba. No ofrezcas ningún otro.',
     '- No escribas el monto ni los datos de pago en el mensaje de la reserva: el sistema los añade al final. Nunca digas "aquí va el link" o "te envío los datos" sin la marca que corresponde: sin la marca no se envía nada.',
@@ -417,7 +428,7 @@ Bien: soy la asistente virtual de Premier|||si prefieres hablar con una persona 
 ## Imágenes, notas de voz y archivos
 - Las imágenes te llegan descritas entre corchetes y las notas de voz ya transcritas. Respóndelas con normalidad y siempre por texto.
 - Si te mandan una foto de su piel, agradece, comenta con prudencia lo que se ve y lleva la conversación a la valoración o al protocolo que corresponda. Nunca diagnostiques desde una foto.
-- Si te mandan un documento o un video que no puedes ver, pregúntale qué es. Si es un comprobante, pídele una captura de pantalla.
+- Si te mandan un documento, un video o un enlace que no puedes abrir, díselo en una frase corta y retoma la pregunta que tenías pendiente (no la dejes perder). Si parece un comprobante, pídele una captura de pantalla.
 
 ## Cómo se agenda
 1. Si pregunta por un servicio concreto (lo nombra, o llegó desde un anuncio de ese servicio), tu primera respuesta va directo a ese servicio: en qué consiste y para quién es, con tus palabras y en corto, su precio y la promoción vigente si ese servicio la tiene. Cierra preguntándole en qué sede le queda mejor (esa es tu única pregunta). No le hagas preguntas sobre su piel antes de darle esa información.
@@ -452,6 +463,8 @@ Van siempre al final del mensaje, después del texto.
 - \`[[TRANSFERENCIA]]\` — el cliente prefiere transferir directo a Premier en vez de pagar con el link. El sistema añade los datos de transferencia; tú pídele que te envíe el comprobante cuando transfiera. Tú NO tienes número de Nequi, llave, cuenta ni titular de Premier: nunca escribas ninguno, ni siquiera de ejemplo.
 
 - \`[[PAGO: plataforma y monto]]\` — cuando ya tienes el comprobante. Una asesora toma la conversación para revisarlo y confirmar la cita. Después de esta marca no vuelves a escribir en la conversación.
+
+- \`[[EFECTIVO]]\` — el cliente insiste en pagar todo en la sede, sin anticipo, después de que le explicaste que el anticipo se descuenta del valor. Pasa el chat a Johanna para que decida si hace una excepción. No la uses la primera vez que lo menciona.
 
 - \`[[ASESOR: motivo breve]]\` — pasa a una persona cuando: el cliente lo pide; pregunta un precio o un dato que está NO CONFIGURADO; pide un reembolso o algo sobre su dinero; tiene un reclamo; describe una condición médica; o pregunta algo que no puedes responder con esta información. Escribe tu mensaje diciéndole cuándo lo atenderá una persona: ${humanHoursLine()} Cierra con la marca. Después de esta marca no vuelves a escribir en la conversación.${config.faq ? `
 
