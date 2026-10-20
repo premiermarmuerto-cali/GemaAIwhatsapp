@@ -19,6 +19,8 @@ export function Console() {
   const stats = useStats(chats.statsVersion)
   const [box, setBox] = useState<Box>('inbox')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // En pantallas de menos de 1200 px el panel de control no cabe: se abre como cajón lateral.
+  const [panelOpen, setPanelOpen] = useState(false)
   const autoSelected = useRef(false)
 
   // En escritorio abre el chat más reciente al cargar; en móvil se queda en la lista.
@@ -39,8 +41,17 @@ export function Console() {
 
   const chat = chats.activeChat
 
+  useEffect(() => {
+    if (!panelOpen) return
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setPanelOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [panelOpen])
+
+  const openSettings = () => { setPanelOpen(false); setSettingsOpen(true) }
+
   return (
-    <div className={styles.shell} data-view={chat ? 'chat' : 'list'}>
+    <div className={styles.shell} data-view={chat ? 'chat' : 'list'} data-panel={panelOpen ? 'open' : undefined}>
       <Sidebar
         lists={chats.lists}
         box={box}
@@ -50,7 +61,8 @@ export function Console() {
         loaded={chats.loaded}
         loadError={chats.loadError}
         onRetry={chats.refresh}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={openSettings}
+        onOpenPanel={() => setPanelOpen(true)}
       />
 
       <main className={styles.main}>
@@ -66,6 +78,7 @@ export function Console() {
             onDelete={() => chats.remove(chat.phone)}
             onSend={(text) => chats.send(chat.phone, text)}
             onResolveAgent={() => chats.resolveAgent(chat.phone)}
+            onOpenPanel={() => setPanelOpen(true)}
             toast={show}
           />
         ) : (
@@ -80,7 +93,8 @@ export function Console() {
         )}
       </main>
 
-      <Inspector stats={stats} chat={chat} onOpenSettings={() => setSettingsOpen(true)} toast={show} />
+      {panelOpen && <div className={styles.backdrop} onClick={() => setPanelOpen(false)} aria-hidden="true" />}
+      <Inspector stats={stats} chat={chat} onOpenSettings={openSettings} onClose={() => setPanelOpen(false)} toast={show} />
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} toast={show} />}
       <Toasts toasts={toasts} onDismiss={dismiss} />

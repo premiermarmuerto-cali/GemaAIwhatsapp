@@ -192,6 +192,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   transition: background-color .15s, border-color .15s, color .15s;
 }
 .btn svg { width: 16px; height: 16px; flex: none; }
+/* Botones que solo existen cuando el panel de control no cabe en pantalla (ver Console.module.css). */
+.only-narrow { display: none !important; }
+@media (max-width: 1199px) { .only-narrow { display: inline-flex !important; } }
 .btn-primary { background: var(--primary); color: var(--primary-ink); }
 .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
 .btn-secondary { border-color: var(--line); color: var(--text); }

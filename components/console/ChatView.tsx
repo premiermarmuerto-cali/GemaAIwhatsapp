@@ -19,15 +19,16 @@ type Props = {
   onDelete: () => void
   onSend: (text: string) => Promise<boolean>
   onResolveAgent: () => void
+  onOpenPanel: () => void
   toast: ShowToast
 }
 
-export function ChatView({ chat, messages, onBack, onToggleBot, onStageChange, onArchiveChange, onDelete, onSend, onResolveAgent }: Props) {
+export function ChatView({ chat, messages, onBack, onToggleBot, onStageChange, onArchiveChange, onDelete, onSend, onResolveAgent, onOpenPanel }: Props) {
   const payment = chat.agentKind === 'payment'
 
   return (
     <section className={styles.view}>
-      <ChatHeader chat={chat} onBack={onBack} onToggleBot={onToggleBot} onStageChange={onStageChange} onArchiveChange={onArchiveChange} onDelete={onDelete} />
+      <ChatHeader chat={chat} onBack={onBack} onToggleBot={onToggleBot} onStageChange={onStageChange} onArchiveChange={onArchiveChange} onDelete={onDelete} onOpenPanel={onOpenPanel} />
       <MessageThread chat={chat} messages={messages} />
       {chat.needsAgent && (
         <div className={styles.agentBanner} data-kind={chat.agentKind} role="status">

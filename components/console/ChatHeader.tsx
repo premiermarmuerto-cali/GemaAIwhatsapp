@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArchiveIcon, BackIcon, BoltIcon, CalendarIcon, InboxIcon, TrashIcon, UserIcon } from '@/components/icons'
+import { ArchiveIcon, BackIcon, BoltIcon, CalendarIcon, InboxIcon, PanelIcon, TrashIcon, UserIcon } from '@/components/icons'
 import { formatPhone } from '@/lib/phone'
 import type { ChatSummary, Stage } from '@/lib/types'
 import { AGENT_LABEL, avatarLabel, leadSummary, regionLabel } from './labels'
@@ -14,9 +14,10 @@ type Props = {
   onStageChange: (stage: Stage) => void
   onArchiveChange: (archived: boolean) => void
   onDelete: () => void
+  onOpenPanel: () => void
 }
 
-export function ChatHeader({ chat, onBack, onToggleBot, onStageChange, onArchiveChange, onDelete }: Props) {
+export function ChatHeader({ chat, onBack, onToggleBot, onStageChange, onArchiveChange, onDelete, onOpenPanel }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const booked = chat.stage === 'booked'
   const lead = leadSummary(chat)
@@ -76,6 +77,7 @@ export function ChatHeader({ chat, onBack, onToggleBot, onStageChange, onArchive
         ) : (
           <button className="btn btn-ghost btn-icon" onClick={() => setConfirmDelete(true)} aria-label="Eliminar conversación" title="Eliminar conversación"><TrashIcon /></button>
         )}
+        <button className="btn btn-ghost btn-icon only-narrow" onClick={onOpenPanel} aria-label="Panel de control" title="Panel de control"><PanelIcon /></button>
       </div>
     </header>
   )

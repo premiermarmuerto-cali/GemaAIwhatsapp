@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowIcon, CalendarIcon, CopyIcon, SettingsIcon } from '@/components/icons'
+import { ArrowIcon, CalendarIcon, CloseIcon, CopyIcon, SettingsIcon } from '@/components/icons'
 import type { ShowToast } from '@/hooks/useToast'
 import { formatDate, formatDuration } from '@/lib/format'
 import { formatPhone } from '@/lib/phone'
@@ -10,9 +10,9 @@ import { windowRemainingMs } from '@/lib/window'
 import { AGENT_LABEL, AUTO_LABEL, capiLabel, leadSummary, OBJECTION_LABEL, paymentMethods, regionLabel } from './labels'
 import styles from './Inspector.module.css'
 
-type Props = { stats: Stats | null; chat: ChatSummary | null; onOpenSettings: () => void; toast: ShowToast }
+type Props = { stats: Stats | null; chat: ChatSummary | null; onOpenSettings: () => void; onClose: () => void; toast: ShowToast }
 
-export function Inspector({ stats, chat, onOpenSettings, toast }: Props) {
+export function Inspector({ stats, chat, onOpenSettings, onClose, toast }: Props) {
   const today = stats?.today
   const replies = today ? today.aiReplies + today.humanReplies : 0
   const aiShare = today && replies ? Math.round((today.aiReplies / replies) * 100) : null
@@ -36,6 +36,7 @@ export function Inspector({ stats, chat, onOpenSettings, toast }: Props) {
           <h2>Panel de control</h2>
         </div>
         <span className={styles.live}><i />En vivo</span>
+        <button className="btn btn-ghost btn-icon only-narrow" onClick={onClose} aria-label="Cerrar el panel" title="Cerrar"><CloseIcon /></button>
       </div>
 
       <div className={styles.metrics}>

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArchiveIcon, CalendarIcon, InboxIcon, LogoutIcon, SearchIcon, SettingsIcon } from '@/components/icons'
+import { ArchiveIcon, CalendarIcon, InboxIcon, LogoutIcon, PanelIcon, SearchIcon, SettingsIcon } from '@/components/icons'
 import { formatListTime } from '@/lib/format'
 import { formatPhone } from '@/lib/phone'
 import type { AgentKind, Box, ChatLists, ChatSummary } from '@/lib/types'
@@ -36,9 +36,10 @@ type Props = {
   loadError: string | null
   onRetry: () => void
   onOpenSettings: () => void
+  onOpenPanel: () => void
 }
 
-export function Sidebar({ lists, box, onBoxChange, activePhone, onSelect, loaded, loadError, onRetry, onOpenSettings }: Props) {
+export function Sidebar({ lists, box, onBoxChange, activePhone, onSelect, loaded, loadError, onRetry, onOpenSettings, onOpenPanel }: Props) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
 
@@ -77,6 +78,7 @@ export function Sidebar({ lists, box, onBoxChange, activePhone, onSelect, loaded
         <Link className="btn btn-ghost btn-icon" href="/agenda" aria-label="Abrir la agenda" title="Abrir la agenda"><CalendarIcon /></Link>
         <ThemeToggle />
         <button className="btn btn-ghost btn-icon" onClick={onOpenSettings} aria-label="Gema y la agenda" title="Gema y la agenda"><SettingsIcon /></button>
+        <button className="btn btn-ghost btn-icon only-narrow" onClick={onOpenPanel} aria-label="Panel de control" title="Panel de control"><PanelIcon /></button>
       </header>
 
       <div className={styles.tabs} role="tablist" aria-label="Bandejas">
