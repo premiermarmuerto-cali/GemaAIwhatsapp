@@ -10,7 +10,9 @@
  *   efectivo_retoma    30 min (en horario de asesoras) después de pasar a Johanna a quien quería pagar
  *                      todo en efectivo, si nadie del equipo le escribió: Gema retoma con el anticipo
  *                      y un horario concreto, y vuelve a atender el chat
- *   recordatorio_hoy   2–3 h antes de una cita con la asistencia confirmada
+ *   recordatorio_hoy   2–3 h antes de una cita con la asistencia confirmada, o de TODA cita en efectivo
+ *                      (no pagó nada antes: es la que más riesgo tiene de no llegar). Con la ventana
+ *                      cerrada, a la de efectivo le llega como plantilla recordatorio_cita
  *   recordatorio_cita  24 h antes de cada cita pagada (si la ventana está cerrada, va como plantilla)
  *
  * Plantillas (se cobran; solo con la ventana cerrada y si WHATSAPP_TEMPLATES=on):
@@ -220,8 +222,9 @@ async function dayBeforeReminders(run: Run, chats: Map<string, ChatSummary>) {
     if (chat && humanHandling(chat)) continue
     const name = firstName(booking.name) || firstName(chat?.name ?? '')
     if (chat && isWindowOpen(chat, run.now)) {
+      const cashNote = booking.paymentPlan === 'cash' ? `. El pago${amountOf(booking.price) ? ` de ${pesos(amountOf(booking.price))}` : ''} lo haces allá, en efectivo o como prefieras` : ''
       await run.text(chat, 'recordatorio_cita',
-        `Hola${name ? ` ${name}` : ''}, te recuerdo tu cita de ${serviceText(booking)} el ${fullDayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${SEPARATOR}me confirmas que asistes?`,
+        `Hola${name ? ` ${name}` : ''}, te recuerdo tu cita de ${serviceText(booking)} el ${fullDayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${cashNote}${SEPARATOR}me confirmas que asistes?`,
         booking)
     } else {
       await run.template(booking.phone, chat, 'recordatorio_cita', 'recordatorio_cita', {
@@ -237,14 +240,26 @@ async function dayBeforeReminders(run: Run, chats: Map<string, ChatSummary>) {
 /** 2–3 h antes de una cita con la asistencia confirmada (solo con la ventana abierta). */
 async function sameDayReminders(run: Run, chats: Map<string, ChatSummary>) {
   for (const booking of await bookingsBetween(keys.byStatus('confirmed'), run.now + 90 * MINUTE, run.now + 3 * HOUR)) {
-    if (!booking.phone || !booking.attendanceConfirmedAt || booking.autoSent.recordatorio_hoy) continue
-    const chat = chats.get(booking.phone)
-    if (!chat || humanHandling(chat) || !isWindowOpen(chat, run.now)) continue
+    const cash = booking.paymentPlan === 'cash'
+    if (!booking.phone || booking.autoSent.recordatorio_hoy || (!booking.attendanceConfirmedAt && !cash)) continue
+    const chat = chats.get(booking.phone) ?? null
+    if (chat && humanHandling(chat)) continue
     const name = firstName(booking.name)
-    const address = run.config.addresses[booking.location]
-    await run.text(chat, 'recordatorio_hoy',
-      `Hola${name ? ` ${name}` : ''}, hoy te esperamos a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${address ? ` (${address})` : ''}. Cualquier cambio me avisas por aquí`,
-      booking)
+    if (chat && isWindowOpen(chat, run.now)) {
+      const address = run.config.addresses[booking.location]
+      const pay = cash ? `. El pago${amountOf(booking.price) ? ` de ${pesos(amountOf(booking.price))}` : ''} lo haces allá, en efectivo o como prefieras` : ''
+      await run.text(chat, 'recordatorio_hoy',
+        `Hola${name ? ` ${name}` : ''}, hoy te esperamos a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${address ? ` (${address})` : ''}${pay}. Cualquier cambio me avisas por aquí`,
+        booking)
+    } else if (cash) {
+      // Ventana cerrada: la plantilla de utilidad (≈ COP 3) para no perder a quien no pagó nada antes.
+      await run.template(booking.phone, chat, 'recordatorio_hoy', 'recordatorio_cita', {
+        nombre_cliente: name || 'de nuevo',
+        fecha_cita: 'hoy',
+        hora_cita: templateClock(booking.start),
+        sede: LOCATION_LABEL[booking.location],
+      }, booking)
+    }
   }
 }
 
@@ -435,7 +450,7 @@ export async function runAutomations({ now = Date.now(), dryRun = false } = {}):
   if (!automationsOn()) return [{ kind: 'todas', phone: '-', how: 'omitido', detail: 'automatizaciones apagadas (AUTOMATIONS=off)' }]
   const minute = minuteOfDay(now)
   if (minute < SEND_FROM_MIN || minute >= SEND_TO_MIN) return [{ kind: 'todas', phone: '-', how: 'omitido', detail: 'fuera del horario de envío (8:00 a 21:00)' }]
-  if (!dryRun && !(await redis().set('pm:lock:automations', '1', { nx: true, ex: 300 }))) {
+  if (!dryRun && !(await redis().set(keys.automationsLock, '1', { nx: true, ex: 300 }))) {
     return [{ kind: 'todas', phone: '-', how: 'omitido', detail: 'otra corrida en curso' }]
   }
   try {
@@ -456,6 +471,6 @@ export async function runAutomations({ now = Date.now(), dryRun = false } = {}):
     await reengageTemplates(run, chats)
     return run.outcomes
   } finally {
-    if (!dryRun) await redis().del('pm:lock:automations')
+    if (!dryRun) await redis().del(keys.automationsLock)
   }
 }

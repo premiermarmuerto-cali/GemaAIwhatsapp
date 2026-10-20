@@ -184,6 +184,10 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
                 <textarea rows={3} maxLength={1500} placeholder="Binance Pay ID, enlace de PayPal, datos de Wise o cuenta ACH de DolarApp" {...text('intlInstructions')} />
                 <small>Por defecto los clientes de fuera pagan con el link de Bold (tarjeta de crédito, en pesos). Esto solo se envía si piden otro medio.</small>
               </label>
+              <label className={styles.row} style={{ alignItems: 'center' }} title="Si está activo, Gema agenda sin anticipo a quien quiere pagar en efectivo y le envía recordatorios un día antes y unas 2 horas antes. Si no, le explica el anticipo y, si insiste, pasa el chat a una asesora.">
+                <input type="checkbox" checked={config.cashBooking} onChange={(event) => patch({ cashBooking: event.target.checked })} />
+                <span>Agendar sin anticipo a quien paga en efectivo (recordatorio un día antes y 2 h antes)</span>
+              </label>
               <div className={styles.row}>
                 {NUMBERS.map((item) => (
                   <label key={item.key} className={styles.field} title={item.hint}>

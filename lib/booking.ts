@@ -65,7 +65,7 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     location: (raw.location as Location) ?? 'unicentro',
     cabin: Number(raw.cabin ?? 1),
     people: Number(raw.people ?? 1) || 1,
-    paymentPlan: raw.paymentPlan === 'full' ? 'full' : 'deposit',
+    paymentPlan: raw.paymentPlan === 'full' || raw.paymentPlan === 'cash' ? raw.paymentPlan : 'deposit',
     serviceId: raw.serviceId ?? '',
     serviceLabel: raw.serviceLabel ?? '',
     durationMin: Number(raw.durationMin ?? 0),
@@ -110,6 +110,7 @@ function toFields(booking: Partial<Booking>): Record<string, string> {
 
 /** "el anticipo" o "el pago completo": cómo se nombra al cliente lo que paga para reservar. */
 export function chargeText(booking: Pick<Booking, 'paymentPlan'>): string {
+  if (booking.paymentPlan === 'cash') return 'el pago en la sede'
   return booking.paymentPlan === 'full' ? 'el pago completo de la sesión' : 'el anticipo'
 }
 
@@ -237,6 +238,8 @@ export type NewBooking = {
   payFull?: boolean
   /** Nombre completo de la segunda persona (pareja del 2x1). */
   companion?: string
+  /** Paga todo en la sede, sin anticipo: la cita queda confirmada (no apartada) y sin link. */
+  cash?: boolean
 }
 
 export type BookingResult =
@@ -272,10 +275,11 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
   if (!cabin) return { ok: false, reason: 'taken', alternatives: freeStarts(config, input.location, input.day, durationMin, await occupancyOf(input.location, input.day), { people }) }
 
   const now = Date.now()
-  const status = input.status ?? 'pending_payment'
+  // Efectivo: confirmada desde ya, sin apartado que venza (no hay pago que esperar).
+  const status = input.status ?? (input.cash ? 'confirmed' : 'pending_payment')
   const price = service ? bookingPrice(config, service, people, input.day) : ''
-  // `deposit` es lo que se cobra para reservar: el anticipo, o el total si el cliente paga completo.
-  const paymentPlan = input.payFull && amountOf(price) ? 'full' : 'deposit'
+  // `deposit` es lo que se cobra para reservar: el anticipo, el total si paga completo, nada en efectivo.
+  const paymentPlan = input.cash ? 'cash' : input.payFull && amountOf(price) ? 'full' : 'deposit'
   const booking: Booking = {
     id,
     kind: input.kind ?? 'appointment',
@@ -293,7 +297,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     startTs: timestampOf(input.day, input.start),
     status,
     price,
-    deposit: paymentPlan === 'full' ? pesos(amountOf(price)) : depositOf(config, price),
+    deposit: paymentPlan === 'cash' ? '' : paymentPlan === 'full' ? pesos(amountOf(price)) : depositOf(config, price),
     paymentPlan,
     concern: input.concern ?? '',
     notes: input.notes ?? '',

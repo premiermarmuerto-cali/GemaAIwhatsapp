@@ -139,7 +139,8 @@ export type Booking = {
   /** Personas atendidas a la vez: 2 en el 2x1 de pareja, cada una en su cabina. */
   people: number
   /** Qué pagó o debe pagar para reservar: el anticipo o la sesión completa. `deposit` es ese monto. */
-  paymentPlan: 'deposit' | 'full'
+  /** cash: agendada sin anticipo, paga todo en la sede (config.cashBooking). Confirmada pero NO pagada. */
+  paymentPlan: 'deposit' | 'full' | 'cash'
   serviceId: string
   serviceLabel: string
   durationMin: number
@@ -206,6 +207,12 @@ export type AppConfig = {
    * depositPercent. Nunca supera el valor de la cita.
    */
   depositFixed: number
+  /**
+   * Quien quiere pagar en efectivo se agenda sin anticipo (cita confirmada, paga todo en la sede) y
+   * recibe recordatorios un día antes y unas 2 h antes. false = se le explica el anticipo y, si
+   * insiste, pasa a Johanna.
+   */
+  cashBooking: boolean
   /** Granularidad de la grilla en minutos. */
   slotMinutes: number
   /** Antelación mínima para agendar, en horas. */

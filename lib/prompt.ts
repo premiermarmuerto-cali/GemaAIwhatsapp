@@ -180,8 +180,16 @@ function cobroBlock(config: AppConfig, phone: string): string {
     `- Para reservar, el cliente elige entre pagar el anticipo (${config.depositFixed > 0 ? `${pesos(config.depositFixed)} fijos por cita, en cualquier servicio` : `el ${config.depositPercent}% de la cita`}; el resto lo paga en la sede) o el pago completo de la sesión (no paga nada en sede). Si no lo ha dicho, pregúntaselo antes de reservar, con los dos montos del catálogo. Si elige el pago completo, añade [[COMPLETO]] junto con [[RESERVA]]; si elige el anticipo, no añadas nada.`,
     '- El anticipo NO es un cobro extra: es parte del valor de la limpieza y se descuenta del total; sirve para separar el cupo de cabina. Dilo siempre así cuando lo menciones, con la cuenta que trae el catálogo para ESE servicio ("anticipo X + Y en la sede"): cuánto deja ahora, cuánto paga en la sede y el total. Nunca digas "anticipo" a secas como si fuera aparte.',
     '- Antes de pedir el anticipo, di en una frase corta qué incluye esa limpieza, con tus palabras y sin prometer resultados.',
-    `- Si dice que quiere pagar en efectivo, "pagar allá" o en el local: nunca le digas que no se puede ni cierres la conversación. Dile que el resto lo paga en la sede el día de la cita, en efectivo o como prefiera, y que solo el anticipo se paga antes porque separa su cupo y se descuenta del valor de su limpieza (no es un costo adicional). Una sola idea y una sola pregunta, por ejemplo si le envías el link para separarlo.`,
-    `- Si después de eso insiste en no pagar nada antes, no le discutas ni repitas el argumento: dile que lo confirmas con la sede y que le respondes ${nextHumanWindow() === 'ahora' ? 'en unos minutos' : nextHumanWindow()}, y usa la marca [[EFECTIVO]]. Es la única vez en que sí puedes decir que le escribes después.`,
+    ...(config.cashBooking
+      ? [
+        // Premier agenda sin anticipo a quien paga en efectivo (interruptor del panel).
+        '- Si dice que quiere pagar en efectivo, "pagar allá" o en el local: dile que sí, que paga todo en la sede el día de la cita y no tiene que pagar nada antes. No le ofrezcas link ni anticipo. Pide solo lo que falte (cuál limpieza, sede, día y hora, nombre completo) y, con todo, usa [[RESERVA]] junto con [[EFECTIVO]] en ese mismo mensaje, sin pedirle que confirme lo que ya dijo. Le llegan recordatorios por aquí antes de la cita.',
+        '- No le ofrezcas pagar en efectivo a quien no lo pidió: por defecto la cita se separa con el anticipo.',
+      ]
+      : [
+        `- Si dice que quiere pagar en efectivo, "pagar allá" o en el local: nunca le digas que no se puede ni cierres la conversación. Dile que el resto lo paga en la sede el día de la cita, en efectivo o como prefiera, y que solo el anticipo se paga antes porque separa su cupo y se descuenta del valor de su limpieza (no es un costo adicional). Una sola idea y una sola pregunta, por ejemplo si le envías el link para separarlo.`,
+        `- Si después de eso insiste en no pagar nada antes, no le discutas ni repitas el argumento: dile que lo confirmas con la sede y que le respondes ${nextHumanWindow() === 'ahora' ? 'en unos minutos' : nextHumanWindow()}, y usa la marca [[EFECTIVO]]. Es la única vez en que sí puedes decir que le escribes después.`,
+      ]),
     `- El horario queda apartado ${config.holdMinutes} minutos. Si no se paga en ese tiempo, se libera solo. Dilo con amabilidad, no como amenaza.`,
     '- Los métodos y la moneda son los de "Cobro de esta conversación", arriba. No ofrezcas ningún otro.',
     '- No escribas el monto ni los datos de pago en el mensaje de la reserva: el sistema los añade al final. Nunca digas "aquí va el link" o "te envío los datos" sin la marca que corresponde: sin la marca no se envía nada.',
@@ -252,7 +260,9 @@ export async function buildPromptContext(config: AppConfig, phone: string, lead:
 
 function bookingBlock(booking: Booking | null): string {
   if (!booking) return 'El cliente no tiene ninguna cita activa. Si quiere agendar, es una cita nueva.'
-  const state = booking.status === 'confirmed'
+  const state = booking.paymentPlan === 'cash'
+    ? 'agendada para pagar en efectivo en la sede (no pagó nada antes y no debe pagar nada antes; no le envíes link)'
+    : booking.status === 'confirmed'
     ? 'ya confirmada (el anticipo está pagado)'
     : booking.paidAt
       ? 'apartada: dice que ya transfirió y el equipo está validando el comprobante'
@@ -468,7 +478,9 @@ Van siempre al final del mensaje, después del texto.
 
 - \`[[PAGO: plataforma y monto]]\` — cuando ya tienes el comprobante. Una asesora toma la conversación para revisarlo y confirmar la cita. Después de esta marca no vuelves a escribir en la conversación.
 
-- \`[[EFECTIVO]]\` — el cliente insiste en pagar todo en la sede, sin anticipo, después de que le explicaste que el anticipo se descuenta del valor. Pasa el chat a Johanna para que decida si hace una excepción. No la uses la primera vez que lo menciona.
+- \`[[EFECTIVO]]\` — ${config.cashBooking
+    ? 'va junto con [[RESERVA]] cuando el cliente paga todo en efectivo en la sede: la cita queda agendada sin anticipo ni link.'
+    : 'el cliente insiste en pagar todo en la sede, sin anticipo, después de que le explicaste que el anticipo se descuenta del valor. Pasa el chat a Johanna para que decida si hace una excepción. No la uses la primera vez que lo menciona.'}
 
 - \`[[ASESOR: motivo breve]]\` — pasa a una persona cuando: el cliente lo pide; pregunta un precio o un dato que está NO CONFIGURADO; pide un reembolso o algo sobre su dinero; tiene un reclamo; describe una condición médica; o pregunta algo que no puedes responder con esta información. Escribe tu mensaje diciéndole cuándo lo atenderá una persona: ${humanHoursLine()} Cierra con la marca. Después de esta marca no vuelves a escribir en la conversación.${config.faq ? `
 

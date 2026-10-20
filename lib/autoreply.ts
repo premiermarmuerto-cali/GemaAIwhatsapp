@@ -144,10 +144,11 @@ export function groundedInChat(extracted: ExtractedReserva, history: Message[]):
 }
 
 /** La respuesta da la cita por hecha (o pide datos de pago/pareja) sin la marca de reserva, y el cliente no tiene cita. */
-function forgotReserva(reply: string, bookingId: string | undefined): boolean {
+function forgotReserva(reply: string, bookingId: string | undefined, cashBooking = false): boolean {
   if (bookingId) return false
   const found = [...reply.matchAll(MARKERS)].map((marker) => marker[1].toUpperCase())
-  if (found.includes('RESERVA') || found.includes('ASESOR') || found.includes('PAGO') || found.includes('EFECTIVO')) return false
+  // EFECTIVO pasa el chat a Johanna, salvo con cashBooking: ahí acompaña a RESERVA y sin ella es un olvido.
+  if (found.includes('RESERVA') || found.includes('ASESOR') || found.includes('PAGO') || (found.includes('EFECTIVO') && !cashBooking)) return false
   const plain = reply.replace(MARKERS, '')
   // Si está pidiendo un nombre (el suyo o el de quien la acompaña en el 2x1), todavía le faltan datos
   // para reservar: es lo correcto, no un olvido. Premier agenda cada cita con el nombre de cada persona.
@@ -155,7 +156,7 @@ function forgotReserva(reply: string, bookingId: string | undefined): boolean {
   // Entregar datos de pago o un link sin que exista la cita también es un olvido de la reserva
   // (salió "voy a reservar… aquí va el link" con [[LINK]] y sin [[RESERVA]]).
   const handsOverPayment = PROMISES_PAYMENT_DATA.test(plain) || BRACKET_PLACEHOLDER.test(plain) || PROMISES_LINK.test(plain)
-  return SOUNDS_BOOKED.test(plain) || handsOverPayment || found.some((kind) => ['TRANSFERENCIA', 'PAREJA', 'COMPLETO', 'LINK'].includes(kind))
+  return SOUNDS_BOOKED.test(plain) || handsOverPayment || found.some((kind) => ['TRANSFERENCIA', 'PAREJA', 'COMPLETO', 'LINK', 'EFECTIVO'].includes(kind))
 }
 
 /**
@@ -246,9 +247,12 @@ const INSISTS_CASH = /\bnada\s+antes|\bsolo\s+(en\s+)?efectivo|\btodo\s+(en\s+ef
  * contestaba "el anticipo se debe pagar antes" (0 de 5 decían que se descuenta del valor, 20 oct): el
  * encuadre que VIRAND pidió evitar. La nota llega después del historial, justo antes de responder.
  */
-export function paymentNote(history: Message[]): string | undefined {
+export function paymentNote(history: Message[], cashBooking = false): string | undefined {
   const last = history.at(-1)
   if (last?.sender !== 'user') return undefined
+  if (cashBooking && SAYS_CASH.test(last.text)) {
+    return 'Nota del sistema: el cliente quiere pagar en efectivo. Dile que sí: paga todo en la sede el día de la cita y no tiene que pagar nada antes. Pide solo lo que falte (cuál limpieza, sede, día y hora, nombre completo). Si ya tienes todo, reserva YA con [[RESERVA]] y [[EFECTIVO]]: no le pidas que confirme nada (ni el nombre ni el pago), ya lo dijo. No le ofrezcas link ni anticipo.'
+  }
   const explained = history.slice(0, -1).some((message) => message.sender === 'gem' && EXPLAINED_DEPOSIT.test(message.text) && /efectivo|en la sede/i.test(message.text))
   if (SAYS_CASH.test(last.text) || (explained && INSISTS_CASH.test(last.text))) {
     return explained && INSISTS_CASH.test(last.text)
@@ -351,10 +355,10 @@ const WELCOME_GAP_MS = 1_500
  * el servidor, así que no gasta IA ni puede inventar precios. Devuelve 'none' si no corresponde,
  * 'answer' si además hay una pregunta que los bloques no responden (la contesta Gema) u 'only'.
  */
-async function sendWelcome(phone: string, send: SendFn, sendImage: SendImageFn): Promise<'none' | 'answer' | 'only'> {
+async function sendWelcome(phone: string, send: SendFn, sendImage: SendImageFn, testConfig?: AppConfig): Promise<'none' | 'answer' | 'only'> {
   const history = await getHistory(phone, 20)
   if (!history.length || history.some((message) => message.sender !== 'user')) return 'none'
-  const welcome = await buildWelcome(await getConfig(), process.env.PUBLIC_APP_URL || 'https://premier-agente.vercel.app')
+  const welcome = await buildWelcome(testConfig ?? await getConfig(), process.env.PUBLIC_APP_URL || 'https://premier-agente.vercel.app')
   if (!welcome) return 'none'
   const record = (id: string | undefined, text: string) => recordOutbound(phone, { id: id ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now(), auto: WELCOME_KIND })
   try {
@@ -435,6 +439,14 @@ function parseFicha(payload: string) {
 type Applied = { append: string; replaceText?: string; escalate?: string; summary?: string }
 
 /** "Listo, Laura: tu cita de *X* queda apartada para el lunes 19 oct a las 6:30 p.m. en Chipichape." */
+/** Cita en efectivo: queda agendada (no apartada) y se paga toda en la sede. */
+function cashBookedText(config: AppConfig, booking: Booking): string {
+  const firstName = booking.name.split(' ')[0]
+  const address = config.addresses[booking.location]
+  const total = amountOf(booking.price)
+  return `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${serviceText(booking)}* queda agendada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${address ? ` (${address})` : ''}.\n\nEl pago${total ? ` de ${pesos(total)}` : ''} lo haces en la sede el día de tu cita, en efectivo o como prefieras. Te escribo por aquí antes de la cita para recordártela`
+}
+
 function bookedLine(booking: Booking): string {
   const firstName = booking.name.split(' ')[0]
   return `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${serviceText(booking)}* queda apartada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}.`
@@ -607,7 +619,7 @@ export async function applyReserva(
   config: AppConfig,
   phone: string,
   payload: string,
-  { method = null as PayMethod | null, companion = null as string | null, payFull = false } = {},
+  { method = null as PayMethod | null, companion = null as string | null, payFull = false, cash = false } = {},
 ): Promise<Applied> {
   const parsed = parseReserva(payload)
   if (!parsed) {
@@ -657,6 +669,7 @@ export async function applyReserva(
     source: 'bot',
     people: pair ? 2 : 1,
     payFull,
+    cash,
     companion: pair ? companion : '',
   })
 
@@ -687,6 +700,9 @@ export async function applyReserva(
   await attachBooking(phone, booking.id, { name: booking.name, serviceId: booking.serviceId, location: booking.location })
   // A Meta: cita agendada desde un anuncio (no espera el pago; el pago se reporta aparte como Purchase).
   await trackConversion({ name: 'LeadSubmitted', phone, eventId: `cita_${phone}_${booking.id}` })
+
+  // Efectivo: no hay cobro previo ni link; los recordatorios los envía lib/automations.ts.
+  if (booking.paymentPlan === 'cash') return { append: '', replaceText: cashBookedText(config, booking) }
 
   // El cobro lo escribe el servidor, nunca el modelo: los datos salen de la config,
   // según el país del número (misma lógica por región que la consola original).
@@ -748,7 +764,8 @@ export async function applyReserva(
 
 /** La cita está pagada (anticipo o completo): Bold la confirmó, un operador la validó o hay comprobante. */
 function isPaid(booking: Booking): boolean {
-  return booking.status === 'confirmed' || booking.paidAt > 0
+  // En efectivo la cita está confirmada pero no pagada: si cancela, no hay nada que reembolsar.
+  return booking.paidAt > 0 || (booking.status === 'confirmed' && booking.paymentPlan !== 'cash')
 }
 
 /**
@@ -779,7 +796,9 @@ export async function applyReprogram(config: AppConfig, phone: string, payload: 
   }
   const moved = result.booking
   const paid = isPaid(moved)
-  const payment = paid
+  const payment = moved.paymentPlan === 'cash'
+    ? 'El pago lo sigues haciendo en la sede el día de la cita.'
+    : paid
     ? `Tu ${moved.paymentPlan === 'full' ? 'pago de la sesión completa' : 'anticipo'} queda para la nueva fecha.`
     : `Tu horario sigue apartado ${holdMinutesLeft(moved)} minutos mientras pagas.`
   return {
@@ -814,13 +833,14 @@ export async function applyCancel(phone: string, reason: string): Promise<Applie
  * Un turno de IA para un chat. Exportada (no solo de uso interno) para que
  * scripts/simulate-chat.ts pueda correr la misma lógica inyectando un `send` falso.
  */
-export async function replyOnce(phone: string, { send = sendWhatsAppText, sendImage }: { send?: SendFn; sendImage?: SendImageFn } = {}) {
+// `config`: solo para pruebas (probar un interruptor del panel sin encenderlo en producción).
+export async function replyOnce(phone: string, { send = sendWhatsAppText, sendImage, config: testConfig }: { send?: SendFn; sendImage?: SendImageFn; config?: AppConfig } = {}) {
   const chat = await getSummary(phone)
   if (!chat?.botActive) return
 
   // Con un envío simulado (pruebas) la imagen tampoco sale a Meta: va como texto por el mismo envío.
   const image = sendImage ?? (send === sendWhatsAppText ? sendWhatsAppImage : (to: string, _link: string, caption: string) => send(to, caption))
-  const welcome = await sendWelcome(phone, send, image)
+  const welcome = await sendWelcome(phone, send, image, testConfig)
   if (welcome === 'only') return
 
   // Protecciones contra gasto de cuota: si se superan, el chat pasa a una persona en vez de quedar sin respuesta.
@@ -835,7 +855,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     return requestAgent(phone, 'Se alcanzó el tope de respuestas de IA por hora')
   }
 
-  const config = await getConfig()
+  const config = testConfig ?? await getConfig()
   const prompt = buildSystemPrompt(config, phone, await buildPromptContext(config, phone, chat.lead))
   let reply: string | null = null
   // La reserva salió de la lectura de respaldo: el texto del modelo no la acompaña (pedía otra cosa
@@ -853,7 +873,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
       welcome === 'answer' ? 'Nota del sistema: acabas de enviar la bienvenida automática (las promociones 2x1, precios, qué incluye cada limpieza, el anticipo y horarios libres). No repitas nada de eso: responde solo lo que preguntó y no está ahí, en una o dos frases, y termina preguntando cuál de esos horarios le separas.' : '',
       serviceHint(config, history),
       serviceChoiceNote(config, history),
-      paymentNote(history),
+      paymentNote(history, config.cashBooking),
     ].filter(Boolean).join('\n') || undefined
     if (hint && draft === 0) console.log(`[autoreply] ${phone}: nota del servidor → ${hint.slice(0, 160)}`)
     try {
@@ -882,7 +902,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   // reserva y actúa la red de abajo (mensaje honesto + asesora).
   // La cita VIVA del cliente (chat.bookingId queda apuntando a la última aunque se cancele o venza).
   const liveAtStart = await liveBookingOf(phone)
-  if (forgotReserva(reply, liveAtStart?.id)) {
+  if (forgotReserva(reply, liveAtStart?.id, config.cashBooking)) {
     const today = dayKey()
     const extracted = await extractReserva([...history, { id: 'draft', sender: 'gem', text: reply.replace(MARKERS, ''), at: Date.now() }], {
       services: config.services.map(({ id, label }) => ({ id, label })),
@@ -920,7 +940,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   // La reserva se intenta antes de enviar: el texto que sale ya refleja lo que de verdad pasó.
   const cash = markers.some((marker) => marker.kind === 'EFECTIVO')
   let escalation = markers.find((marker) => marker.kind === 'PAGO')
-    ?? (cash ? { kind: 'ASESOR', payload: CASH_REASON } : undefined)
+    ?? (cash && !config.cashBooking ? { kind: 'ASESOR', payload: CASH_REASON } : undefined)
     ?? markers.find((marker) => marker.kind === 'ASESOR')
   // Se mide cuántos clientes frenan por querer pagar en efectivo (la primera objeción queda en el chat).
   if (cash || history.filter((message) => message.sender === 'user').slice(-3).some((message) => SAYS_CASH.test(message.text))) {
@@ -933,6 +953,10 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   const methodChoice = latestOf(clientTexts, [[WANTS_TRANSFER, 'transfer'], [SAYS_LINK, 'link']] as Array<[RegExp, 'transfer' | 'link']>)
   const planChoice = latestOf(clientTexts, [[SAYS_FULL, 'full'], [SAYS_DEPOSIT, 'deposit']] as Array<[RegExp, 'full' | 'deposit']>)
   const pairChoice = latestOf(clientTexts, [[SAYS_PAIR, 'pair'], [SAYS_ALONE, 'alone']] as Array<[RegExp, 'pair' | 'alone']>)
+  // Con config.cashBooking, quien quiere pagar en efectivo se agenda sin anticipo. Gana lo último que
+  // dijo el cliente: si después pidió el link, transferir o dejar el anticipo, ya no es efectivo.
+  const cashChoice = latestOf(clientTexts, [[SAYS_CASH, 'cash'], [WANTS_TRANSFER, 'other'], [SAYS_LINK, 'other'], [SAYS_DEPOSIT, 'other']] as Array<[RegExp, 'cash' | 'other']>)
+  const payCash = config.cashBooking && (cashChoice === 'cash' || (cash && !cashChoice))
   // El modelo a veces "entrega" los datos de pago él mismo (con un relleno entre corchetes) en vez de
   // usar la marca: se trata igual que [[TRANSFERENCIA]] y los datos reales los pega el servidor.
   const writesPaymentData = PROMISES_PAYMENT_DATA.test(text) || BRACKET_PLACEHOLDER.test(text)
@@ -975,7 +999,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     if ((companion !== null) !== Boolean(pareja) || payFull !== markers.some((marker) => marker.kind === 'COMPLETO') || transfer !== transferMarker) {
       console.warn(`[autoreply] ${phone}: reserva ajustada a lo que dijo el cliente (pareja ${companion !== null}, completo ${payFull}, transferencia ${transfer})`)
     }
-    applied = await applyReserva(config, phone, reserva.payload, { method: methodChoice, companion, payFull })
+    applied = await applyReserva(config, phone, reserva.payload, { method: methodChoice, companion, payFull: payFull && !payCash, cash: payCash })
   } else if (reprogramar) {
     applied = await applyReprogram(config, phone, reprogramar.payload)
   } else if (cancelar) {
