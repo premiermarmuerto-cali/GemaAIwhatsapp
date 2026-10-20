@@ -27,7 +27,9 @@ const MEDIA_FAILURE: Record<StoredKind, string> = {
 type WaFile = { id?: string; mime_type?: string; caption?: string; filename?: string }
 type WaMessage = {
   id: string
-  from: string
+  // Sin `from` cuando el cliente usa nombre de usuario y oculta su número: llega `from_user_id`.
+  from?: string
+  from_user_id?: string
   timestamp?: string
   type: string
   text?: { body?: string }
@@ -37,7 +39,7 @@ type WaMessage = {
   // Anuncio de clic a WhatsApp: Meta lo adjunta al primer mensaje del cliente.
   referral?: { source_type?: string; source_id?: string; headline?: string; body?: string; ctwa_clid?: string }
 } & Partial<Record<MediaKind, WaFile>>
-type WaValue = { messages?: WaMessage[]; contacts?: Array<{ wa_id?: string; profile?: { name?: string } }> }
+type WaValue = { messages?: WaMessage[]; contacts?: Array<{ wa_id?: string; user_id?: string; profile?: { name?: string; username?: string } }> }
 type WaPayload = { object?: string; entry?: Array<{ changes?: Array<{ field?: string; value?: WaValue }> }> }
 
 /** Texto, archivo y si el mensaje merece respuesta. Stickers, reacciones y similares se guardan sin responder. */
@@ -89,10 +91,19 @@ export async function GET(request: NextRequest) {
  * logs de Vercel. Guarda solo cuándo, por qué y cuántos mensajes traía, no su contenido.
  */
 async function logRejected(reason: string, rawBody: string) {
-  const messages = (rawBody.match(/"from"\s*:/g) ?? []).length
-  console.error(`[webhook] entrega rechazada: ${reason} · ${messages} mensaje(s) · ${rawBody.length} bytes`)
+  // Cuántos mensajes traía y qué campos (nombres, nunca valores): así se detecta un cambio de formato de
+  // Meta como el de los clientes con número oculto, que llegaban sin `from`.
+  let messages = 0
+  let fields = ''
+  try {
+    const parsed = JSON.parse(rawBody) as WaPayload
+    const all = parsed.entry?.flatMap((entry) => entry.changes ?? []).flatMap((change) => change.value?.messages ?? []) ?? []
+    messages = all.length
+    fields = [...new Set(all.flatMap((message) => Object.keys(message)))].join(',')
+  } catch { /* JSON roto: no hay campos que contar */ }
+  console.error(`[webhook] entrega rechazada: ${reason} · ${messages} mensaje(s) · ${rawBody.length} bytes${fields ? ` · campos: ${fields}` : ''}`)
   await redis().multi()
-    .lpush(keys.webhookRejected, JSON.stringify({ at: Date.now(), reason, messages, bytes: rawBody.length }))
+    .lpush(keys.webhookRejected, JSON.stringify({ at: Date.now(), reason, messages, fields, bytes: rawBody.length }))
     .ltrim(keys.webhookRejected, 0, 199)
     .exec()
     .catch(() => null)
@@ -117,11 +128,19 @@ export async function POST(request: NextRequest) {
   try {
     for (const change of payload.entry?.flatMap((entry) => entry.changes ?? []) ?? []) {
       if (change.field !== 'messages' || !change.value?.messages) continue
-      const names = new Map(change.value.contacts?.map((contact) => [normalizePhone(contact.wa_id ?? ''), contact.profile?.name ?? '']))
+      const names = new Map(change.value.contacts?.map((contact) => [
+        normalizePhone(contact.wa_id || contact.user_id || ''),
+        contact.profile?.name || contact.profile?.username || '',
+      ]))
 
       for (const message of change.value.messages) {
-        const phone = normalizePhone(message.from)
-        if (!message.id || !isValidPhone(phone)) continue
+        // El número, o el identificador de WhatsApp si el cliente lo oculta (llega sin `from`). Antes de
+        // esto, esos mensajes rompían la entrega completa (19 oct: 150 rechazos) y nunca llegaban al panel.
+        const phone = normalizePhone(message.from || message.from_user_id || '')
+        if (!message.id || !isValidPhone(phone)) {
+          console.warn(`[webhook] mensaje sin remitente reconocible (${message.type}); campos: ${Object.keys(message).join(', ')}`)
+          continue
+        }
 
         // Meta reintenta entregas: cada wamid se procesa una sola vez.
         const seenKey = keys.seen(message.id)

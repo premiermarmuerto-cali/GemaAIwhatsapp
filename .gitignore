@@ -7,3 +7,4 @@ next-env.d.ts
 
 # Accesos y claves: solo en este computador, nunca en GitHub
 docs/*.local.md
+scripts/.tmp/

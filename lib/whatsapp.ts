@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { isWhatsAppUserId } from './phone'
 
 const version = process.env.WHATSAPP_API_VERSION || 'v26.0'
 
@@ -33,6 +34,11 @@ export async function downloadMedia(mediaId: string): Promise<{ bytes: Buffer; m
  * imagen de encabezado por URL pública. Es la única forma de escribirle a alguien con la ventana de
  * 24 h cerrada. Los valores no pueden ir vacíos ni con saltos de línea (regla de Meta).
  */
+/** A quién va el mensaje: el teléfono va en `to`; el identificador de quien oculta su número, en `recipient`. */
+function destination(id: string): { to: string } | { recipient: string } {
+  return isWhatsAppUserId(id) ? { recipient: id } : { to: id }
+}
+
 export async function sendWhatsAppTemplate(
   to: string,
   template: { name: string; language: string; params: Record<string, string>; headerImageUrl?: string },
@@ -52,7 +58,7 @@ export async function sendWhatsAppTemplate(
   const response = await fetch(`https://graph.facebook.com/${version}/${phoneId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'template', template: { name: template.name, language: { code: template.language }, components } }),
+    body: JSON.stringify({ messaging_product: 'whatsapp', ...destination(to), type: 'template', template: { name: template.name, language: { code: template.language }, components } }),
     signal: AbortSignal.timeout(15_000),
   })
   const data = await response.json().catch(() => null) as { messages?: Array<{ id: string }>; error?: { message?: string } } | null
@@ -67,7 +73,7 @@ export async function sendWhatsAppText(to: string, body: string): Promise<string
   const response = await fetch(`https://graph.facebook.com/${version}/${phoneId}/messages`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'text', text: { preview_url: true, body } }),
+    body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', ...destination(to), type: 'text', text: { preview_url: true, body } }),
     signal: AbortSignal.timeout(15_000),
   })
   const data = await response.json().catch(() => null) as { messages?: Array<{ id: string }>; error?: { message?: string } } | null
