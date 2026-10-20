@@ -137,7 +137,7 @@ Gema también escribe sola, sin que la clienta haya escrito. Un programador la d
 | **Bienvenida en bloques** | Primer mensaje de cada cliente nuevo, mientras haya algún 2x1 vigente | Texto libre (gratis): imagen del bono con las promociones 2x1 de HOY (valor por persona y días que quedan si tiene fecha), qué incluye cada limpieza con sus productos del Mar Muerto, el anticipo que se descuenta, las sedes y horas libres para dos personas, y "cuál te separo?". Lo arma el servidor con la configuración y la agenda; si el primer mensaje pregunta algo más, Gema lo responde después |
 | Aviso de pago pendiente | ~30 min antes de que se libere un horario apartado sin pago | Texto libre (gratis) |
 | Recordatorio de la cita | 24 h antes de cada cita **pagada** | Texto libre si la clienta escribió en las últimas 24 h; si no, plantilla `recordatorio_cita` |
-| Recordatorio del día | 2–3 h antes, solo si confirmó asistencia | Texto libre |
+| Recordatorio del día | 2–3 h antes, si confirmó asistencia o si **paga en efectivo** | Texto libre; a la cita en efectivo con la ventana cerrada le llega la plantilla `recordatorio_cita` |
 | Seguimiento con horas | ~45 min sin responder después de la respuesta de Gema, sin cita | Texto libre: si recibió la bienvenida, un cierre con una hora concreta ("te lo separo?"); si no, dos horas libres de su sede |
 | Seguimiento con el 2x1 | ~3 h sin responder, sin cita | Texto libre: el 2x1 vigente del servicio que le interesa y la pregunta de sede |
 | Seguimiento | ~22 h después de su último mensaje, si no respondió y no tiene cita | Texto libre |
@@ -223,7 +223,7 @@ El panel (`https://premier-agente.vercel.app`, con la clave de administrador) ti
 
 ### 3.5 Cambios que SÍ puede hacer el operador en Configuración
 
-Precios, horarios, texto de la promoción, 2x1 por servicio (casilla + fecha), datos de transferencia, preguntas frecuentes, días cerrados, y el **anticipo**: porcentaje ("Anticipo %") o un valor fijo por cita ("Anticipo fijo ($)", por ejemplo 50000; en 0 se usa el porcentaje). El anticipo fijo es igual para todos los servicios, nunca pasa del precio y una pareja paga uno solo.
+Precios, horarios, texto de la promoción, 2x1 por servicio (casilla + fecha), datos de transferencia, preguntas frecuentes, días cerrados, y el **anticipo**: porcentaje ("Anticipo %") o un valor fijo por cita ("Anticipo fijo ($)", por ejemplo 50000; en 0 se usa el porcentaje). El anticipo fijo es igual para todos los servicios, nunca pasa del precio y una pareja paga uno solo. Con la casilla **"Agendar sin anticipo a quien paga en efectivo"**, Gema agenda directo a quien quiere pagar en la sede: la cita queda confirmada sin link, en la agenda dice "paga todo en la sede (efectivo)", y recibe recordatorio un día antes y unas 2 h antes. Si cancela no hay reembolso que hacer. Apagada, Gema explica el anticipo y, si insiste, pasa el chat a una asesora.
 
 ### 3.6 Lo que NO debe hacer
 
