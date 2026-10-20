@@ -17,7 +17,9 @@ import { getSummary } from './chats'
 import { keys, redis } from './redis'
 
 const ATTRIBUTION_WINDOW_MS = 7 * 24 * 60 * 60_000
-const DEFAULT_DATASET_ID = '38756680020642307'
+// Dataset vinculado al WhatsApp de Premier (POST /{WABA}/dataset, 20 oct). El 38756680020642307, creado
+// desde el Administrador de eventos, no estaba vinculado: Meta rechazaba los eventos (2804132).
+const DEFAULT_DATASET_ID = '1636157554637715'
 const DEFAULT_WABA_ID = '1997545614294706'
 
 export type ConversionEvent = {

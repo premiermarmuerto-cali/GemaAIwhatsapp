@@ -256,7 +256,7 @@ Todas están guardadas como **variables de entorno** en Vercel (*Settings → En
 | `AUTOMATIONS` | `on` / `off`: interruptor general de mensajes automáticos | — | — |
 | `WHATSAPP_TEMPLATES` | `on` / `off`: envío de plantillas (se cobran) | — | Dejar en `off` hasta que estén aprobadas |
 | `PUBLIC_APP_URL` | Dirección pública del panel; de ahí Meta descarga las imágenes de las plantillas | — | Cambiarla si se usa un dominio propio |
-| `META_CAPI_TOKEN` | Permiso para avisarle a Meta qué anuncio generó cada cita y cada pago | Meta Business → Usuarios del sistema (con acceso al dataset 38756680020642307) | Igual que el token de WhatsApp: debe ser permanente |
+| `META_CAPI_TOKEN` | Permiso para avisarle a Meta qué anuncio generó cada cita y cada pago | Meta Business → Usuarios del sistema (usuario del sistema "Agente Premier"; dataset 1636157554637715, el vinculado al WhatsApp) | Igual que el token de WhatsApp: debe ser permanente |
 | `META_CAPI_TEST_CODE` | Código de prueba del Administrador de eventos | Administrador de eventos → el dataset → Probar eventos | Solo mientras se prueba; dejarlo vacío en producción |
 
 > Si cambias una variable en Vercel, **hay que volver a desplegar** (Deployments → Redeploy) para que Gema la tome.
