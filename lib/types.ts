@@ -216,6 +216,8 @@ export type AppConfig = {
   holdMinutes: number
   /** Preguntas frecuentes e indicaciones previas que Gema puede citar. */
   faq: string
+  /** Contexto de la marca Premier (por qué es premium, productos de cada limpieza). Vacío = no se usa. */
+  brandInfo: string
   /** Promoción vigente, tal como Gema la debe comunicar (p. ej. el 2x1). Vacío = no hay promoción. */
   promo: string
   /**

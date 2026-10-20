@@ -37,7 +37,7 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
 
   const patch = (changes: Partial<AppConfig>) => setConfig((current) => (current ? { ...current, ...changes } : current))
 
-  const text = (name: 'systemPrompt' | 'faq' | 'promo' | 'payLink' | 'nequiInstructions' | 'intlInstructions') => ({
+  const text = (name: 'systemPrompt' | 'faq' | 'brandInfo' | 'promo' | 'payLink' | 'nequiInstructions' | 'intlInstructions') => ({
     value: config?.[name] ?? '',
     onChange: (event: { target: { value: string } }) => patch({ [name]: event.target.value } as Partial<AppConfig>),
   })
@@ -229,6 +229,11 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
               })}
               <small className={styles.hint}>Dos personas a la misma hora pagan una sola sesión en los servicios marcados, para citas hasta su fecha (vacía = sin fecha límite). En los demás, o después de la fecha, una pareja paga dos sesiones.</small>
             </fieldset>
+
+            <label className={styles.field}>
+              <span>Marca Premier: por qué es premium</span>
+              <textarea rows={6} maxLength={4000} placeholder="Qué hace premium a la marca y qué productos se usan en cada limpieza…" {...text('brandInfo')} />
+            </label>
 
             <label className={styles.field}>
               <span>Preguntas frecuentes e indicaciones</span>

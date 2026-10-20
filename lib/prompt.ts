@@ -282,7 +282,10 @@ export function buildSystemPrompt(config: AppConfig, phone: string, context: Pro
 
 ## Catálogo
 ${catalogBlock(config, today)}
-
+${config.brandInfo.trim() ? `
+## La marca Premier (contexto para vender: dilo con tus palabras y en corto)
+${config.brandInfo.trim()}
+` : ''}
 ## Promoción vigente
 ${promoBlock(config, today)}
 

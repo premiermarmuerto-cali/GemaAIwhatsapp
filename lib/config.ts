@@ -14,6 +14,28 @@ Lo que haces: resuelves dudas sobre los protocolos, recomiendas el adecuado seg�
 
 Nunca diagnosticas ni prometes resultados médicos: para eso está la valoración en sede.`
 
+/**
+ * Contexto de la marca, de la tienda oficial de Premier en España (premiercosmeticos.es, oct 2026):
+ * por qué es premium y qué cuestan allá los productos de cada limpieza. Se dejaron fuera las
+ * afirmaciones de salud de la web ("cura", "alivia molestias reumáticas"): en un chat de limpiezas
+ * faciales serían promesas de resultado. Editable en el panel.
+ */
+export const DEFAULT_BRAND_INFO = `Premier Dead Sea es una marca de cosmética de lujo hecha con minerales del Mar Muerto. Se presenta como el mayor fabricante de cosméticos del Mar Muerto y vende en Europa (tienda oficial de España: premiercosmeticos.es).
+
+Por qué es premium:
+- Usa minerales del Mar Muerto: magnesio, calcio, potasio, bromuro, sodio y sílice. El agua del Mar Muerto tiene cerca de diez veces más sales que el mar común.
+- Combina esos minerales con extractos de plantas y liposomas, que ayudan a que los activos penetren en la piel.
+- Sus productos son de gama alta en Europa. Los que usamos en las limpiezas de Cali cuestan allá, por frasco, en la tienda oficial:
+  - Limpieza Peeling y Hidratación: Mascarilla Refinadora Peeling (Refining Facial Peeling Mask, línea Prestige), 190 €. Exfoliación suave y limpieza profunda que ayuda a cerrar los poros.
+  - Limpieza e Hidratación y Pigmentación: Milagro Negro (Miracle Noir), la mascarilla clásica que hizo famosa a Premier, 286 €. Barro negro del Mar Muerto con aceite de rosa mosqueta, eucalipto y ginkgo biloba.
+  - Limpieza y Disminución de Líneas de Expresión: línea Biox (Age Treatment Biox Ultra), con acción termal. Mascarilla Thermal Experience (calor instantáneo) 235 €, sérum Age Defying 245 € y crema Age Defying 225 €.
+  - Limpieza e Hidratación Profunda: mascarilla de colágeno, betacaroteno y algas marinas, 235 €.
+
+Cómo usarlo:
+- Cuando pregunten por qué vale eso, duden del precio, comparen con otra limpieza o pregunten qué productos usan, dilo en una o dos frases. Por ejemplo: en una sola sesión se usan productos que en la tienda de Premier en Europa cuestan cerca de 190 € el frasco.
+- No conviertas euros a pesos. No digas que se lleva el producto a casa.
+- Nunca digas que cura, que trata enfermedades o dolores, ni prometas resultados. Habla de cómo se siente y se ve la piel ("más limpia", "más fresca"), no de curar.`
+
 export const DEFAULT_CONFIG: AppConfig = {
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   services: DEFAULT_SERVICES,
@@ -31,6 +53,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   horizonDays: 14,
   holdMinutes: 120,
   faq: '',
+  brandInfo: DEFAULT_BRAND_INFO,
   promo: '',
   twoForOne: {},
 }
@@ -158,6 +181,10 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
   const faq = str(body, 'faq', 4000)
   if (typeof faq === 'object') return faq
 
+  // Un panel abierto antes de que existiera el campo no lo envía: se conserva el texto de la marca.
+  const brandInfo = body.brandInfo === undefined ? DEFAULT_BRAND_INFO : str(body, 'brandInfo', 4000)
+  if (typeof brandInfo === 'object') return brandInfo
+
   // Opcional: un panel abierto antes de que existiera el campo no lo envía, y eso no es un error.
   const promo = body.promo === undefined ? '' : str(body, 'promo', 1000)
   if (typeof promo === 'object') return promo
@@ -213,6 +240,7 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
     config: {
       systemPrompt,
       faq,
+      brandInfo,
       promo,
       twoForOne: twoForOne.value,
       payLink,
