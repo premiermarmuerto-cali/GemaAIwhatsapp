@@ -22,6 +22,7 @@ Para publicar una actualización: sube la versión en `package.json` (y `package
 
 **Mensajes y spam**
 - "Ahora no", "no me interesa", "no gracias", "no me escribas más"… detienen **todos** los mensajes automáticos de ese chat. El panel lo muestra y permite reactivarlo.
+- La plantilla `retomar_cita_limpieza` ahora también se envía (hasta 7 días) a quien nunca recibió respuesta a su último mensaje, y se les quita la alerta de asesor. Antes solo salía entre 24 y 48 h de silencio.
 - Mensajes que quedan sin respuesta más de 5 minutos (entrega tardía de Meta, caída) se responden en la siguiente corrida del programador, a cualquier hora, con una disculpa por la demora. Los que llegan con más de 24 h de retraso pasan a una asesora. Antes se guardaban en silencio.
 
 **Consumo de Upstash (360 mil comandos de 500 mil)**

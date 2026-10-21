@@ -362,19 +362,29 @@ async function cashRetakes(run: Run, chats: Map<string, ChatSummary>) {
   }
 }
 
+/** Alertas que puso el propio sistema por un mensaje sin responder: la plantilla las resuelve, no hay que esperar a una persona. */
+const UNANSWERED_REASON = /^Mensaje (sin responder|que llegó con más de 24 h)/
+
 /**
- * Entre 24 y 48 h sin escribir y sin cita: plantilla retomar_cita_limpieza (una vez por silencio).
- * Solo en ese rango porque el texto aprobado dice "Ayer hablamos de tu limpieza facial".
+ * Más de 24 h sin escribir y sin cita: plantilla retomar_cita_limpieza (una vez por silencio).
+ * Hasta 48 h si Gema ya conversó con el cliente (el texto aprobado dice "Ayer hablamos de tu limpieza
+ * facial"). Hasta 7 días si NADIE le respondió su último mensaje (entrega tardía, caída): es la única
+ * forma de escribirle y, sin esto, quedaría sin respuesta para siempre. Esos chats se atienden aunque
+ * el sistema los haya marcado "Requiere asesor" por la demora; el cliente que dijo "no me interesa" no.
  */
 async function reengageTemplates(run: Run, chats: Map<string, ChatSummary>) {
   for (const chat of chats.values()) {
     const silence = run.now - chat.lastInboundAt
-    if (!chat.lastInboundAt || silence <= WHATSAPP_WINDOW_MS || silence > 2 * DAY) continue
-    if (chat.noMarketing || humanHandling(chat) || (chat.autoSent.retomar_cita_limpieza ?? 0) > chat.lastInboundAt) continue
+    const unanswered = chat.lastSender === 'user'
+    if (!chat.lastInboundAt || silence <= WHATSAPP_WINDOW_MS || silence > (unanswered ? 7 : 2) * DAY) continue
+    const systemFlag = chat.needsAgent && UNANSWERED_REASON.test(chat.agentReason)
+    if (chat.noMarketing || chat.optedOut || !chat.botActive || (chat.needsAgent && !systemFlag) || (chat.autoSent.retomar_cita_limpieza ?? 0) > chat.lastInboundAt) continue
     // A quien se le venció un horario sin pagar le corresponde anticipo_pendiente, no esta.
     const [last] = await bookingsOfPhone(chat.phone, 1)
     if (last && (last.status !== 'cancelled' || last.createdAt > chat.lastInboundAt - DAY)) continue
-    await run.template(chat.phone, chat, 'retomar_cita_limpieza', 'retomar_cita_limpieza', { nombre_cliente: firstName(chat.name) || 'de nuevo' })
+    const sent = await run.template(chat.phone, chat, 'retomar_cita_limpieza', 'retomar_cita_limpieza', { nombre_cliente: firstName(chat.name) || 'de nuevo' })
+    // Ya se le escribió: la alerta automática de "sin responder" deja de hacer falta.
+    if (sent && systemFlag && !run.dryRun) await updateChat(chat.phone, { needsAgent: false })
   }
 }
 
@@ -456,11 +466,14 @@ async function answerPending(now: number, dryRun: boolean): Promise<Outcome[]> {
     // Gema está respondiendo ese chat en este momento.
     if (await db.exists(keys.replyLock(phone))) continue
     if (!isWindowOpen(chat, now)) {
+      // Ventana cerrada: solo cabe una plantilla y la envía reengageTemplates en esta misma corrida. Solo
+      // se avisa a una persona si esa plantilla no va a salir (apagadas, o dijo "ahora no").
+      const templateWillGo = templatesOn() && !chat.noMarketing && !chat.optedOut
       if (!dryRun) {
-        await requestAgent(phone, 'Mensaje sin responder y ya pasaron 24 h: solo se le puede escribir con una plantilla')
+        if (!templateWillGo && !chat.optedOut) await requestAgent(phone, 'Mensaje sin responder y ya pasaron 24 h: solo se le puede escribir con una plantilla')
         await drop(phone)
       }
-      outcomes.push({ kind: 'sin_respuesta', phone, how: 'omitido', detail: 'ventana cerrada: pasa a una asesora' })
+      outcomes.push({ kind: 'sin_respuesta', phone, how: 'omitido', detail: templateWillGo ? 'ventana cerrada: le sale la plantilla de retomar' : 'ventana cerrada: pasa a una asesora' })
       continue
     }
     toAnswer.push(phone)
