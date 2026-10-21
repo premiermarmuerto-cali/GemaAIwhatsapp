@@ -34,6 +34,10 @@ Para publicar una actualización: sube la versión en `package.json` (y `package
 **Eventos de conversión (Meta)**
 - Las citas pagadas en efectivo también se reportan como *Purchase* (valor completo) cuando la asesora marca la cita como "Realizada". Si el anticipo ya se había reportado, el mismo event_id evita contarla dos veces.
 
+**Teléfonos y recordatorios de la agenda**
+- Campo de teléfono con indicativo: +57 por defecto y "Otro…" para escribir cualquier indicativo. Se guarda siempre con indicativo; un celular colombiano de 10 dígitos se completa con 57. Se corrigieron 2 citas que estaban sin él.
+- Las citas que agenda un asesor en el panel reciben recordatorio con plantilla un día antes y 2 h antes, aunque el cliente nunca haya escrito a Gema.
+
 **Webhook de WhatsApp**
 - Un mensaje con una forma inesperada ya no tumba la entrega completa: se guarda como "no se pudo leer", el chat pasa a una asesora y la entrega sigue. Los mensajes sin remitente quedan registrados en `pm:wa:rejected` con su tipo y campos.
 

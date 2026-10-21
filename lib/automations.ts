@@ -220,10 +220,10 @@ async function dayBeforeReminders(run: Run, chats: Map<string, ChatSummary>) {
     // Quien agenda con menos de 24 h de anticipación acaba de recibir la confirmación: no hace falta.
     if (booking.startTs - booking.createdAt < DAY) continue
     const chat = chats.get(booking.phone) ?? null
-    if (chat && humanHandling(chat)) continue
+    if (chat && humanHandling(chat) && booking.source !== 'operator') continue
     const name = firstName(booking.name) || firstName(chat?.name ?? '')
-    // En efectivo siempre va la plantilla aprobada (con sus botones), aunque la ventana esté abierta.
-    if (chat && isWindowOpen(chat, run.now) && booking.paymentPlan !== 'cash') {
+    // En efectivo y en las citas que agendó un asesor siempre va la plantilla aprobada (con sus botones).
+    if (chat && isWindowOpen(chat, run.now) && booking.paymentPlan !== 'cash' && booking.source !== 'operator') {
       await run.text(chat, 'recordatorio_cita',
         `Hola${name ? ` ${name}` : ''}, te recuerdo tu cita de ${serviceText(booking)} el ${fullDayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${SEPARATOR}me confirmas que asistes?`,
         booking)
@@ -241,13 +241,16 @@ async function dayBeforeReminders(run: Run, chats: Map<string, ChatSummary>) {
 /** 2–3 h antes de una cita con la asistencia confirmada (solo con la ventana abierta). */
 async function sameDayReminders(run: Run, chats: Map<string, ChatSummary>) {
   for (const booking of await bookingsBetween(keys.byStatus('confirmed'), run.now + 90 * MINUTE, run.now + 3 * HOUR)) {
-    const cash = booking.paymentPlan === 'cash'
-    if (!booking.phone || booking.autoSent.recordatorio_hoy || (!booking.attendanceConfirmedAt && !cash)) continue
+    // Efectivo y citas que agendó un asesor en el panel: no hay conversación previa con Gema (o no hay
+    // ventana abierta), así que el recordatorio va siempre con la plantilla aprobada.
+    const templated = booking.paymentPlan === 'cash' || booking.source === 'operator'
+    if (!booking.phone || booking.autoSent.recordatorio_hoy || (!booking.attendanceConfirmedAt && !templated)) continue
     const chat = chats.get(booking.phone) ?? null
-    if (chat && humanHandling(chat)) continue
+    // Un asesor que atiende el chat no frena el recordatorio de una cita que él mismo agendó.
+    if (chat && humanHandling(chat) && booking.source !== 'operator') continue
     const name = firstName(booking.name)
-    if (cash) {
-      // Efectivo: siempre la plantilla aprobada recordatorio_cita (utilidad, ≈ COP 3), con fecha "hoy".
+    if (templated) {
+      // Siempre la plantilla aprobada recordatorio_cita (utilidad, ≈ COP 3), con fecha "hoy".
       await run.template(booking.phone, chat, 'recordatorio_hoy', 'recordatorio_cita', {
         nombre_cliente: name || 'de nuevo',
         fecha_cita: 'hoy',

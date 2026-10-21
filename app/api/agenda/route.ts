@@ -4,7 +4,7 @@ import { dayKey, isClock, isDayKey, monthGrid, weekOf } from '@/lib/calendar'
 import { isLocation } from '@/lib/clinic'
 import { getConfig } from '@/lib/config'
 import { HttpError, jsonBody, route } from '@/lib/http'
-import { isValidPhone, normalizePhone } from '@/lib/phone'
+import { canonicalPhone, isValidPhone } from '@/lib/phone'
 import type { AgendaWeek } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -48,7 +48,7 @@ export const POST = route(async (request: Request) => {
   if (!isDayKey(day)) throw new HttpError(400, 'Fecha inválida.')
   if (!isClock(start)) throw new HttpError(400, 'Hora inválida.')
 
-  const phone = normalizePhone(String(body.phone ?? ''))
+  const phone = canonicalPhone(String(body.phone ?? ''))
   if (kind === 'appointment' && !isValidPhone(phone)) throw new HttpError(400, 'Teléfono inválido.')
   if (kind === 'appointment' && !String(body.advisor ?? '').trim()) throw new HttpError(400, 'Escribe el asesor que agenda la cita.')
 

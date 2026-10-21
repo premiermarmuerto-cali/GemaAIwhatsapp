@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
-import { isWhatsAppUserId } from './phone'
+import { canonicalPhone, isWhatsAppUserId } from './phone'
 
 const version = process.env.WHATSAPP_API_VERSION || 'v26.0'
 
@@ -36,7 +36,7 @@ export async function downloadMedia(mediaId: string): Promise<{ bytes: Buffer; m
  */
 /** A quién va el mensaje: el teléfono va en `to`; el identificador de quien oculta su número, en `recipient`. */
 function destination(id: string): { to: string } | { recipient: string } {
-  return isWhatsAppUserId(id) ? { recipient: id } : { to: id }
+  return isWhatsAppUserId(id) ? { recipient: id } : { to: canonicalPhone(id) }
 }
 
 export async function sendWhatsAppTemplate(

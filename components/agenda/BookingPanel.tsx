@@ -5,7 +5,7 @@ import { ChatIcon, CloseIcon, PinIcon } from '@/components/icons'
 import { api } from '@/lib/api-client'
 import { dayLabel, toClock, toMinutes } from '@/lib/calendar'
 import { LOCATION_LABEL } from '@/lib/clinic'
-import { formatPhone, isWhatsAppUserId } from '@/lib/phone'
+import { canonicalPhone, formatPhone, isWhatsAppUserId } from '@/lib/phone'
 import type { Booking, BookingStatus } from '@/lib/types'
 import { AdvisorOptions } from './AdvisorOptions'
 import { ACTION_LABEL, holdCountdown, NEXT_STATUSES, PAYMENT_METHOD_LABEL, STATUS_LABEL } from './labels'
@@ -68,7 +68,7 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onA
             <dd>
               {isWhatsAppUserId(booking.phone)
                 ? <span className={styles.link}><ChatIcon /> {formatPhone(booking.phone)}</span>
-                : <a className={styles.link} href={`https://wa.me/${booking.phone}`} target="_blank" rel="noreferrer"><ChatIcon /> {formatPhone(booking.phone)}</a>}
+                : <a className={styles.link} href={`https://wa.me/${canonicalPhone(booking.phone)}`} target="_blank" rel="noreferrer"><ChatIcon /> {formatPhone(booking.phone)}</a>}
             </dd>
           </div>
         )}

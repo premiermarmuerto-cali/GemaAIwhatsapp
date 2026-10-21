@@ -30,7 +30,14 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
   const [day, setDay] = useState(seed.day)
   const [serviceId, setServiceId] = useState(week.services[0]?.id ?? '')
   const [start, setStart] = useState(seed.start)
+  // Indicativo por defecto +57; "Otro" deja escribir cualquier indicativo (clientes del exterior).
+  const [dial, setDial] = useState('57')
+  const [otherDial, setOtherDial] = useState('')
   const [phone, setPhone] = useState('')
+  const dialCode = dial === 'other' ? otherDial.replace(/\D/g, '') : dial
+  // Si pegan el número completo ("573001234567" o "+57 300…"), no se duplica el indicativo.
+  const national = phone.replace(/\D/g, '').replace(new RegExp(`^(00)?${dialCode}(?=\\d{7,})`), '').replace(/^0+/, '')
+  const fullPhone = dialCode && national ? `${dialCode}${national}` : ''
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
   // Quién agenda: se recuerda el último en este navegador para no escribirlo en cada cita.
@@ -60,7 +67,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
     if (slots && slots.starts.length && !slots.starts.includes(start)) setStart(slots.starts[0])
   }, [slots, start])
 
-  const canSubmit = Boolean(start) && (kind === 'block' || (phone.replace(/\D/g, '').length >= 8 && name.trim() && serviceId && advisor.trim()))
+  const canSubmit = Boolean(start) && (kind === 'block' || (fullPhone.length >= 8 && fullPhone.length <= 15 && name.trim() && serviceId && advisor.trim()))
 
   return (
     <aside className={styles.panel} aria-label="Nueva cita">
@@ -138,7 +145,21 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
             </label>
             <label>
               <span className="eyebrow">WhatsApp</span>
-              <input value={phone} inputMode="tel" onChange={(event) => setPhone(event.target.value)} placeholder="573001234567" />
+              <div className={styles.phoneRow}>
+                <select value={dial} onChange={(event) => setDial(event.target.value)} aria-label="Indicativo del país">
+                  <option value="57">🇨🇴 +57</option>
+                  <option value="1">🇺🇸 +1</option>
+                  <option value="52">🇲🇽 +52</option>
+                  <option value="593">🇪🇨 +593</option>
+                  <option value="34">🇪🇸 +34</option>
+                  <option value="other">Otro…</option>
+                </select>
+                {dial === 'other' && (
+                  <input className={styles.dialInput} value={otherDial} inputMode="numeric" maxLength={4} placeholder="+__" aria-label="Otro indicativo" onChange={(event) => setOtherDial(event.target.value)} />
+                )}
+                <input value={phone} inputMode="tel" onChange={(event) => setPhone(event.target.value)} placeholder={dial === '57' ? '300 123 4567' : 'Número'} />
+              </div>
+              {fullPhone && <small className={styles.dim}>Se guarda como +{fullPhone}</small>}
             </label>
             <label>
               <span className="eyebrow">Asesor</span>
@@ -158,7 +179,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
           disabled={busy || !canSubmit}
           onClick={() => {
             if (kind === 'appointment') rememberAdvisor(advisor)
-            onSubmit({ kind, location, day, start, serviceId, phone, name: name.trim(), notes, people, advisor: advisor.trim() })
+            onSubmit({ kind, location, day, start, serviceId, phone: fullPhone, name: name.trim(), notes, people, advisor: advisor.trim() })
           }}
         >
           {kind === 'block' ? 'Bloquear' : 'Crear cita confirmada'}

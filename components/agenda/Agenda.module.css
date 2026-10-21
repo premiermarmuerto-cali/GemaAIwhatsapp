@@ -271,6 +271,12 @@
 .monthMore { padding: 2px 5px; border: 0; background: transparent; color: var(--primary); font: 600 10px var(--font-sans); text-align: left; }
 .monthMore:hover { text-decoration: underline; }
 
+/* Teléfono con indicativo: selector de país + número. */
+.phoneRow { display: flex; gap: 6px; }
+.phoneRow select { flex: none; width: auto; }
+.phoneRow input { flex: 1; min-width: 0; }
+.phoneRow .dialInput { flex: none; width: 64px; }
+
 /* Asesor editable en la ficha de la cita. */
 .advisorField { flex-wrap: wrap; }
 .advisorField input {

@@ -28,6 +28,19 @@ export function normalizePhone(input: string): string {
   return isWhatsAppUserId(trimmed) ? trimmed : trimmed.replace(/\D/g, '')
 }
 
+/**
+ * Teléfono tal como lo escriben los asesores en la agenda: un celular colombiano de 10 dígitos
+ * ("3001234567") se completa con el 57; "+57 300…", "0057…" y "57300…" quedan igual. Lo que ya trae
+ * otro indicativo no se toca. Sin esto, la mitad de las citas quedaban con 57 y la otra mitad sin él,
+ * y WhatsApp rechazaba los recordatorios de las segundas.
+ */
+export function canonicalPhone(input: string): string {
+  const clean = normalizePhone(input)
+  if (isWhatsAppUserId(clean)) return clean
+  const digits = clean.replace(/^00/, '')
+  return /^3\d{9}$/.test(digits) ? `57${digits}` : digits
+}
+
 /** Teléfono con indicativo, o identificador de usuario de WhatsApp. */
 export function isValidPhone(value: string): boolean {
   return /^\d{8,15}$/.test(value) || isWhatsAppUserId(value)
