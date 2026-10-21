@@ -144,8 +144,8 @@ Gema también escribe sola, sin que la clienta haya escrito. Un programador la d
 | **Mensaje sin responder** | Un mensaje del cliente lleva más de 5 min sin respuesta (entrega tardía de Meta, caída del servidor) | Gema lo responde en la siguiente corrida, a cualquier hora, disculpándose por la demora. Si ya pasaron 24 h, el chat pasa a una asesora para escribirle con plantilla |
 | Gema retoma (efectivo) | 30 min en horario de asesoras después de pasar a Johanna a quien quería pagar todo en efectivo, si nadie le escribió | Texto libre con el anticipo y dos horas concretas; Gema vuelve a atender ese chat |
 | Retomar la cita | Más de 24 h sin escribir y sin cita (hasta 7 días) | Plantilla `retomar_cita_limpieza` |
-| Anticipo pendiente | El horario se liberó sin pago hace más de 24 h y la fecha aún no pasa | Plantilla `anticipo_pendiente`. Si toca **"Reenviar el link"**, Gema vuelve a apartar el mismo horario (si sigue libre) y le manda un link nuevo |
-| Últimos días del 2x1 | 2–3 días antes de que venza una promoción, a quien escribió y no agendó | Plantilla `ultimos_dias_bono`. La oferta se arma sola desde la configuración del 2x1 |
+| Anticipo pendiente | El horario se liberó sin pago hace más de 24 h, el cliente ya había elegido cómo pagar (link o transferencia) y la fecha aún no pasa. Nunca a citas en efectivo | Plantilla `anticipo_pendiente`. Si toca **"Reenviar el link"**, Gema vuelve a apartar el mismo horario (si sigue libre) y le manda un link nuevo |
+| Últimos días del 2x1 | A los 5 días de silencio de quien escribió y no agendó, y otra vez en los 4 últimos días del 2x1 (27 al 31 de octubre) | Plantilla `ultimos_dias_bono`. La fecha se arma sola desde la configuración del 2x1 |
 
 **Reglas de cortesía, ya programadas:**
 - Solo se envían entre **8:00 a.m. y 9:00 p.m.**

@@ -108,6 +108,8 @@ export const keys = {
   get awaiting() { return `${prefix()}awaiting` },
   /** Marca de que `awaiting` ya se llenó una vez con los chats que existían antes de crearlo. */
   get awaitingSeeded() { return `${prefix()}awaiting:seeded` },
+  /** Asesores que agendan en el panel, por uso reciente (lib/advisors.ts). */
+  get advisors() { return `${prefix()}advisors` },
   /** Disponibilidad ya calculada para el prompt de Gema (lib/prompt.ts), por versión de agenda y config. */
   agendaCache: (id: string) => `${prefix()}cache:agenda:${id}`,
 }

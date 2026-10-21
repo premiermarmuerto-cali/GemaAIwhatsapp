@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { listAdvisors, rememberAdvisor } from '@/lib/advisors'
 import { bookingsOfDays, closedDays, createBooking } from '@/lib/booking'
 import { dayKey, isClock, isDayKey, monthGrid, weekOf } from '@/lib/calendar'
 import { isLocation } from '@/lib/clinic'
@@ -19,7 +20,7 @@ export const GET = route(async (request: NextRequest) => {
   const asked = params.get('week')
   const days = isDayKey(month) ? monthGrid(month) : weekOf(isDayKey(asked) ? asked : dayKey())
   const config = await getConfig()
-  const [bookings, closed] = await Promise.all([bookingsOfDays(days), closedDays(days)])
+  const [bookings, closed, advisors] = await Promise.all([bookingsOfDays(days), closedDays(days), listAdvisors()])
 
   const payload: AgendaWeek = {
     days,
@@ -31,6 +32,7 @@ export const GET = route(async (request: NextRequest) => {
     cabins: config.cabins,
     addresses: config.addresses,
     services: config.services.map(({ id, label, durationMin, price }) => ({ id, label, durationMin, price })),
+    advisors,
   }
   return NextResponse.json(payload)
 })
@@ -79,5 +81,6 @@ export const POST = route(async (request: Request) => {
     }[result.reason]
     throw new HttpError(409, message)
   }
+  if (result.booking.advisor) await rememberAdvisor(result.booking.advisor)
   return NextResponse.json(result.booking, { status: 201 })
 })

@@ -18,8 +18,9 @@
  *
  * Plantillas (se cobran; solo con la ventana cerrada y si WHATSAPP_TEMPLATES=on):
  *   retomar_cita_limpieza  más de 24 h sin escribir, sin cita (marketing)
- *   anticipo_pendiente     el horario se liberó sin pago hace más de 24 h y la sesión aún no pasa (marketing)
- *   ultimos_dias_bono      2–3 días antes de que venza un 2x1, a quien escribió y no agendó (marketing)
+ *   anticipo_pendiente     el horario se liberó sin pago hace más de 24 h, el cliente ya había elegido cómo
+ *                          pagar (link o transferencia) y la sesión aún no pasa (marketing). Nunca en efectivo
+ *   ultimos_dias_bono      a los 5 días de silencio y en los 4 últimos días del 2x1, a quien escribió y no agendó (marketing)
  *   recordatorio_cita      24 h antes de la cita (utilidad)
  *
  * Nada se envía a chats que atiende una persona (Gema en pausa o pidiendo asesor), ni de noche, y
@@ -204,11 +205,22 @@ async function expiredHoldTemplates(run: Run, chats: Map<string, ChatSummary>) {
     if (age < DAY || age > 3 * DAY) continue
     const expired = await redis().hget<string>(keys.booking(booking.id), 'cancelReason')
     if (expired !== 'Anticipo no pagado a tiempo') continue
+    // En efectivo nunca llega aquí (esas citas no quedan apartadas). Y solo a quien ya eligió cómo pagar
+    // el anticipo (pidió el link o recibió los datos para transferir): quien se quedó callado al
+    // preguntarle cómo paga no dijo que lo iba a hacer, y para él está la plantilla de retomar.
+    if (booking.paymentPlan === 'cash' || !(await choseHowToPay(booking))) continue
     const chat = chats.get(booking.phone)
     if (!chat || chat.noMarketing || humanHandling(chat) || isWindowOpen(chat, run.now)) continue
     if (await liveBookingOf(booking.phone)) continue
     await run.template(booking.phone, chat, 'anticipo_pendiente', 'anticipo_pendiente', { nombre_cliente: firstName(booking.name) || firstName(chat.name) || 'de nuevo' }, booking)
   }
+}
+
+/** El cliente eligió cómo pagar la cita: se le generó el link de Bold o se le enviaron los datos para transferir. */
+async function choseHowToPay(booking: Booking): Promise<boolean> {
+  if (booking.paymentLink) return true
+  const history = await getHistory(booking.phone, 60)
+  return history.some((message) => message.sender !== 'user' && message.at >= booking.createdAt && message.text.includes('Puedes transferir'))
 }
 
 // ───────────────────────── Recordatorios de la cita ─────────────────────────
@@ -403,25 +415,38 @@ export function offerText(until: string): string {
 /** El servicio de Peeling (el texto aprobado de ultimos_dias_bono habla solo de él). */
 const PEELING_ID = 'peeling-hidratacion'
 
+/** Días de silencio después de los que se recuerda que el 2x1 del Peeling tiene fecha de cierre. */
+const BONUS_AFTER_SILENCE_DAYS = 5
+/** Días finales del 2x1 en que se le recuerda a todos los que preguntaron (del 27 al 31 si cierra el 31). */
+const BONUS_FINAL_DAYS = 4
+
 /**
- * 2–3 días antes de que venza el 2x1 del Peeling: plantilla ultimos_dias_bono a quien escribió y no
- * agendó. Solo para la fecha del Peeling: el texto aprobado nombra el Peeling Gel; si otro servicio
- * llegara a tener fecha de cierre, haría falta otra plantilla.
+ * Plantilla ultimos_dias_bono, mientras el 2x1 del Peeling siga vigente, a quien preguntó y no agendó
+ * (decisión de Premier, 20 oct 2026):
+ *   - a los 5 días de su último mensaje, una vez por promoción;
+ *   - en los últimos días (del 27 al 31 de octubre con cierre el 31), una vez más, a todos los que
+ *     escribieron en los últimos 30 días.
+ * El tope de una plantilla de marketing cada 3 días por persona sigue valiendo. Solo para la fecha del
+ * Peeling: el texto aprobado nombra el Peeling Gel; otro servicio con fecha necesitaría otra plantilla.
  */
 async function lastDaysTemplates(run: Run, chats: Map<string, ChatSummary>) {
   const today = dayKey(run.now)
   const until = run.config.twoForOne[PEELING_ID]
-  if (until) {
-    const daysLeft = Math.round((Date.parse(`${until}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / DAY)
-    if (daysLeft < 2 || daysLeft > 3) return
-    const oferta = offerText(until)
-    const key = `ultimos_dias_bono:${until}`
-    for (const chat of chats.values()) {
-      if (!chat.lastInboundAt || run.now - chat.lastInboundAt > 30 * DAY || isWindowOpen(chat, run.now)) continue
-      if (chat.noMarketing || humanHandling(chat) || chat.stage === 'booked' || chat.autoSent[key]) continue
-      if (await liveBookingOf(chat.phone)) continue
-      await run.template(chat.phone, chat, key, 'ultimos_dias_bono', { nombre_cliente: firstName(chat.name) || 'de nuevo', oferta })
-    }
+  if (!until || until < today) return
+  const daysLeft = Math.round((Date.parse(`${until}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / DAY)
+  const finalDays = daysLeft <= BONUS_FINAL_DAYS
+  const oferta = offerText(until)
+  const silenceKey = `ultimos_dias_bono:5d:${until}`
+  const finalKey = `ultimos_dias_bono:${until}`
+  for (const chat of chats.values()) {
+    const silence = run.now - chat.lastInboundAt
+    if (!chat.lastInboundAt || silence > 30 * DAY || isWindowOpen(chat, run.now)) continue
+    if (chat.noMarketing || humanHandling(chat) || chat.stage === 'booked') continue
+    // En los días finales va el aviso final; antes, el de los 5 días de silencio.
+    const key = finalDays ? finalKey : silenceKey
+    if (chat.autoSent[key] || (!finalDays && silence < BONUS_AFTER_SILENCE_DAYS * DAY)) continue
+    if (await liveBookingOf(chat.phone)) continue
+    await run.template(chat.phone, chat, key, 'ultimos_dias_bono', { nombre_cliente: firstName(chat.name) || 'de nuevo', oferta })
   }
 }
 

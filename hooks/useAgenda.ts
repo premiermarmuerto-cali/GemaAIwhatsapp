@@ -113,6 +113,8 @@ export function useAgenda(toast: ShowToast) {
       act(() => api<Booking>(`/api/agenda/${id}`, { method: 'PATCH', body: { status } }), 'Estado actualizado'),
     annotate: (id: string, notes: string) =>
       act(() => api<Booking>(`/api/agenda/${id}`, { method: 'PATCH', body: { notes } }), 'Nota guardada'),
+    removeAdvisor: (name: string) =>
+      act(() => api<unknown>(`/api/advisors?name=${encodeURIComponent(name)}`, { method: 'DELETE' }), 'Asesor quitado de la lista'),
     setAdvisor: (id: string, advisor: string) =>
       act(() => api<Booking>(`/api/agenda/${id}`, { method: 'PATCH', body: { advisor } }), 'Asesor actualizado'),
     reschedule: (id: string, day: string, start: string, location?: Location) =>

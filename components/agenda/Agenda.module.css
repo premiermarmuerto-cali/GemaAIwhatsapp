@@ -277,6 +277,20 @@
 .phoneRow input { flex: 1; min-width: 0; }
 .phoneRow .dialInput { flex: none; width: 64px; }
 
+/* Selector de asesor: lista guardada + "Nuevo asesor…". */
+.advisorSelect { display: grid; flex: 1; gap: 6px; min-width: 160px; }
+.advisorSelect select, .advisorSelect input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+  font-size: 13px;
+}
+.advisorSelect select:focus, .advisorSelect input:focus { border-color: var(--primary); outline: none; }
+.advisorRemove { justify-self: start; padding: 0; border: 0; background: transparent; color: var(--faint); font-size: 11px; text-decoration: underline; }
+.advisorRemove:hover { color: var(--danger); }
+
 /* Asesor editable en la ficha de la cita. */
 .advisorField { flex-wrap: wrap; }
 .advisorField input {

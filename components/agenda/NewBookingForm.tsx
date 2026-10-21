@@ -7,7 +7,7 @@ import { dayKey, dayLabel } from '@/lib/calendar'
 import { LOCATION_LABEL, LOCATIONS } from '@/lib/clinic'
 import type { NewAppointment } from '@/hooks/useAgenda'
 import type { AgendaWeek, Location } from '@/lib/types'
-import { AdvisorOptions, lastAdvisor, rememberAdvisor } from './AdvisorOptions'
+import { AdvisorSelect, lastAdvisor, rememberAdvisor } from './AdvisorSelect'
 import styles from './Agenda.module.css'
 
 type Props = {
@@ -16,6 +16,7 @@ type Props = {
   busy: boolean
   onClose: () => void
   onSubmit: (input: NewAppointment) => void
+  onRemoveAdvisor: (name: string) => void
 }
 
 type Slots = { starts: string[]; closed: string | null }
@@ -24,7 +25,7 @@ type Slots = { starts: string[]; closed: string | null }
  * Alta manual. Las horas disponibles se piden al servidor para el servicio elegido, así que
  * el operador solo puede escoger huecos que de verdad existen (y la creación los revalida).
  */
-export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
+export function NewBookingForm({ week, seed, busy, onClose, onSubmit, onRemoveAdvisor }: Props) {
   const [kind, setKind] = useState<'appointment' | 'block'>('appointment')
   const [location, setLocation] = useState<Location>(seed.location)
   const [day, setDay] = useState(seed.day)
@@ -43,6 +44,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
   // Quién agenda: se recuerda el último en este navegador para no escribirlo en cada cita.
   const [advisor, setAdvisor] = useState('')
   useEffect(() => { setAdvisor(lastAdvisor()) }, [])
+  const removeAdvisor = (name: string) => { onRemoveAdvisor(name); if (advisor === name) setAdvisor('') }
   // En la vista mensual llegan 42 días: solo se ofrecen los que todavía se pueden agendar.
   const today = dayKey()
   const days = week.days.filter((item) => item >= today || item === seed.day)
@@ -163,8 +165,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
             </label>
             <label>
               <span className="eyebrow">Asesor</span>
-              <input value={advisor} maxLength={60} list="advisor-options" onChange={(event) => setAdvisor(event.target.value)} placeholder="Quién agenda y atiende esta cita" />
-              <AdvisorOptions />
+              <AdvisorSelect value={advisor} onChange={setAdvisor} options={week.advisors ?? []} onRemove={removeAdvisor} />
             </label>
           </>
         )}

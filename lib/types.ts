@@ -290,6 +290,8 @@ export type AgendaWeek = {
   cabins: Record<Location, number>
   addresses: Record<Location, string>
   services: Array<Pick<Service, 'id' | 'label' | 'durationMin' | 'price'>>
+  /** Asesores guardados, para elegirlos de una lista al agendar o reasignar una cita. */
+  advisors: string[]
 }
 
 export type DailyStats ={ inbound: number; aiReplies: number; humanReplies: number; booked: number; newChats: number }

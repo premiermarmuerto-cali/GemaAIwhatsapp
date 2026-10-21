@@ -3,6 +3,7 @@ import { annotateBooking, bookingsOfPhone, getBooking, moveBooking, rescheduleBo
 import { isClock, isDayKey } from '@/lib/calendar'
 import { isLocation } from '@/lib/clinic'
 import { amountOf, getConfig } from '@/lib/config'
+import { rememberAdvisor } from '@/lib/advisors'
 import { trackConversion } from '@/lib/conversions'
 import { HttpError, jsonBody, route } from '@/lib/http'
 import { HOLD_STATUSES, LIVE_STATUSES, type BookingStatus } from '@/lib/types'
@@ -41,6 +42,7 @@ export const PATCH = route(async (request: Request, context: Params) => {
   }
   if (typeof body.advisor === 'string') {
     await setBookingAdvisor(id, body.advisor)
+    await rememberAdvisor(body.advisor)
   }
 
   if (body.day !== undefined || body.start !== undefined) {

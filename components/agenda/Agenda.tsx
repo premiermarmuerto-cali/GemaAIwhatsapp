@@ -169,6 +169,7 @@ export function Agenda() {
           }}
           onAnnotate={(id, notes) => void agenda.annotate(id, notes)}
           onAdvisor={(id, advisor) => void agenda.setAdvisor(id, advisor)}
+          advisors={week?.advisors ?? []}
         />
       )}
 
@@ -182,6 +183,7 @@ export function Agenda() {
             const created = await agenda.create(input)
             if (created) setAside({ mode: 'booking', id: created.id })
           }}
+          onRemoveAdvisor={(name) => void agenda.removeAdvisor(name)}
         />
       )}
 

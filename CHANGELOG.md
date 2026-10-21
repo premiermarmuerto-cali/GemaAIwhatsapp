@@ -35,8 +35,15 @@ Para publicar una actualización: sube la versión en `package.json` (y `package
 - Las citas pagadas en efectivo también se reportan como *Purchase* (valor completo) cuando la asesora marca la cita como "Realizada". Si el anticipo ya se había reportado, el mismo event_id evita contarla dos veces.
 
 **Teléfonos y recordatorios de la agenda**
-- Campo de teléfono con indicativo: +57 por defecto y "Otro…" para escribir cualquier indicativo. Se guarda siempre con indicativo; un celular colombiano de 10 dígitos se completa con 57. Se corrigieron 2 citas que estaban sin él.
+- Campo de teléfono con indicativo: +57 por defecto y "Otro…" para escribir cualquier indicativo. En las citas que se crean a mano, un celular colombiano de 10 dígitos se completa con 57 (los números que llegan por WhatsApp ya traen su indicativo y no se tocan). Se corrigieron 2 citas que estaban sin él.
 - Las citas que agenda un asesor en el panel reciben recordatorio con plantilla un día antes y 2 h antes, aunque el cliente nunca haya escrito a Gema.
+
+**Plantillas**
+- `anticipo_pendiente` solo a quien ya eligió cómo pagar el anticipo (pidió el link o recibió los datos para transferir). Nunca a citas en efectivo.
+- `ultimos_dias_bono` a los 5 días de silencio de quien preguntó y no agendó, y otra vez en los 4 últimos días del 2x1 (del 27 al 31 de octubre). Una plantilla de marketing cada 3 días por persona como máximo.
+
+**Asesores**
+- Los nombres de los asesores se guardan en la base y se eligen de una lista ("+ Nuevo asesor…" para agregar, "Quitar de la lista" para borrar uno mal escrito). Se cargaron los 7 que ya estaban en las citas.
 
 **Webhook de WhatsApp**
 - Un mensaje con una forma inesperada ya no tumba la entrega completa: se guarda como "no se pudo leer", el chat pasa a una asesora y la entrega sigue. Los mensajes sin remitente quedan registrados en `pm:wa:rejected` con su tipo y campos.

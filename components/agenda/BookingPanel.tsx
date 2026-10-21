@@ -5,9 +5,9 @@ import { ChatIcon, CloseIcon, PinIcon } from '@/components/icons'
 import { api } from '@/lib/api-client'
 import { dayLabel, toClock, toMinutes } from '@/lib/calendar'
 import { LOCATION_LABEL } from '@/lib/clinic'
-import { canonicalPhone, formatPhone, isWhatsAppUserId } from '@/lib/phone'
+import { formatPhone, isWhatsAppUserId } from '@/lib/phone'
 import type { Booking, BookingStatus } from '@/lib/types'
-import { AdvisorOptions } from './AdvisorOptions'
+import { AdvisorSelect } from './AdvisorSelect'
 import { ACTION_LABEL, holdCountdown, NEXT_STATUSES, PAYMENT_METHOD_LABEL, STATUS_LABEL } from './labels'
 import styles from './Agenda.module.css'
 
@@ -18,10 +18,12 @@ type Props = {
   onStatus: (id: string, status: BookingStatus) => void
   onAnnotate: (id: string, notes: string) => void
   onAdvisor: (id: string, advisor: string) => void
+  /** Asesores guardados, para elegir a quién le corresponde la cita. */
+  advisors: string[]
 }
 
 /** Ficha de la cita: lo que el bot extrajo del prospecto, el historial y las acciones del operador. */
-export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onAdvisor }: Props) {
+export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onAdvisor, advisors }: Props) {
   const [notes, setNotes] = useState(booking.notes)
   const [advisor, setAdvisor] = useState(booking.advisor)
   const [history, setHistory] = useState<Booking[]>([])
@@ -68,7 +70,7 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onA
             <dd>
               {isWhatsAppUserId(booking.phone)
                 ? <span className={styles.link}><ChatIcon /> {formatPhone(booking.phone)}</span>
-                : <a className={styles.link} href={`https://wa.me/${canonicalPhone(booking.phone)}`} target="_blank" rel="noreferrer"><ChatIcon /> {formatPhone(booking.phone)}</a>}
+                : <a className={styles.link} href={`https://wa.me/${booking.phone}`} target="_blank" rel="noreferrer"><ChatIcon /> {formatPhone(booking.phone)}</a>}
             </dd>
           </div>
         )}
@@ -79,16 +81,8 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onA
             <dt>Asesor</dt>
             <dd className={styles.advisorField}>
               {/* Quién generó la cita y a quién le corresponde la sesión. Se puede reasignar. */}
-              <input
-                value={advisor}
-                maxLength={60}
-                list="advisor-options"
-                placeholder="Nombre del asesor"
-                aria-label="Asesor de la cita"
-                onChange={(event) => setAdvisor(event.target.value)}
-              />
+              <AdvisorSelect value={advisor} onChange={setAdvisor} options={advisors} />
               <button className="btn btn-secondary" disabled={busy || !advisor.trim() || advisor.trim() === booking.advisor} onClick={() => onAdvisor(booking.id, advisor.trim())}>Guardar</button>
-              <AdvisorOptions />
             </dd>
           </div>
         )}
