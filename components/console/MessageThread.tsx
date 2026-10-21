@@ -25,8 +25,6 @@ export function MessageThread({ chat, messages }: { chat: ChatSummary; messages:
 
   return (
     <div className={styles.threadWrap}>
-      {/* El patrón de cristal del login, muy tenue, como textura del fondo del chat (v1.4). */}
-      <div className="gem-pattern-soft" aria-hidden="true" />
       <div className={styles.thread} ref={scroller}>
         {messages === null && <div className={styles.threadNotice}>Cargando mensajes…</div>}
         {messages?.length === 0 && <div className={styles.threadNotice}>Sin mensajes todavía.</div>}

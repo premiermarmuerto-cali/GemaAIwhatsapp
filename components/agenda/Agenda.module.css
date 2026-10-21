@@ -17,9 +17,6 @@
   }
 }
 
-/* El patrón de cristal, muy tenue, detrás de toda la agenda (v1.4). */
-.shell > :global(.gem-pattern-soft) { z-index: -1; }
-
 /* ── Cabecera ─────────────────────────────────────────────── */
 
 .top {

@@ -54,7 +54,6 @@ export function Agenda() {
 
   return (
     <div className={styles.shell} data-aside={aside ? 'open' : undefined}>
-      <div className="gem-pattern-soft" aria-hidden="true" />
       <header className={styles.top}>
         <div className={styles.brand}>
           <span className={`brand-mark ${styles.mark}`} aria-hidden="true" />

@@ -38,7 +38,7 @@ Para publicar una actualización: sube la versión en `package.json` (y `package
 
 **Visual**
 - Modo oscuro en un verde mucho más profundo, casi negro.
-- Patrón de cristal de la pantalla de inicio, muy tenue, en el fondo del chat y de la agenda.
+- (Se probó el patrón de cristal en el fondo del chat y de la agenda y se quitó: no se veía bien.)
 - Etiqueta de versión en el panel y en el inicio de sesión.
 - Desbordes corregidos: nombre de la marca en la barra lateral, encabezado del chat y valores largos del panel de control (motivo, conversión, automáticos).
 - Círculo "OP" del operador en el tan de la marca.
