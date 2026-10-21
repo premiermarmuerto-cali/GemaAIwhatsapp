@@ -76,7 +76,7 @@ export const TEMPLATES = {
   ultimos_dias_bono: { language: 'en', image: 'plantilla_ultimos_dias_bono.jpg' },
   recordatorio_cita: { language: 'en' },
 } as const satisfies Record<string, { language: string; image?: string }>
-type TemplateName = keyof typeof TEMPLATES
+export type TemplateName = keyof typeof TEMPLATES
 /** Plantillas de categoría Marketing (se cobran más y respetan "Ahora no"); recordatorio_cita es Utility. */
 const MARKETING = new Set<TemplateName>(['retomar_cita_limpieza', 'anticipo_pendiente', 'ultimos_dias_bono'])
 const MARKETING_GAP_MS = 3 * 24 * 60 * 60_000
@@ -88,7 +88,7 @@ const publicUrl = () => (process.env.PUBLIC_APP_URL || 'https://premier-agente.v
 export type Outcome = { kind: string; phone: string; how: 'texto' | 'plantilla' | 'simulado' | 'omitido' | 'error'; detail?: string }
 
 /** "10:00 a. m.": formato de hora de las plantillas. */
-const templateClock = (hhmm: string) => clock12(hhmm).replace('a.m.', 'a. m.').replace('p.m.', 'p. m.')
+export const templateClock = (hhmm: string) => clock12(hhmm).replace('a.m.', 'a. m.').replace('p.m.', 'p. m.')
 
 /**
  * Gema no le escribe sola: una persona atiende el chat, o el cliente dijo que no le interesa
@@ -393,13 +393,16 @@ async function reengageTemplates(run: Run, chats: Map<string, ChatSummary>) {
     const unanswered = chat.lastSender === 'user'
     if (!chat.lastInboundAt || silence <= WHATSAPP_WINDOW_MS || silence > (unanswered ? 7 : 2) * DAY) continue
     const systemFlag = chat.needsAgent && UNANSWERED_REASON.test(chat.agentReason)
-    if (chat.noMarketing || chat.optedOut || !chat.botActive || (chat.needsAgent && !systemFlag) || (chat.autoSent.retomar_cita_limpieza ?? 0) > chat.lastInboundAt) continue
+    // Una alerta del propio sistema pausa a Gema (requestAgent): eso no debe frenar esta plantilla, que es
+    // justo lo que la alerta pide. Una pausa que puso una persona, sí.
+    if (chat.noMarketing || chat.optedOut || (!chat.botActive && !systemFlag) || (chat.needsAgent && !systemFlag) || (chat.autoSent.retomar_cita_limpieza ?? 0) > chat.lastInboundAt) continue
     // A quien se le venció un horario sin pagar le corresponde anticipo_pendiente, no esta.
     const [last] = await bookingsOfPhone(chat.phone, 1)
     if (last && (last.status !== 'cancelled' || last.createdAt > chat.lastInboundAt - DAY)) continue
     const sent = await run.template(chat.phone, chat, 'retomar_cita_limpieza', 'retomar_cita_limpieza', { nombre_cliente: firstName(chat.name) || 'de nuevo' })
     // Ya se le escribió: la alerta automática de "sin responder" deja de hacer falta.
-    if (sent && systemFlag && !run.dryRun) await updateChat(chat.phone, { needsAgent: false })
+    // Ya se le escribió: se quita la alerta y Gema vuelve a atender, para responder cuando el cliente conteste.
+    if (sent && systemFlag && !run.dryRun) await updateChat(chat.phone, { needsAgent: false, botActive: true })
   }
 }
 
@@ -413,7 +416,7 @@ export function offerText(until: string): string {
 }
 
 /** El servicio de Peeling (el texto aprobado de ultimos_dias_bono habla solo de él). */
-const PEELING_ID = 'peeling-hidratacion'
+export const PEELING_ID = 'peeling-hidratacion'
 
 /** Días de silencio después de los que se recuerda que el 2x1 del Peeling tiene fecha de cierre. */
 const BONUS_AFTER_SILENCE_DAYS = 5

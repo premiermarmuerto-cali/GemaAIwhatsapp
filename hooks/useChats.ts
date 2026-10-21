@@ -275,6 +275,21 @@ export function useChats(toast: ShowToast) {
     }
   }, [applySummary, refreshDetail, toast])
 
+  /** Plantilla de Meta enviada a mano (ventana de 24 h cerrada). Quita la alerta y Gema vuelve a atender. */
+  const sendTemplate = useCallback(async (phone: string, name: string, label: string) => {
+    try {
+      const { chat } = await api<{ chat: ChatSummary }>(`${chatPath(phone)}/template`, { method: 'POST', body: { name } })
+      applySummary(chat)
+      setStatsVersion((version) => version + 1)
+      void refreshDetail(phone)
+      toast(`Plantilla "${label}" enviada · Gema responde cuando el cliente conteste`)
+      return true
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) toast(`No se envió la plantilla: ${errorText(error)}`, { tone: 'error' })
+      return false
+    }
+  }, [applySummary, refreshDetail, toast])
+
   /** Quien dijo "no me interesa" vuelve a recibir seguimientos y plantillas. */
   const reactivate = useCallback(async (phone: string) => {
     const ok = await run({
@@ -308,6 +323,7 @@ export function useChats(toast: ShowToast) {
     remove,
     send,
     sendPreset,
+    sendTemplate,
     reactivate,
     refresh: refreshLists,
   }

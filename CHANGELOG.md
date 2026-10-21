@@ -3,6 +3,11 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.6.2 · 20 de octubre de 2026
+
+- **Plantillas de Meta desde el chat**: con la ventana de 24 h cerrada aparece una barra encima del cuadro de mensaje con las plantillas que aplican a ese cliente (retomar, últimos días del 2x1, anticipo pendiente, recordatorio), la más lógica marcada como "Sugerida" y las que no aplican deshabilitadas con el motivo. Al enviar una, se quita la alerta y Gema vuelve a atender el chat para responder cuando el cliente conteste.
+- Corrección: la plantilla automática de retomar no salía para los chats que el propio sistema había marcado "Requiere asesor" por un mensaje tardío, porque esa alerta pausa a Gema. Ahora sí sale y, al enviarse, Gema retoma el chat.
+
 ## 1.6.1 · 20 de octubre de 2026
 
 - Nueva opción de pago al crear o editar una cita: **"Limpieza de cortesía (por compra de productos)"**. No se cobra, no se reporta a Meta como venta, y si se cancela no pide reembolso. Recibe los recordatorios igual que las demás.

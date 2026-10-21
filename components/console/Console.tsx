@@ -80,6 +80,7 @@ export function Console() {
             onResolveAgent={() => chats.resolveAgent(chat.phone)}
             onOpenPanel={() => setPanelOpen(true)}
             onResendWelcome={() => void chats.sendPreset(chat.phone, 'welcome', 'Bienvenida')}
+            onSendTemplate={(name, label) => chats.sendTemplate(chat.phone, name, label)}
             toast={show}
           />
         ) : (

@@ -115,7 +115,7 @@ export function Inspector({ stats, chat, onOpenSettings, onClose, onSendPreset, 
       {chat && (
         <section className={styles.section}>
           <div className="eyebrow"><ChatIcon /> Mensajes prediseñados</div>
-          <p className={styles.muted}>Si un mensaje automático no salió, envíalo desde aquí. Sale a nombre de Gema y no la pausa.{!remaining && ' La ventana de 24 h está cerrada: solo se pueden enviar plantillas de Meta.'}</p>
+          <p className={styles.muted}>Si un mensaje automático no salió, envíalo desde aquí. Sale a nombre de Gema y no la pausa.{!remaining && ' La ventana de 24 h está cerrada: usa las plantillas de Meta que aparecen encima del cuadro de mensaje.'}</p>
           <div className={styles.presets}>
             {PRESET_BUTTONS.map((preset) => (
               <button
