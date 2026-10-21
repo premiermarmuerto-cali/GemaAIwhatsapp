@@ -172,11 +172,14 @@
 .slot { position: absolute; left: 0; right: 0; border: 0; background: transparent; }
 .slot:hover { background: color-mix(in srgb, var(--primary) 14%, transparent); box-shadow: inset 0 0 0 1px var(--primary); }
 
+/* Columna flexible, no grid: en un grid, las filas con overflow hidden se encogían y las líneas se
+   encimaban cuando el texto no cabía. Así cada línea guarda su altura y lo que sobra se recorta abajo. */
 .event {
   position: absolute;
-  display: grid;
-  align-content: start;
-  gap: 1px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 2px;
   overflow: hidden;
   padding: 4px 7px;
   border: 1px solid;
@@ -188,11 +191,13 @@
 }
 .event:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); z-index: 2; }
 .event[data-active] { box-shadow: 0 0 0 2px var(--primary); z-index: 3; }
-.eventTime { font: 600 10px/1.2 var(--font-sans); font-variant-numeric: tabular-nums; color: var(--muted); }
-.eventName { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.eventService { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.eventHold { font: 500 10px/1.2 var(--font-sans); color: var(--primary); }
-.eventAdvisor { font: 500 10px/1.2 var(--font-sans); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event > span { flex: none; min-width: 0; }
+.eventTime { font: 600 10px/13px var(--font-sans); font-variant-numeric: tabular-nums; color: var(--muted); }
+.eventName { font: 600 12px/15px var(--font-sans); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eventService { font: 400 11px/14px var(--font-sans); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eventMeta { font: 500 10px/13px var(--font-sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eventHold { font-weight: 600; color: var(--primary); }
+.eventAdvisor { color: var(--faint); }
 
 /* ── Vista mensual ────────────────────────────────────────── */
 
@@ -292,7 +297,7 @@
 .advisorRemove:hover { color: var(--danger); }
 
 /* Estado del pago: verde si ya se cobró algo, tan si falta cobrar todo en la sede. */
-.eventPay { font: 600 10px/1.2 var(--font-sans); color: var(--primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eventPay { font-weight: 600; color: var(--primary); }
 .eventPay[data-state='deposit-paid'], .eventPay[data-state='full-paid'] { color: var(--secondary-text); }
 .payState { font-weight: 600; }
 .payState[data-state='courtesy'], .eventPay[data-state='courtesy'] { color: var(--muted); }
