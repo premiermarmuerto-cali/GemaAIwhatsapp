@@ -52,8 +52,8 @@ export const DEFAULT_PRESETS: PresetMessages = {
   ].join('|||'),
 
   followUp45: [
-    'Hola {nombre} ✨ me quedé pensando en lo que hablamos. No dejes que el calor de Cali, el brillo o el cansancio en la mirada sigan apagando tu piel',
-    'tu sesión trae el ritual completo de 5 pasos: contorno de ojos, sueros de vitaminas hasta el cuello y drenaje linfático para desinflamar tu rostro. {vigencia}',
+    'Hola {nombre} ✨ me quedé pensando en lo que hablamos. No dejes que el calor de Cali, el brillo o el cansancio en la mirada sigan apagando tu piel. {vigencia}',
+    'tu sesión trae el ritual completo de 5 pasos: contorno de ojos, sueros de vitaminas hasta el cuello y drenaje linfático para desinflamar tu rostro',
     'te puedo separar {hora_sugerida}, te lo aparto?',
   ].join('|||'),
 
@@ -65,9 +65,23 @@ export const DEFAULT_PRESETS: PresetMessages = {
 
   followUp22h: [
     'Hola {nombre}, paso por aquí una última vez antes de que se cierre nuestro chat ⏳ Si quieres darle un respiro real a tu rostro, con contorno de ojos y drenaje linfático incluidos, todavía estás a tiempo de {promo_corta}',
-    'escríbeme *SEDE* y te guardo uno de los espacios de esta semana en Unicentro o Chipichape',
+    '{cierre_sede}',
   ].join('|||'),
 }
+
+/**
+ * Textos de la v1.4 de los seguimientos de 45 min y 22 h. La migración de la configuración (lib/config.ts)
+ * los reemplaza por los nuevos SOLO si siguen idénticos: si el operador los editó, no se tocan.
+ */
+export const LEGACY_FOLLOW_UP_45 = [
+  'Hola {nombre} ✨ me quedé pensando en lo que hablamos. No dejes que el calor de Cali, el brillo o el cansancio en la mirada sigan apagando tu piel',
+  'tu sesión trae el ritual completo de 5 pasos: contorno de ojos, sueros de vitaminas hasta el cuello y drenaje linfático para desinflamar tu rostro. {vigencia}',
+  'te puedo separar {hora_sugerida}, te lo aparto?',
+].join('|||')
+export const LEGACY_FOLLOW_UP_22H = [
+  'Hola {nombre}, paso por aquí una última vez antes de que se cierre nuestro chat ⏳ Si quieres darle un respiro real a tu rostro, con contorno de ojos y drenaje linfático incluidos, todavía estás a tiempo de {promo_corta}',
+  'escríbeme *SEDE* y te guardo uno de los espacios de esta semana en Unicentro o Chipichape',
+].join('|||')
 
 /** Lo que el panel muestra de cada mensaje: nombre, cuándo sale y qué variables usa de verdad. */
 export const PRESET_INFO: Record<PresetId, { label: string; when: string }> = {
@@ -97,6 +111,7 @@ export const PRESET_VARIABLES: Record<string, string> = {
   promo_recordatorio: 'recordatorio del 2x1 del servicio que le interesa',
   promo_corta: '"asegurar tu 2x1: pagas una limpieza y la segunda va de cortesía"',
   pregunta_sede: 'la pregunta de sede (o de horario, si ya la eligió)',
+  cierre_sede: '"escríbeme SEDE…" si no sabemos su sede; si ya la dijo, "escríbeme SÍ y te guardo un espacio en <su sede>"',
   cita: 'la cita apartada ("miércoles 22 oct a las 3:00 p.m. en Chipichape")',
   minutos: 'minutos que le quedan al apartado',
 }

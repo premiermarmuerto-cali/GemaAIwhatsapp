@@ -1,6 +1,6 @@
 import { DEFAULT_ADDRESSES, DEFAULT_CABINS, DEFAULT_HOURS, DEFAULT_SERVICES, LOCATIONS } from './clinic'
 import { amountOf, pesos } from './money'
-import { DEFAULT_PRESETS, PRESET_VARIABLES } from './preset-defaults'
+import { DEFAULT_PRESETS, LEGACY_FOLLOW_UP_22H, LEGACY_FOLLOW_UP_45, PRESET_VARIABLES } from './preset-defaults'
 import { keys, redis } from './redis'
 import type { AppConfig, Location, PresetMessages, Region, Service } from './types'
 
@@ -35,6 +35,25 @@ Objeciones:
 Lo que no haces: no diagnosticas enfermedades, no prometes resultados garantizados ni dices que algo "cura", no hablas de medicamentos. Hablas de cómo se ve y se siente la piel. Con lesiones, embarazo o una condición médica, recomiendas la valoración en sede y pasas el chat a una asesora.`
 
 /**
+ * Lo que agrega la guía de marca (training mds, "Guía de marca para campaña", 15 oct 2026): respaldo de
+ * la marca, la fórmula oficial de cada producto y lo que cuestan en la tienda oficial. Se suma al final
+ * del conocimiento; la migración 5 lo agrega a la configuración guardada si no fue editada.
+ */
+export const BRAND_GUIDE_INFO = `
+
+RESPALDO DE LA MARCA (datos oficiales de Premier; úsalos tal cual, sin redondear)
+- Desde 1990. Presente en 72 países. Laboratorio propio (Premier Labs, más de 1.000 m² de laboratorio y salas limpias). Más de 30 premios internacionales.
+- Se presenta como ciencia y longevidad de la piel: "Inspirada en el Mar Muerto, impulsada por la ciencia". En Cali es el protocolo de cabina de esa marca de laboratorio, en Chipichape y Unicentro: no un spa genérico.
+- Úsalo cuando duden de la calidad, del precio o de que sea real, en una frase.
+
+LO QUE TRAE CADA PRODUCTO (lo que dice la marca)
+- Peeling Gel (línea Perfection, frasco azul con tapa dorada): retira células muertas, exceso de grasa e impurezas al masajearlo; la piel queda con textura más fina y más luminosa al instante. Tiene minerales del Mar Muerto, hamamelis, vitaminas y extractos botánicos, y no es abrasivo.
+- Milagro Negro (Classic Miracle Noir): barro negro del Mar Muerto, una innovación patentada de la marca, con antioxidantes.
+- Biox Ultra Thermal Beauty Experience: mascarilla con fase de calor que abre los poros y purifica, con el complejo mineral BIOX.
+- En la tienda oficial de Premier, el Peeling Gel cuesta USD 199,99, el Classic Miracle Noir USD 209,99 y la Biox Ultra Thermal USD 995,99: una sesión en cabina en Cali vale mucho menos que un solo frasco.
+- Efecto tensor cosmético "sin agujas" sí; nunca digas "igual que el bótox" ni que lo reemplaza.`
+
+/**
  * Base de conocimiento de Premier (protocolo, limpiezas y productos). Precios de la tienda oficial
  * de España (premiercosmeticos.es, oct 2026) como argumento de valor. Sin afirmaciones de salud:
  * en un chat de limpiezas faciales serían promesas de resultado. Editable en el panel.
@@ -66,7 +85,7 @@ PRODUCTOS PARA CASA (solo si preguntan). Aquí se vende la cita, no producto: si
 
 CÓMO USARLO
 - Cuando duden del precio, comparen con otra limpieza o pregunten qué productos usan: una o dos frases con el producto y lo que cuesta en Europa. No conviertas euros a pesos. No digas que se lleva el producto a casa.
-- Nunca digas que cura, que trata enfermedades o dolores, ni prometas resultados garantizados. Habla de cómo se ve y se siente la piel ("más limpia", "desinflamada", "luminosa").`
+- Nunca digas que cura, que trata enfermedades o dolores, ni prometas resultados garantizados. Habla de cómo se ve y se siente la piel ("más limpia", "desinflamada", "luminosa").${BRAND_GUIDE_INFO}`
 
 /** Cortesía para quien separa con anticipo (pedida por Premier, 20 oct 2026). */
 export const DEFAULT_DEPOSIT_PERK = 'una exfoliación de manos con la sal del Mar Muerto'
@@ -76,9 +95,11 @@ export const DEFAULT_DEPOSIT_PERK = 'una exfoliación de manos con la sal del Ma
  * acordados con Premier, una sola vez (al guardar desde el panel ya queda en la versión actual):
  *   2 (v1.4, 20 oct 2026): prompt y conocimiento nuevos, anticipo fijo de $25.000, agendar en
  *     efectivo a quien lo pide, cortesía por anticipo y mensajes prediseñados editables.
+ *   4 (v1.7): los seguimientos ya no repiten lo que se dijo en la conversación (sede, ritual): se reemplazan los
+ *     textos de 45 min y 22 h por los nuevos si no fueron editados.
  *   3 (v1.6): con una sola cabina el 2x1 va en sesiones seguidas: la bienvenida ya no dice "a la misma hora".
  */
-export const CONFIG_REVISION = 3
+export const CONFIG_REVISION = 5
 
 export const DEFAULT_CONFIG: AppConfig = {
   revision: CONFIG_REVISION,
@@ -123,6 +144,18 @@ function migrate(config: AppConfig, from: number): AppConfig {
   }
   if (from < 3) {
     next = { ...next, messages: { ...next.messages, welcomeClose: next.messages.welcomeClose.replace('con tu acompañante a la misma hora tengo libre', 'con tu acompañante tengo libre') } }
+  }
+  if (from < 5 && !next.brandInfo.includes('RESPALDO DE LA MARCA')) {
+    // v1.7: el conocimiento suma la guía de marca (respaldo, fórmulas, precios oficiales).
+    next = { ...next, brandInfo: `${next.brandInfo.trimEnd()}${BRAND_GUIDE_INFO}` }
+  }
+  if (from < 4) {
+    const m = next.messages
+    next = { ...next, messages: {
+      ...m,
+      followUp45: m.followUp45 === LEGACY_FOLLOW_UP_45 ? DEFAULT_PRESETS.followUp45 : m.followUp45,
+      followUp22h: m.followUp22h === LEGACY_FOLLOW_UP_22H ? DEFAULT_PRESETS.followUp22h : m.followUp22h,
+    } }
   }
   return { ...next, revision: CONFIG_REVISION }
 }

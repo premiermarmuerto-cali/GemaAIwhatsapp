@@ -17,6 +17,7 @@ import { sendWhatsAppImage, sendWhatsAppText } from './whatsapp'
 import { buildWelcome, needsAnswerAfterWelcome, WELCOME_KIND, type Welcome } from './welcome'
 import { availabilityNote } from './availability-note'
 import { isOptOut } from './optout'
+import { preferencesFrom } from './preferences'
 import { bumpRev } from './revision'
 import { HOLD_STATUSES, type AppConfig, type Booking, type ChatSummary, type Location, type Message } from './types'
 
@@ -417,6 +418,12 @@ async function sendWelcome(chat: ChatSummary, send: SendFn, sendImage: SendImage
   if (!history.length || history.some((message) => message.sender !== 'user')) return 'none'
   // "No me interesa" como primer mensaje: no se le manda la bienvenida, Gema solo se despide.
   if (chat.optedOut) return 'none'
+  // La bienvenida es para quien llega por primera vez. Un cliente que ya tiene (o tuvo) una cita, que ya
+  // recibió algún mensaje automático nuestro o que llegó tocando el botón de una plantilla NO es nuevo:
+  // el 21 oct un cliente agendado desde el panel respondió "Confirmo mi cita" al recordatorio y Gema le
+  // mandó toda la bienvenida.
+  if (chat.bookingId || Object.keys(chat.autoSent).some((kind) => !kind.endsWith(':error')) || history.some((message) => message.buttonPayload)) return 'none'
+  if ((await bookingsOfPhone(phone, 1)).length) return 'none'
   const welcome = await buildWelcome(testConfig ?? await getConfig(), process.env.PUBLIC_APP_URL || 'https://premier-agente.vercel.app', { chat })
   if (!welcome) return 'none'
   // Llegó (o se procesó) tarde: primero una disculpa corta, después la bienvenida de siempre.
@@ -457,6 +464,29 @@ export async function deliverWelcome(phone: string, welcome: Welcome, send: Send
     await record(await send(phone, message), message)
   }
   await markChatAuto({ phone }, WELCOME_KIND)
+}
+
+/**
+ * El cliente tocó "Confirmo mi cita" (o lo escribió) y tiene una cita confirmada: se marca la asistencia y se le
+ * agradece con un mensaje corto. Devuelve true si ya se respondió.
+ */
+async function answerAttendanceButton(chat: ChatSummary, send: SendFn): Promise<boolean> {
+  const [last] = await getHistory(chat.phone, 1)
+  if (last?.sender !== 'user' || !CONFIRMS_ATTENDANCE.test(last.text)) return false
+  const booking = await liveBookingOf(chat.phone)
+  if (!booking || booking.status !== 'confirmed') return false
+  if (!booking.attendanceConfirmedAt) await confirmAttendance(booking.id)
+  const config = await getConfig()
+  const address = config.addresses[booking.location]
+  const name = booking.name.split(' ')[0]
+  const text = `Listo${name ? `, ${name}` : ''}, quedó confirmada tu asistencia 🙌 te esperamos el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${address ? ` (${address})` : ''}`
+  try {
+    const waId = await send(chat.phone, text)
+    await recordOutbound(chat.phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now() })
+  } catch (error) {
+    await requestAgent(chat.phone, `WhatsApp rechazó el envío: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  return true
 }
 
 /** El webhook lo llama tras guardar un mensaje del cliente que merece respuesta. */
@@ -943,6 +973,10 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   const chat = await getSummary(phone)
   if (!chat?.botActive) return
 
+  // Botón "Confirmo mi cita" del recordatorio: se agradece en una línea y listo. Sin modelo (no puede
+  // inventar nada ni soltar la bienvenida) y sin repetirle al cliente lo que ya sabe.
+  if (await answerAttendanceButton(chat, send)) return
+
   // Con un envío simulado (pruebas) la imagen tampoco sale a Meta: va como texto por el mismo envío.
   const image = sendImage ?? (send === sendWhatsAppText ? sendWhatsAppImage : (to: string, _link: string, caption: string) => send(to, caption))
   const welcome = await sendWelcome(chat, send, image, testConfig)
@@ -972,7 +1006,13 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
       if (live && !live.contactPhone) await updateBookingDetails(live.id, { contactPhone })
     }
   }
-  const prompt = buildSystemPrompt(config, phone, await buildPromptContext(config, phone, chat.lead))
+  // Lo que el cliente ya dijo (sede, día, franja; también en notas de voz) queda registrado y viaja al prompt.
+  const preferences = preferencesFrom(await getHistory(phone, 60), config.horizonDays)
+  const lead = { ...chat.lead, ...Object.fromEntries(Object.entries(preferences).filter(([, value]) => value)) }
+  if (preferences.location !== chat.lead.location || preferences.day !== (chat.lead.day ?? '') || preferences.part !== (chat.lead.part ?? '')) {
+    await saveLead(phone, preferences)
+  }
+  const prompt = buildSystemPrompt(config, phone, await buildPromptContext(config, phone, lead))
   let reply: string | null = null
   // La reserva salió de la lectura de respaldo: el texto del modelo no la acompaña (pedía otra cosa
   // o la daba por hecha a medias) y se reemplaza por la confirmación del servidor.
@@ -1059,7 +1099,10 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
 
   // FICHA es silenciosa: solo enriquece el panel y el prompt de la próxima vuelta.
   const ficha = markers.find((marker) => marker.kind === 'FICHA')
-  if (ficha) await saveLead(phone, parseFicha(ficha.payload))
+  if (ficha) {
+    const parsed = parseFicha(ficha.payload)
+    await saveLead(phone, { ...parsed, location: preferences.location || parsed.location })
+  }
 
   // La reserva se intenta antes de enviar: el texto que sale ya refleja lo que de verdad pasó.
   const cash = markers.some((marker) => marker.kind === 'EFECTIVO')

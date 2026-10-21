@@ -105,6 +105,10 @@ export type Lead = {
   concern: string
   serviceId: string
   location: Location | ''
+  /** Día que el cliente pidió para su cita (YYYY-MM-DD), de lo que dijo en la conversación (lib/preferences.ts). */
+  day?: string
+  /** Franja que pidió: mañana, tarde o noche. */
+  part?: string
 }
 
 // ─────────────────────────── Agenda ───────────────────────────

@@ -1,4 +1,5 @@
 import { parseAutoSent } from './booking'
+import { dayKey } from './calendar'
 import { isLocation } from './clinic'
 import { attachMediaInfo } from './media'
 import { previewOf } from './media-text'
@@ -36,6 +37,9 @@ function toSummary(phone: string, raw: Record<string, string>): ChatSummary {
       concern: raw.leadConcern ?? '',
       serviceId: raw.leadService ?? '',
       location: isLocation(raw.leadLocation) ? raw.leadLocation : '',
+      // Un día que ya pasó deja de ser una preferencia.
+      day: raw.leadDay && raw.leadDay >= dayKey() ? raw.leadDay : '',
+      part: raw.leadPart ?? '',
     },
     bookingId: raw.bookingId ?? '',
     paymentNotice: raw.paymentNotice ?? '',
@@ -136,6 +140,36 @@ export async function recordInbound(phone: string, message: Message, name?: stri
   await tx.exec()
 }
 
+/**
+ * Un cliente agendado desde el panel (o por otra vía) que nunca le escribió a Gema no tiene chat. Cuando le
+ * sale un recordatorio hay que crearlo: así el mensaje queda registrado y se ve en el panel, y cuando el
+ * cliente conteste ("Confirmo mi cita") Gema sabe que no es un cliente nuevo. Si el chat ya existe, no hace nada.
+ */
+export async function ensureChatForBooking(phone: string, booking: { id: string; name: string }): Promise<void> {
+  const db = redis()
+  const chatKey = keys.chat(phone)
+  if (await db.exists(chatKey)) return
+  const now = Date.now()
+  const tx = db.multi()
+  tx.hset(chatKey, {
+    createdAt: String(now),
+    botActive: '1',
+    stage: 'booked',
+    bookedAt: String(now),
+    bookingId: booking.id,
+    archived: '0',
+    unread: '0',
+    lastSender: 'gem',
+    lastAt: String(now),
+    // Sin mensajes suyos todavía: la ventana de 24 h abre cuando conteste.
+    lastInboundAt: '0',
+    ...(booking.name ? { name: booking.name } : {}),
+  })
+  tx.zadd(keys.box('inbox'), { score: now, member: phone })
+  queueRev(tx, 'chats')
+  await tx.exec()
+}
+
 /** Mensaje saliente (IA o humano). Un envío humano pausa la IA y da por atendida la solicitud de asesor. */
 export async function recordOutbound(phone: string, message: Message) {
   const db = redis()
@@ -205,6 +239,8 @@ export async function saveLead(phone: string, lead: Partial<Lead>) {
   if (lead.concern) patch.leadConcern = lead.concern.slice(0, 300)
   if (lead.serviceId) patch.leadService = lead.serviceId.slice(0, 40)
   if (lead.location && isLocation(lead.location)) patch.leadLocation = lead.location
+  if (lead.day) patch.leadDay = lead.day
+  if (lead.part) patch.leadPart = lead.part
   if (!Object.keys(patch).length) return
   await redis().hset(keys.chat(phone), patch)
   await bumpRev('chats')

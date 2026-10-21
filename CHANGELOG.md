@@ -3,6 +3,23 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.7 · 21 de octubre de 2026
+
+**Gema recuerda lo que el cliente ya dijo**
+- Sede, día y franja (mañana, tarde, noche) salen de lo que dice el cliente, también en notas de voz, y solo cambian si él cambia de parecer. Gema los recibe en el prompt y el panel los muestra en la ficha.
+- Los seguimientos automáticos los respetan: no vuelven a preguntar la sede, ofrecen una hora en el día, la franja y la sede que pidió (si nada encaja, ese seguimiento no sale) y no repiten lo que Gema ya contó (ritual de 5 pasos, limpieza cero invasiva). Caso real: a Luz Mina, que pidió Unicentro y el sábado, le ofrecían "hoy a las 3:00 p.m." y le volvían a preguntar la sede.
+- Cada seguimiento sale máximo una vez cada 20 h (a Luz Mina le llegó el de 45 min tres veces el mismo día).
+
+**Clientes agendados desde el panel**
+- El recordatorio crea el chat del cliente: queda registrado y se ve en la bandeja. Caso real: Lina María respondió "Confirmo mi cita" y, sin chat previo, Gema le mandó toda la bienvenida.
+- La bienvenida solo sale para quien llega por primera vez (no a quien tiene o tuvo una cita, ya recibió un automático o responde un botón de plantilla).
+- "Confirmo mi cita": Gema marca la asistencia y responde una línea fija, sin modelo.
+- Se enlazó el chat de Lina con su cita y se marcó su asistencia.
+
+**Cómo responde Gema**
+- Ante una pregunta, empieza por el beneficio y el producto que lo logra (con lo que tiene), nunca con "no". Caso real: a Meli, que preguntó si incluye extracción, le respondió "no incluye extracción".
+- El conocimiento suma la guía de marca: desde 1990, 72 países, laboratorio propio, +30 premios, la fórmula oficial del Peeling Gel, Milagro Negro y Biox, y sus precios en la tienda oficial.
+
 ## 1.6.3 · 21 de octubre de 2026
 
 - Las plantillas de Meta manuales pasan al panel de control, plegadas bajo "Mensajes prediseñados" como **"Plantillas de Meta · solo emergencias"**. Las plantillas siguen saliendo solas; esto es solo para adelantar una.

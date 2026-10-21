@@ -11,12 +11,14 @@
  *               el párrafo entero (o el mensaje, si no tiene párrafos), para no dejar frases a medias
  */
 import { suggestStarts } from './booking'
+import { getHistory } from './chats'
+import { preferencesFrom } from './preferences'
 import { addDays, clock12, dayKey, dayLabel } from './calendar'
 import { LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
 import { amountOf, depositOf, pesos, serviceById, twoForOneApplies } from './config'
 import { SEPARATOR } from './reply-style'
 import { PRESET_INFO, PRESET_VARIABLES } from './preset-defaults'
-import type { AppConfig, Booking, ChatSummary, Location, PresetId, Service } from './types'
+import type { AppConfig, Booking, ChatSummary, Location, Message, PresetId, Service } from './types'
 
 export { PRESET_INFO, PRESET_VARIABLES }
 
@@ -142,8 +144,9 @@ const RESOLVERS: Record<string, Resolver> = {
   },
   pregunta_cierre: async (config, context) => ((await RESOLVERS.horarios(config, context)) ? 'Cuál te separo?' : 'En qué sede te queda mejor, Unicentro o Chipichape?'),
   hora_sugerida: async (config, { chat, now }) => {
+    // Respeta lo que pidió: su sede, su día y su franja. Si nada encaja, el seguimiento no sale.
     const location: Location = chat?.lead.location || LOCATIONS[0]
-    const [first] = await suggestStarts(config, location, { now, count: 1 })
+    const [first] = await suggestStarts(config, location, { now, count: 1, day: chat?.lead.day || '', part: chat?.lead.part || '' })
     return first ? `${whenText(now, first)} en ${LOCATION_LABEL[location]}` : ''
   },
   vigencia: (config, { chat, now }) => {
@@ -159,7 +162,15 @@ const RESOLVERS: Record<string, Resolver> = {
     return `te recuerdo que el 2x1 de la ${service.label} ${until ? `va hasta el ${dateText(until)}` : 'sigue vigente'}: vienes con alguien y pagan una sola sesión de ${pesos(amountOf(service.price))}`
   },
   promo_corta: (config, { now }) => (livePromos(config, dayKey(now)).length ? 'asegurar tu 2x1: pagas una limpieza y la segunda va de cortesía' : 'separar tu espacio'),
-  pregunta_sede: (_config, { chat }) => (chat?.lead.location ? `te separo un espacio en ${LOCATION_LABEL[chat.lead.location]}?` : 'te reviso disponibilidad en Chipichape o te queda mejor Unicentro?'),
+  cierre_sede: (_config, { chat }) => (chat?.lead.location
+    ? `escríbeme *SÍ* y te guardo uno de los espacios de esta semana en ${LOCATION_LABEL[chat.lead.location]}`
+    : 'escríbeme *SEDE* y te guardo uno de los espacios de esta semana en Unicentro o Chipichape'),
+  pregunta_sede: (_config, { chat }) => {
+    const lead = chat?.lead
+    if (!lead?.location) return 'te reviso disponibilidad en Chipichape o te queda mejor Unicentro?'
+    const when = [lead.day && `el ${dayLabel(lead.day)}`, lead.part && `en la ${lead.part}`].filter(Boolean).join(' ')
+    return `te separo un espacio${when ? ` ${when}` : ''} en ${LOCATION_LABEL[lead.location]}?`
+  },
   cita: (_config, { booking }) => (booking ? `${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}` : ''),
   minutos: (_config, { booking, now }) => (booking?.holdUntil ? String(Math.max(5, Math.round((booking.holdUntil - now) / 60_000))) : ''),
 }
@@ -185,6 +196,14 @@ function tidy(text: string): string {
  */
 export async function renderPreset(config: AppConfig, id: PresetId, context: PresetContext = {}, template = config.messages[id]): Promise<string | null> {
   const full: Required<PresetContext> = { chat: context.chat ?? null, booking: context.booking ?? null, now: context.now ?? Date.now() }
+  // Los seguimientos respetan la conversación: no vuelven a preguntar lo que el cliente ya dijo ni a
+  // contar lo que Gema ya contó (Luz Mina dijo Unicentro y el automático le preguntó la sede otra vez).
+  const history: Message[] = isFollowUp(id) && full.chat?.phone ? await getHistory(full.chat.phone, 40).catch(() => []) : []
+  if (history.length && full.chat) {
+    // Lo que dijo el cliente (sede, día, franja, también en notas de voz) manda sobre la ficha.
+    const said = preferencesFrom(history, config.horizonDays, full.now)
+    full.chat = { ...full.chat, lead: { ...full.chat.lead, location: said.location || full.chat.lead.location, day: said.day, part: said.part } }
+  }
   const names = [...new Set([...template.matchAll(PLACEHOLDER)].map((match) => match[1]))]
   const values: Record<string, string> = {}
   for (const name of names) {
@@ -197,9 +216,25 @@ export async function renderPreset(config: AppConfig, id: PresetId, context: Pre
   const emptyBlock = (text: string) => [...text.matchAll(PLACEHOLDER)].some((match) => BLOCK_VARIABLES.has(match[1]) && !values[match[1]])
   const messages = template.split(SEPARATOR)
     .filter((message) => !emptyBlock(message) || /\n\s*\n/.test(message))
+    .filter((message) => !alreadyTold(message, history))
     .map((message) => tidy(fill(message.split(/\n\s*\n/).filter((paragraph) => !emptyBlock(paragraph)).join('\n\n'))))
     .filter(Boolean)
   return messages.length ? messages.join(SEPARATOR) : null
+}
+
+const isFollowUp = (id: PresetId) => id === 'followUp45' || id === 'followUp3h' || id === 'followUp22h'
+
+/** Temas que un seguimiento cuenta y que no se repiten si Gema ya los contó en la conversación. */
+const TOPICS: Array<{ inMessage: RegExp; told: RegExp }> = [
+  { inMessage: /cero invasiva/i, told: /invasiv/i },
+  { inMessage: /ritual (completo )?de 5 pasos/i, told: /5 pasos|cinco pasos/i },
+]
+
+/** El mensaje repite algo que Gema ya dijo en la conversación (el saludo no tiene tema: nunca se omite). */
+function alreadyTold(message: string, history: Message[]): boolean {
+  if (!history.length) return false
+  const told = history.filter((item) => item.sender !== 'user').map((item) => item.text).join('\n')
+  return TOPICS.some((topic) => topic.inMessage.test(message) && topic.told.test(told))
 }
 
 /** El texto ya completo de un mensaje, en partes de WhatsApp. Sirve para el panel (vista previa). */

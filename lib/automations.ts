@@ -36,7 +36,7 @@
 import { autoReply, markPendingReply } from './autoreply'
 import { bookingsOfPhone, getBookings, liveBookingOf, markBookingAuto, serviceText, suggestStarts, sweepExpiredHolds } from './booking'
 import { clock12, dayKey, fullDayLabel, isQuietHours, NIGHT_REPLY_MAX_AGE_MS, nextHumanWindow } from './calendar'
-import { getHistory, getSummary, listChats, markChatAuto, recordOutbound, requestAgent, updateChat } from './chats'
+import { ensureChatForBooking, getHistory, getSummary, listChats, markChatAuto, recordOutbound, requestAgent, updateChat } from './chats'
 import { ESCALATION_HOURS, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
 import { depositOf, getConfig, pesos, serviceById } from './config'
 import { firstName, renderPreset, whenText } from './presets'
@@ -148,7 +148,10 @@ class Run {
     if (this.dryRun) { this.outcomes.push({ kind, phone, how: 'simulado', detail: summary }); this.sends++; return true }
     try {
       const id = await sendWhatsAppTemplate(phone, { name, language, params, ...(imageUrl ? { headerImageUrl: imageUrl } : {}) })
-      if (chat) await recordOutbound(phone, { id: id ?? crypto.randomUUID(), sender: 'gem', text: summary, at: Date.now(), auto: kind })
+      // Un cliente agendado desde el panel no tiene chat: se crea para que el recordatorio quede registrado
+      // y visible, y para que su respuesta no se tome por la de un cliente nuevo.
+      if (!chat && booking?.phone) await ensureChatForBooking(phone, booking)
+      if (chat || booking?.phone) await recordOutbound(phone, { id: id ?? crypto.randomUUID(), sender: 'gem', text: summary, at: Date.now(), auto: kind })
       if (booking) await markBookingAuto(booking, kind)
       else if (chat) await markChatAuto(chat, kind)
       this.sends++
@@ -312,10 +315,16 @@ async function hoursOffer(run: Run, location: Location | ''): Promise<{ text: st
 }
 
 /** El cliente no contestó desde la última respuesta de Gema y no tiene cita: candidato a seguimiento. */
+/** Tiempo mínimo entre dos envíos del mismo seguimiento al mismo cliente. */
+const FOLLOW_UP_REPEAT_MS = 20 * HOUR
+
 async function waitingProspect(chat: ChatSummary, run: Run, kind: string, fromMs: number, toMs: number): Promise<boolean> {
   const silence = run.now - chat.lastInboundAt
   if (!chat.lastInboundAt || silence < fromMs || silence >= toMs || !isWindowOpen(chat, run.now)) return false
   if (chat.lastSender !== 'gem' || humanHandling(chat) || (chat.autoSent[kind] ?? 0) > chat.lastInboundAt) return false
+  // Cada seguimiento, máximo una vez cada 20 h: en una conversación de ida y vuelta le llegaba el mismo
+  // mensaje después de cada respuesta (a Luz Mina, el de 45 min tres veces el 21 oct).
+  if (run.now - (chat.autoSent[kind] ?? 0) < FOLLOW_UP_REPEAT_MS) return false
   return !(await liveBookingOf(chat.phone))
 }
 

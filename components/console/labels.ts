@@ -1,3 +1,4 @@
+import { dayLabel } from '@/lib/calendar'
 import { LOCATION_LABEL } from '@/lib/clinic'
 import type { AgentKind, ChatSummary, Sender } from '@/lib/types'
 
@@ -13,8 +14,8 @@ export function paymentMethods(chat: Pick<ChatSummary, 'region'>) {
 
 /** Resumen de una línea de lo que Gema averiguó del prospecto. */
 export function leadSummary(chat: Pick<ChatSummary, 'lead'>): string {
-  const { concern, serviceId, location } = chat.lead
-  const parts = [concern, serviceId, location && LOCATION_LABEL[location]].filter(Boolean)
+  const { concern, serviceId, location, day, part } = chat.lead
+  const parts = [concern, serviceId, location && LOCATION_LABEL[location], day && dayLabel(day), part && `en la ${part}`].filter(Boolean)
   return parts.join(' · ')
 }
 
