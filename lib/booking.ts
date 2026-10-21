@@ -7,6 +7,7 @@
 import { addDays, dayKey, freeStarts, longestService, slotsOf, timestampOf, toMinutes, type Occupancy } from './calendar'
 import { amountOf, bookingPrice, depositOf, pesos, serviceById } from './config'
 import { keys, redis, toHash } from './redis'
+import { bumpRev, queueRev } from './revision'
 import { HOLD_STATUSES, LIVE_STATUSES, type AppConfig, type Booking, type BookingStatus, type Location } from './types'
 
 const PHONE_HISTORY = 50
@@ -79,6 +80,8 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     concern: raw.concern ?? '',
     notes: raw.notes ?? '',
     source: raw.source === 'operator' ? 'operator' : 'bot',
+    // Citas de antes de que existiera el campo: las de Gema llevan su nombre; las manuales, vacío.
+    advisor: raw.advisor ?? (raw.source === 'operator' ? '' : 'Gema'),
     createdAt: Number(raw.createdAt ?? 0),
     holdUntil: Number(raw.holdUntil ?? 0),
     paidAt: Number(raw.paidAt ?? 0),
@@ -176,6 +179,7 @@ export async function sweepExpiredHolds(now = Date.now(), { force = false } = {}
   const alive = new Set(bookings.map((booking) => booking.id))
   const orphans = expired.filter((id) => !alive.has(id))
   if (orphans.length) await db.zrem(keys.holds, ...orphans)
+  if (released) await bumpRev('agenda')
   return released
 }
 
@@ -214,9 +218,21 @@ export async function isClosed(day: string): Promise<string | null> {
   return (await redis().get<string>(keys.closed(day))) ?? null
 }
 
+/** Días cerrados de una lista (vista mensual: 42 días en una sola petición a Upstash). */
+export async function closedDays(days: string[]): Promise<Record<string, string>> {
+  if (!days.length) return {}
+  const pipe = redis().pipeline()
+  days.forEach((day) => pipe.get(keys.closed(day)))
+  const rows = await pipe.exec<Array<string | null>>()
+  const out: Record<string, string> = {}
+  days.forEach((day, index) => { if (rows[index]) out[day] = String(rows[index]) })
+  return out
+}
+
 export async function setClosed(day: string, reason: string | null) {
   if (reason === null) await redis().del(keys.closed(day))
   else await redis().set(keys.closed(day), reason || 'Cerrado')
+  await bumpRev('agenda')
 }
 
 export type NewBooking = {
@@ -240,6 +256,8 @@ export type NewBooking = {
   companion?: string
   /** Paga todo en la sede, sin anticipo: la cita queda confirmada (no apartada) y sin link. */
   cash?: boolean
+  /** Quién la agenda: "Gema" o el nombre del asesor que la creó en el panel. */
+  advisor?: string
 }
 
 export type BookingResult =
@@ -302,6 +320,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     concern: input.concern ?? '',
     notes: input.notes ?? '',
     source: input.source ?? 'bot',
+    advisor: (input.advisor ?? (input.source === 'operator' ? '' : 'Gema')).trim().slice(0, 60),
     createdAt: now,
     holdUntil: HOLD_STATUSES.includes(status) ? now + config.holdMinutes * 60_000 : 0,
     paidAt: 0,
@@ -323,6 +342,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     tx.lpush(keys.byPhone(booking.phone), id)
     tx.ltrim(keys.byPhone(booking.phone), 0, PHONE_HISTORY - 1)
   }
+  queueRev(tx, 'agenda')
   await tx.exec()
 
   return { ok: true, booking }
@@ -363,6 +383,7 @@ export async function moveBooking(id: string, status: BookingStatus): Promise<Bo
   if (patch.holdUntil === '0') tx.zrem(keys.holds, id)
   // Una cita cancelada sale de la grilla del día, pero sigue existiendo para auditoría.
   if (status === 'cancelled') tx.zrem(keys.day(booking.day), id)
+  queueRev(tx, 'agenda')
   await tx.exec()
 
   return {
@@ -376,6 +397,13 @@ export async function moveBooking(id: string, status: BookingStatus): Promise<Bo
 
 export async function annotateBooking(id: string, notes: string): Promise<void> {
   await redis().hset(keys.booking(id), { notes: notes.slice(0, 1000) })
+  await bumpRev('agenda')
+}
+
+/** Cambia el asesor responsable de la cita (el panel lo permite para reasignar sesiones). */
+export async function setBookingAdvisor(id: string, advisor: string): Promise<void> {
+  await redis().hset(keys.booking(id), { advisor: advisor.trim().slice(0, 60) })
+  await bumpRev('agenda')
 }
 
 /**
@@ -422,6 +450,7 @@ export async function rescheduleBooking(config: AppConfig, id: string, day: stri
   tx.zrem(keys.day(booking.day), id)
   tx.zadd(keys.day(day), { score: startMin, member: id })
   tx.zadd(keys.byStatus(booking.status), { score: startTs, member: id })
+  queueRev(tx, 'agenda')
   await tx.exec()
   return { ok: true, booking: moved }
 }
@@ -429,6 +458,7 @@ export async function rescheduleBooking(config: AppConfig, id: string, day: stri
 /** El cliente confirmó que asiste (botón de la plantilla de recordatorio o mensaje). */
 export async function confirmAttendance(id: string): Promise<void> {
   await redis().hset(keys.booking(id), { attendanceConfirmedAt: String(Date.now()) })
+  await bumpRev('agenda')
 }
 
 /** Deja constancia de que una automatización ya se envió por esta cita (no se repite). */
@@ -472,6 +502,7 @@ export async function liveBookingOf(phone: string): Promise<Booking | null> {
 
 export async function setPaymentLink(id: string, url: string): Promise<void> {
   await redis().hset(keys.booking(id), { paymentLink: url })
+  await bumpRev('agenda')
 }
 
 /**
@@ -484,6 +515,7 @@ export async function confirmPaidByBold(id: string, payment: { method: string; p
   const moved = await moveBooking(id, 'confirmed')
   if (!moved || 'error' in moved) return null
   await redis().hset(keys.booking(id), { paymentMethod: payment.method, paymentRef: payment.paymentRef })
+  await bumpRev('agenda')
   return { ...moved, paymentMethod: payment.method, paymentRef: payment.paymentRef }
 }
 
@@ -496,5 +528,6 @@ export async function markDepositClaimed(id: string, config: AppConfig): Promise
   await redis().multi()
     .hset(keys.booking(id), { paidAt: String(Date.now()), holdUntil: String(holdUntil) })
     .zadd(keys.holds, { score: holdUntil, member: id })
+    .incr(keys.rev('agenda'))
     .exec()
 }

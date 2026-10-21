@@ -61,20 +61,22 @@
   color-scheme: light;
 }
 
-/* Modo oscuro: woodrush profundo. Aqui el tan oficial si contrasta, asi que es el primario. */
+/* Modo oscuro: verde bosque casi negro (v1.4). El olivo anterior (#14170b) cansaba la vista;
+   este es mas profundo y frio, con superficies que suben en pasos cortos para no deslumbrar.
+   Aqui el tan oficial si contrasta, asi que es el primario. */
 :root[data-theme='dark'] {
-  --bg: #14170b;
-  --surface: #1d2111;
-  --surface-2: #252a16;
-  --surface-3: #30361d;
-  --line: #3a4124;
-  --line-soft: #262b17;
-  --text: #f3f4ea;
-  --muted: #b5b8a4;
-  --faint: #8a8f78;
+  --bg: #080c0a;
+  --surface: #0d1310;
+  --surface-2: #121a15;
+  --surface-3: #19241d;
+  --line: #233128;
+  --line-soft: #141d17;
+  --text: #edf1ec;
+  --muted: #a9b3ab;
+  --faint: #7c887f;
   --primary: #cea679;     /* tan oficial */
   --primary-hover: #dcbb95;
-  --primary-ink: #1a1d0e;
+  --primary-ink: #0b100d;
   --primary-bright: #cea679;
   --primary-soft: rgba(206, 166, 121, .12);
   --secondary: #a3b85c;
@@ -86,7 +88,7 @@
   --danger-soft: rgba(232, 118, 107, .12);
 
   --dot-glow: 0 0 8px rgba(206, 166, 121, .5);
-  --field-bg: rgba(20, 23, 11, .85);
+  --field-bg: rgba(8, 12, 10, .85);
   --backdrop: rgba(0, 0, 0, .7);
   --shadow-md: 0 16px 40px rgba(0, 0, 0, .45);
   --shadow-lg: 0 30px 90px rgba(0, 0, 0, .55);
@@ -123,6 +125,34 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   opacity: .045;
   -webkit-mask: var(--pattern-crystal) 0 0 / 56px 56px repeat;
   mask: var(--pattern-crystal) 0 0 / 56px 56px repeat;
+}
+
+/* Variante de fondo para areas de trabajo (hilo del chat, agenda): mucho mas tenue, para dar textura
+   sin competir con el contenido. El contenedor debe ser position: relative y el contenido ir encima. */
+.gem-pattern-soft {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: var(--text);
+  opacity: .028;
+  -webkit-mask: var(--pattern-crystal) 0 0 / 56px 56px repeat;
+  mask: var(--pattern-crystal) 0 0 / 56px 56px repeat;
+}
+:root[data-theme='dark'] .gem-pattern-soft { opacity: .04; }
+
+/* Etiqueta de version: identifica que actualizacion esta corriendo (lib/version.ts). */
+.version-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  color: var(--faint);
+  font: 500 10px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+  white-space: nowrap;
 }
 
 /* Destello diagonal que recorre las lineas del patron cada 16 s. Va junto a .gem-pattern, en el mismo contenedor. */

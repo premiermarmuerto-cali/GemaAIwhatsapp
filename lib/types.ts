@@ -69,6 +69,14 @@ export type ChatSummary = {
   paymentNoticeAt: number
   /** Tocó "Ahora no" en una plantilla de marketing: no se le vuelven a enviar. */
   noMarketing: boolean
+  /**
+   * Dijo "no me interesa", "ahora no" o similar: no recibe NINGÚN mensaje automático (seguimientos,
+   * recordatorios ni plantillas) hasta que agende o el operador lo reactive. Evita reportes de spam.
+   */
+  optedOut: boolean
+  /** Cuándo lo dijo (0 si nunca) y con qué palabras, para mostrarlo en el panel. */
+  optedOutAt: number
+  optedOutText: string
   /** Anuncio de origen (atribución): id del anuncio en Meta y clic. */
   adSourceId: string
   adHeadline: string
@@ -87,7 +95,7 @@ export type ChatDetail = ChatSummary & { messages: Message[] }
 
 export type ChatLists = Record<Box, ChatSummary[]>
 
-export type ChatPatch = { botActive?: boolean; stage?: Stage; archived?: boolean; needsAgent?: false }
+export type ChatPatch = { botActive?: boolean; stage?: Stage; archived?: boolean; needsAgent?: false; optedOut?: false }
 
 /** Lo que Gema extrae del prospecto mientras conversa; se muestra en el panel y viaja a la cita. */
 export type Lead = {
@@ -158,6 +166,8 @@ export type Booking = {
   concern: string
   notes: string
   source: 'bot' | 'operator'
+  /** Quién generó la cita y a quién le corresponde: "Gema" si la agendó ella, o el nombre del asesor. */
+  advisor: string
   createdAt: number
   /** Epoch ms hasta el que el horario sigue apartado sin pago. 0 si ya no aplica. */
   holdUntil: number
@@ -184,7 +194,33 @@ export type DayAvailability = { day: string; location: Location; windows: FreeWi
 
 // ─────────────────────────── Configuración ───────────────────────────
 
+/**
+ * Mensajes prediseñados que envía el servidor tal cual (no la IA), editables en el panel. Admiten
+ * variables entre llaves ({nombre}, {promos}, {horarios}…, ver lib/presets.ts) y ||| para partir en
+ * varios mensajes de WhatsApp.
+ */
+export type PresetMessages = {
+  /** Bienvenida 1: pie de la imagen del 2x1 (máx. 1024 caracteres ya completo). */
+  welcomeCaption: string
+  /** Bienvenida 2: el valor (ritual de 5 pasos, cero invasiva, qué resuelve cada limpieza). */
+  welcomeValue: string
+  /** Bienvenida 3: cómo se separa, horarios libres y una sola pregunta. */
+  welcomeClose: string
+  /** ~30 min antes de que se libere un horario apartado sin pago. */
+  followUpPayment: string
+  /** ~45 min sin respuesta, sin cita. */
+  followUp45: string
+  /** ~3 h sin respuesta, sin cita. */
+  followUp3h: string
+  /** ~22 h sin respuesta: último mensaje antes de que se cierre la ventana de 24 h. */
+  followUp22h: string
+}
+
+export type PresetId = keyof PresetMessages
+
 export type AppConfig = {
+  /** Versión de la configuración guardada: lib/config.ts aplica los cambios de cada versión al leerla. */
+  revision: number
   systemPrompt: string
   services: Service[]
   /**
@@ -213,6 +249,13 @@ export type AppConfig = {
    * insiste, pasa a Johanna.
    */
   cashBooking: boolean
+  /**
+   * Cortesía para quien separa con anticipo (p. ej. "una exfoliación de manos con sal del Mar
+   * Muerto"). Gema la usa para cerrar y queda en las notas de la cita. Vacío = sin cortesía.
+   */
+  depositPerk: string
+  /** Mensajes prediseñados (bienvenida y seguimientos). */
+  messages: PresetMessages
   /** Granularidad de la grilla en minutos. */
   slotMinutes: number
   /** Antelación mínima para agendar, en horas. */
@@ -235,9 +278,11 @@ export type AppConfig = {
   twoForOne: Record<string, string>
 }
 
-/** Lo que el panel necesita para pintar una semana completa. */
+/** Lo que el panel necesita para pintar una semana completa (o un mes: 6 semanas de lunes a domingo). */
 export type AgendaWeek = {
   days: string[]
+  /** Solo en la vista mensual: el mes que se pinta, YYYY-MM (los días de los bordes son de otros meses). */
+  month?: string
   bookings: Booking[]
   closed: Record<string, string>
   hours: string[][]

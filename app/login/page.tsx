@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { APP_VERSION } from '@/lib/version'
 import { LoginForm } from './LoginForm'
 import styles from './login.module.css'
 
@@ -15,7 +16,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     <main className={styles.screen}>
       <div className={styles.pattern} aria-hidden="true"><div className="gem-pattern" /><div className="gem-shine" /></div>
       <div className={styles.topbar}>
-        <span className="eyebrow">Panel interno</span>
+        <span className={styles.topbarStart}>
+          <span className="eyebrow">Panel interno</span>
+          <span className="version-tag" title="Versión del panel">v{APP_VERSION}</span>
+        </span>
         <div className={styles.topbarEnd}>
           <span className="eyebrow">Cali</span>
           <ThemeToggle />

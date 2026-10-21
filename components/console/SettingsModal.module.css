@@ -11,7 +11,7 @@
 
 .modal {
   display: flex;
-  width: min(640px, 100%);
+  width: min(760px, 100%);
   max-height: calc(100dvh - 32px);
   flex-direction: column;
   border: 1px solid var(--line);
@@ -71,6 +71,36 @@
   font: 11px/1.6 ui-monospace, 'SFMono-Regular', Consolas, monospace;
   white-space: pre-wrap;
 }
+
+/* Mensajes prediseñados: acordeón con editor, vista previa y restaurar. */
+.preset { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.preset[data-open] { border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); }
+.presetHead { display: grid; gap: 3px; width: 100%; padding: 10px 12px; border: 0; background: transparent; text-align: left; }
+.presetHead b { font-size: 13px; font-weight: 600; }
+.presetHead span { color: var(--faint); font-size: 11px; line-height: 1.4; }
+.presetBody { display: grid; gap: 8px; padding: 0 12px 12px; }
+.presetBody textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg);
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.presetBody textarea:focus { border-color: var(--primary); }
+.presetActions { display: flex; flex-wrap: wrap; gap: 6px; }
+.presetActions :global(.btn) { min-height: 32px; font-size: 11px; }
+.presetPreview { display: grid; gap: 6px; padding: 10px; border-left: 2px solid var(--primary); background: var(--primary-soft); }
+.presetPreview p { margin: 0; padding: 8px 10px; background: var(--surface); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.variables summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
+.variables dl { display: grid; gap: 4px; margin: 8px 0 0; }
+.variables dl > div { display: grid; grid-template-columns: minmax(130px, auto) 1fr; gap: 10px; font-size: 12px; }
+.variables dt { color: var(--primary); }
+.variables dd { margin: 0; color: var(--muted); }
+.hint code, .variables code { font: 11px ui-monospace, 'SFMono-Regular', Consolas, monospace; }
 
 .footer { display: flex; align-items: center; gap: 8px; padding: 14px 20px 18px 22px; border-top: 1px solid var(--line-soft); }
 .error { flex: 1; margin: 0; color: var(--danger); font-size: 12px; }

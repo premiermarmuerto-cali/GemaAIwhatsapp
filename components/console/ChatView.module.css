@@ -26,8 +26,10 @@
 }
 .avatar[data-booked] { background: var(--primary); color: var(--primary-ink); }
 .personCopy { min-width: 0; }
-.personCopy h1 { margin: 0 0 6px; font: 600 16px var(--font-sans); letter-spacing: -.02em; white-space: nowrap; }
-.personMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.personCopy h1 { margin: 0 0 6px; overflow: hidden; font: 600 16px var(--font-sans); letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+.personMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; }
+/* Textos largos (número oculto, ficha de Gema) en una línea con puntos suspensivos, sin empujar los botones. */
+.personMeta > span:not(:global(.badge)) { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .actions { display: flex; align-items: center; gap: 8px; flex: none; }
 
@@ -83,8 +85,11 @@
 .botSwitch[aria-checked='true'] .track { background: var(--primary); }
 .botSwitch[aria-checked='true'] .track span { transform: translateX(12px); background: var(--primary-ink); }
 
-/* Hilo */
+/* Hilo: el patrón va detrás, fijo, y los mensajes se desplazan por encima. */
+.threadWrap { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
 .thread {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -192,6 +197,10 @@
 
 @media (max-width: 1399px) {
   .botCopy small { display: none; }
+}
+/* Entre 900 y 1300 px el texto de "Marcar agendado" empuja el nombre: queda solo el icono. */
+@media (min-width: 900px) and (max-width: 1299px) {
+  .actionLabel { display: none; }
 }
 
 @media (max-width: 899px) {

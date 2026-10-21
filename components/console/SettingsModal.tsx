@@ -6,12 +6,13 @@ import type { ShowToast } from '@/hooks/useToast'
 import { api } from '@/lib/api-client'
 import { LOCATION_LABEL, LOCATIONS, WEEKDAY_LABEL } from '@/lib/clinic'
 import type { AppConfig, Location, Region, Service } from '@/lib/types'
+import { PresetEditor } from './PresetEditor'
 import styles from './SettingsModal.module.css'
 
 /** Campos numéricos con su rango y su explicación: evita repetir el mismo bloque cinco veces. */
 const NUMBERS: Array<{ key: 'depositPercent' | 'depositFixed' | 'slotMinutes' | 'leadTimeHours' | 'horizonDays' | 'holdMinutes'; label: string; min: number; max: number; hint: string }> = [
   { key: 'depositPercent', label: 'Anticipo %', min: 1, max: 100, hint: 'Porcentaje que se cobra para reservar.' },
-  { key: 'depositFixed', label: 'Anticipo fijo ($)', min: 0, max: 5000000, hint: 'Pesos por cita, igual en todos los servicios (ej. 50000). En 0 se usa el porcentaje.' },
+  { key: 'depositFixed', label: 'Anticipo fijo ($)', min: 0, max: 5000000, hint: 'Pesos por cita, igual en todos los servicios (hoy 25000). En 0 se usa el porcentaje.' },
   { key: 'slotMinutes', label: 'Grilla (min)', min: 5, max: 60, hint: 'Cada duración de servicio debe ser múltiplo de este número.' },
   { key: 'leadTimeHours', label: 'Antelación (h)', min: 0, max: 72, hint: 'Lo mínimo que debe faltar para poder agendar.' },
   { key: 'horizonDays', label: 'Horizonte (días)', min: 1, max: 90, hint: 'Hasta cuándo se puede agendar hacia adelante.' },
@@ -90,10 +91,12 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
         {config && (
           <div className={styles.body}>
             <label className={styles.field}>
-              <span>Voz de Gema</span>
-              <textarea rows={6} maxLength={6000} required {...text('systemPrompt')} />
-              <small>Personalidad y objetivo. El catálogo, las sedes, la disponibilidad real y las reglas de cobro se añaden solas en cada mensaje.</small>
+              <span>Voz y método de venta de Gema</span>
+              <textarea rows={10} maxLength={12000} required {...text('systemPrompt')} />
+              <small>Personalidad, cómo diagnostica, cómo maneja objeciones y cómo cierra. El catálogo, las sedes, la disponibilidad real y las reglas de cobro se añaden solas en cada mensaje.</small>
             </label>
+
+            <PresetEditor messages={config.messages} onChange={(messages) => patch({ messages })} toast={toast} />
 
             <fieldset className={styles.group}>
               <legend>Catálogo</legend>
@@ -184,9 +187,14 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
                 <textarea rows={3} maxLength={1500} placeholder="Binance Pay ID, enlace de PayPal, datos de Wise o cuenta ACH de DolarApp" {...text('intlInstructions')} />
                 <small>Por defecto los clientes de fuera pagan con el link de Bold (tarjeta de crédito, en pesos). Esto solo se envía si piden otro medio.</small>
               </label>
-              <label className={styles.row} style={{ alignItems: 'center' }} title="Si está activo, Gema agenda sin anticipo a quien quiere pagar en efectivo y le envía recordatorios un día antes y unas 2 horas antes. Si no, le explica el anticipo y, si insiste, pasa el chat a una asesora.">
+              <label className={styles.row} style={{ alignItems: 'center' }} title="Si está activo, Gema agenda sin anticipo a quien PIDE pagar en efectivo y le envía recordatorios un día antes y unas 2 horas antes. Nunca lo ofrece ella. Si no, le explica el anticipo y, si insiste, pasa el chat a una asesora.">
                 <input type="checkbox" checked={config.cashBooking} onChange={(event) => patch({ cashBooking: event.target.checked })} />
-                <span>Agendar sin anticipo a quien paga en efectivo (recordatorio un día antes y 2 h antes)</span>
+                <span>Agendar sin anticipo a quien pida pagar en efectivo (recordatorio un día antes y 2 h antes)</span>
+              </label>
+              <label className={styles.field}>
+                <span>Cortesía por agendar con anticipo</span>
+                <input maxLength={200} placeholder="una exfoliación de manos con la sal del Mar Muerto" value={config.depositPerk} onChange={(event) => patch({ depositPerk: event.target.value })} />
+                <small>Gema la ofrece para cerrar ("si agendas hoy, de cortesía te regalamos…") y queda en las notas de la cita. No aplica a quien paga en efectivo. Vacío = sin cortesía.</small>
               </label>
               <div className={styles.row}>
                 {NUMBERS.map((item) => (
@@ -235,8 +243,9 @@ export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: 
             </fieldset>
 
             <label className={styles.field}>
-              <span>Marca Premier: por qué es premium</span>
-              <textarea rows={6} maxLength={4000} placeholder="Qué hace premium a la marca y qué productos se usan en cada limpieza…" {...text('brandInfo')} />
+              <span>Conocimiento de Premier: protocolos, limpiezas y productos</span>
+              <textarea rows={10} maxLength={16000} placeholder="El ritual de 5 pasos, qué resuelve cada limpieza, los productos y su composición…" {...text('brandInfo')} />
+              <small>Lo que Gema sabe para asesorar y convencer: el ritual de 5 pasos, la limpieza cero invasiva, las líneas azul y roja, cada mascarilla y producto.</small>
             </label>
 
             <label className={styles.field}>

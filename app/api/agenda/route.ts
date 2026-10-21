@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { bookingsOfDays, createBooking, isClosed } from '@/lib/booking'
-import { dayKey, isClock, isDayKey, weekOf } from '@/lib/calendar'
+import { bookingsOfDays, closedDays, createBooking } from '@/lib/booking'
+import { dayKey, isClock, isDayKey, monthGrid, weekOf } from '@/lib/calendar'
 import { isLocation } from '@/lib/clinic'
 import { getConfig } from '@/lib/config'
 import { HttpError, jsonBody, route } from '@/lib/http'
@@ -9,24 +9,21 @@ import type { AgendaWeek } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
-/** Semana de agenda: citas, bloqueos, días cerrados y la configuración que el panel necesita para pintar. */
+/**
+ * Semana de agenda (`?week=YYYY-MM-DD`) o mes (`?month=YYYY-MM-DD`, seis semanas de lunes a domingo):
+ * citas, bloqueos, días cerrados y la configuración que el panel necesita para pintar.
+ */
 export const GET = route(async (request: NextRequest) => {
-  const asked = request.nextUrl.searchParams.get('week')
-  const days = weekOf(isDayKey(asked) ? asked : dayKey())
+  const params = request.nextUrl.searchParams
+  const month = params.get('month')
+  const asked = params.get('week')
+  const days = isDayKey(month) ? monthGrid(month) : weekOf(isDayKey(asked) ? asked : dayKey())
   const config = await getConfig()
-  const [bookings, ...closedFlags] = await Promise.all([
-    bookingsOfDays(days),
-    ...days.map((day) => isClosed(day)),
-  ])
-
-  const closed: Record<string, string> = {}
-  days.forEach((day, index) => {
-    const reason = closedFlags[index]
-    if (reason) closed[day] = reason
-  })
+  const [bookings, closed] = await Promise.all([bookingsOfDays(days), closedDays(days)])
 
   const payload: AgendaWeek = {
     days,
+    ...(isDayKey(month) ? { month: month.slice(0, 7) } : {}),
     bookings: bookings.filter((booking) => booking.status !== 'cancelled').sort((a, b) => a.startTs - b.startTs),
     closed,
     hours: config.hours,
@@ -53,6 +50,7 @@ export const POST = route(async (request: Request) => {
 
   const phone = normalizePhone(String(body.phone ?? ''))
   if (kind === 'appointment' && !isValidPhone(phone)) throw new HttpError(400, 'Teléfono inválido.')
+  if (kind === 'appointment' && !String(body.advisor ?? '').trim()) throw new HttpError(400, 'Escribe el asesor que agenda la cita.')
 
   const result = await createBooking(config, {
     phone: kind === 'block' ? '' : phone,
@@ -64,6 +62,8 @@ export const POST = route(async (request: Request) => {
     notes: String(body.notes ?? '').slice(0, 1000),
     concern: String(body.concern ?? '').slice(0, 300),
     source: 'operator',
+    // Quién la agenda y a quién le corresponde la sesión (los operadores también agendan aquí).
+    advisor: kind === 'block' ? '' : String(body.advisor ?? '').trim().slice(0, 60),
     kind,
     // Lo que agenda el operador no espera anticipo: ya habló con el cliente.
     status: 'confirmed',

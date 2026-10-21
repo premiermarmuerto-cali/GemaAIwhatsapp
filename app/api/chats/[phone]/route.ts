@@ -28,6 +28,8 @@ export const PATCH = route(async (request: Request, context: PhoneParams) => {
     patch.stage = body.stage as Stage
   }
   if (body.needsAgent === false) patch.needsAgent = false
+  // Reactivar los mensajes automáticos de quien había dicho "no me interesa".
+  if (body.optedOut === false) patch.optedOut = false
 
   const updated = await updateChat(phone, patch)
   if (!updated) throw new HttpError(404, 'Conversación no encontrada.')

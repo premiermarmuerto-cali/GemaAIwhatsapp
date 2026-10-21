@@ -20,10 +20,14 @@ type Props = {
   onSend: (text: string) => Promise<boolean>
   onResolveAgent: () => void
   onOpenPanel: () => void
+  onResendWelcome: () => void
   toast: ShowToast
 }
 
-export function ChatView({ chat, messages, onBack, onToggleBot, onStageChange, onArchiveChange, onDelete, onSend, onResolveAgent, onOpenPanel }: Props) {
+/** Mismo texto con el que lib/autoreply.ts marca una bienvenida que WhatsApp rechazó. */
+const WELCOME_FAILED_PREFIX = 'WhatsApp rechazó la bienvenida'
+
+export function ChatView({ chat, messages, onBack, onToggleBot, onStageChange, onArchiveChange, onDelete, onSend, onResolveAgent, onOpenPanel, onResendWelcome }: Props) {
   const payment = chat.agentKind === 'payment'
 
   return (
@@ -45,7 +49,12 @@ export function ChatView({ chat, messages, onBack, onToggleBot, onStageChange, o
                 <button className="btn btn-secondary" onClick={() => onStageChange('booked')} title="Marca el chat como agendado y quita la alerta">Marcar agendado</button>
               </>
             ) : (
-              <button className="btn btn-secondary" onClick={onToggleBot} title="Gema retoma la conversación y la alerta desaparece">Devolver a Gema</button>
+              <>
+                {chat.agentReason.startsWith(WELCOME_FAILED_PREFIX) && (
+                  <button className="btn btn-primary" onClick={onResendWelcome} title="Vuelve a enviar los tres mensajes de bienvenida con la imagen del 2x1">Reenviar bienvenida</button>
+                )}
+                <button className="btn btn-secondary" onClick={onToggleBot} title="Gema retoma la conversación y la alerta desaparece">Devolver a Gema</button>
+              </>
             )}
             <button className="btn btn-ghost" onClick={onResolveAgent} title="Quita la marca sin responder. Gema sigue en pausa hasta que se la devuelvas.">Quitar alerta</button>
           </div>

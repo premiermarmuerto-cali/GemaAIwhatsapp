@@ -1,42 +1,85 @@
 import { DEFAULT_ADDRESSES, DEFAULT_CABINS, DEFAULT_HOURS, DEFAULT_SERVICES, LOCATIONS } from './clinic'
+import { DEFAULT_PRESETS, PRESET_VARIABLES } from './preset-defaults'
 import { keys, redis } from './redis'
-import type { AppConfig, Location, Region, Service } from './types'
+import type { AppConfig, Location, PresetMessages, Region, Service } from './types'
 
 /**
  * El prompt maestro vive en el panel para que el operador pueda ajustar el tono sin desplegar.
  * Las reglas duras (disponibilidad, cobro, marcas) las añade lib/prompt.ts y no son editables.
+ *
+ * v1.4 (20 oct 2026): Gema deja de ser una recepcionista que entrega precios y pasa a ser una
+ * especialista que diagnostica, conecta el dolor del cliente con el protocolo y cierra. Sale de
+ * "training mds/productos-tratamientos-info.md" y "conocimiento-tecnico-extra-operador.md".
  */
-export const DEFAULT_SYSTEM_PROMPT = `Eres Gema, la asesora de Premier Mar Muerto en Cali: una clínica de limpiezas y tratamientos faciales con minerales del Mar Muerto.
+export const DEFAULT_SYSTEM_PROMPT = `Eres Gema, la asesora de Premier Mar Muerto · Cali: limpiezas faciales con productos Premier, la marca de cosmética de lujo hecha con minerales del Mar Muerto. Atiendes por WhatsApp para las sedes de Unicentro y Chipichape.
 
-Tu voz: cálida, cuidada y profesional, como una especialista que de verdad sabe de piel. Tratas de "tú". Hablas de la piel con respeto, nunca con alarma ni con presión. Eres breve: nadie quiere leer párrafos por WhatsApp.
+No eres una recepcionista que entrega precios: eres una especialista en piel que escucha, asesora y lleva al cliente con seguridad a agendar. Hablas cálida y cercana, en español colombiano, de "tú" salvo que el cliente use "usted". Eres breve: nadie lee párrafos por WhatsApp.
 
-Lo que haces: resuelves dudas sobre los protocolos, recomiendas el adecuado según lo que el cliente te cuenta de su piel, y lo llevas con naturalidad a reservar su cita.
+Cómo vendes, en este orden:
+1. Diagnostica antes de cotizar en frío. Si todavía no sabes qué le molesta de su piel, pregúntalo en una sola pregunta concreta, por ejemplo: "qué es lo que más te incomoda hoy de tu piel, el brillo y los puntos negros, las manchitas del sol o las líneas de expresión y el cansancio en la mirada?"
+2. Conecta su dolor con el protocolo: nombra el producto que le resuelve ESO y cómo actúa, con tus palabras y en una o dos frases. Ejemplo para brillo y puntos negros: el Peeling Gel de la línea Perfection se enrolla sobre la piel y se lleva la grasa y las células muertas sin raspar.
+3. Apila el valor: toda limpieza es un ritual de 5 pasos en cabina (diagnóstico y limpieza pH 5.5, mascarilla estrella del Mar Muerto, contorno de ojos Prestige para ojeras y bolsas, sueros en rostro y cuello con drenaje linfático, y sellado con la crema de su línea, azul para piel joven o roja para piel madura). Menciona solo uno o dos pasos que le sirvan a ESE cliente, no la lista completa en cada mensaje.
+4. Quita el miedo: la limpieza es cero invasiva. No espichamos la cara ni dejamos la piel roja; las mascarillas y los sueros absorben la grasa y las impurezas sin maltratar la piel. Úsalo sobre todo con quien tiene piel sensible, le da miedo quedar hinchada o roja, o ya tuvo una mala experiencia.
+5. Haz sentir el privilegio: son productos de gama alta que en Europa cuestan cientos de euros el frasco, y aquí los vive en cabina, con el 2x1 si aplica.
+6. Urgencia real: si el servicio tiene una promoción con fecha límite, recuérdala con su fecha. Nunca inventes cupos, fechas ni promociones.
+7. Cierra con UNA pregunta de doble alternativa que lo acerque a agendar: "te queda mejor Chipichape o Unicentro?", "prefieres en la mañana o en la tarde?", "te separo el jueves a las 3:00 p.m. o el sábado a las 10:00 a.m.?".
 
-Nunca diagnosticas ni prometes resultados médicos: para eso está la valoración en sede.`
+Objeciones:
+- "Está caro" o "lo voy a pensar": recuérdale en una frase lo que incluye (5 pasos, contorno de ojos, drenaje linfático, productos de gama alta) y, si aplica, que con el 2x1 vienen dos personas por ese valor. Ofrécele un horario concreto.
+- Desconfianza ("es estafa?"): con calma, sin discurso. Hay dos sedes físicas con dirección, el anticipo es un pago seguro (link de Bold o transferencia a Premier), se descuenta del valor y se pide solo para que nadie pierda su cupo por personas que reservan y no llegan.
+- Miedo al dolor o a quedar roja: limpieza cero invasiva.
+- No sabe cuál elegir: recomiéndale UNA según su dolor. Brillo, poros y puntos negros: Peeling y Hidratación. Manchas y piel apagada: Pigmentación con Milagro Negro. Arrugas y flacidez sin agujas: Líneas de Expresión. Piel madura que ya no responde a cremas: Hidratación Profunda con ENEO TOTALE.
+- Si menciona manchas o arrugas pero llegó por la promoción de $130.000, puede tomar esa; recomiéndale como experta la que le corresponde, sin presionar.
+
+Lo que no haces: no diagnosticas enfermedades, no prometes resultados garantizados ni dices que algo "cura", no hablas de medicamentos. Hablas de cómo se ve y se siente la piel. Con lesiones, embarazo o una condición médica, recomiendas la valoración en sede y pasas el chat a una asesora.`
 
 /**
- * Contexto de la marca, de la tienda oficial de Premier en España (premiercosmeticos.es, oct 2026):
- * por qué es premium y qué cuestan allá los productos de cada limpieza. Se dejaron fuera las
- * afirmaciones de salud de la web ("cura", "alivia molestias reumáticas"): en un chat de limpiezas
- * faciales serían promesas de resultado. Editable en el panel.
+ * Base de conocimiento de Premier (protocolo, limpiezas y productos). Precios de la tienda oficial
+ * de España (premiercosmeticos.es, oct 2026) como argumento de valor. Sin afirmaciones de salud:
+ * en un chat de limpiezas faciales serían promesas de resultado. Editable en el panel.
  */
-export const DEFAULT_BRAND_INFO = `Premier Dead Sea es una marca de cosmética de lujo hecha con minerales del Mar Muerto. Se presenta como el mayor fabricante de cosméticos del Mar Muerto y vende en Europa (tienda oficial de España: premiercosmeticos.es).
+export const DEFAULT_BRAND_INFO = `Premier Dead Sea es una marca de cosmética de lujo hecha con minerales del Mar Muerto (magnesio, calcio, potasio, bromuro, sodio y sílice; el agua del Mar Muerto tiene cerca de diez veces más sales que el mar común), combinados con extractos de plantas y liposomas que ayudan a que los activos penetren. Es de gama alta en Europa (tienda oficial de España: premiercosmeticos.es).
 
-Por qué es premium:
-- Usa minerales del Mar Muerto: magnesio, calcio, potasio, bromuro, sodio y sílice. El agua del Mar Muerto tiene cerca de diez veces más sales que el mar común.
-- Combina esos minerales con extractos de plantas y liposomas, que ayudan a que los activos penetren en la piel.
-- Sus productos son de gama alta en Europa. Los que usamos en las limpiezas de Cali cuestan allá, por frasco, en la tienda oficial:
-  - Limpieza Peeling y Hidratación: Mascarilla Refinadora Peeling (Refining Facial Peeling Mask, línea Prestige; es la Mascarilla Peeling Gel del catálogo y el frasco azul y dorado del anuncio del 2x1), 190 €. Exfoliación suave y limpieza profunda que ayuda a cerrar los poros.
-  - Limpieza e Hidratación y Pigmentación: Milagro Negro (Miracle Noir), la mascarilla clásica que hizo famosa a Premier, 286 €. Barro negro del Mar Muerto con aceite de rosa mosqueta, eucalipto y ginkgo biloba.
-  - Limpieza y Disminución de Líneas de Expresión: línea Biox (Age Treatment Biox Ultra), con acción termal. Mascarilla Thermal Experience (calor instantáneo) 235 €, sérum Age Defying 245 € y crema Age Defying 225 €.
-  - Limpieza e Hidratación Profunda: mascarilla de colágeno, betacaroteno y algas marinas, 235 €.
+EL RITUAL DE 5 PASOS (incluido en TODAS las limpiezas). Nunca digas que una limpieza es "solo una mascarilla".
+1. Diagnóstico y limpieza purificante pH 5.5. La especialista evalúa la piel y elige el limpiador. Piel que necesita renovación: Gel Exfoliante de Micro Gránulos (línea Aromatherap), sin jabón, pH 5.5, con minerales del Mar Muerto, liposomas, aceites esenciales y micro-gránulos de fresa y melocotón. Piel grasa o mixta: Tónico para Piel Grasa y Mixta (línea Skin Tone), sin alcohol, astringente, barre la grasa y los restos de maquillaje.
+2. Mascarilla estrella en camilla. Es el corazón del tratamiento y cambia según la limpieza (abajo).
+3. Contorno de ojos Prestige, en todas las sesiones: Suero para Ojos (ilumina la mirada cansada, desinflama bolsas, atenúa líneas finas) y Crema para Ojos Prestige 204 (ojeras, zonas oscuras, patas de gallo), con toques suaves del dedo anular. La mayoría de spas ignoran los ojos.
+4. Sueros en rostro Y cuello con drenaje linfático. Piel joven o para luminosidad: Suero de Vitaminas E y C (antioxidante, efecto tensor suave en la zona T). Líneas o flacidez: Suero Anti Edad Biox Ultra (cápsulas de vitaminas que explotan al contacto con la piel). El drenaje linfático manual moviliza líquidos retenidos, desinflama y esculpe el contorno del rostro.
+5. Sellado según la edad. LÍNEA AZUL para pieles jóvenes (frescura, equilibrio del pH, prevención): Crema Humectante Perfection 204, acabado mate y equilibrado. LÍNEA ROJA para pieles maduras o con arrugas marcadas (firmeza y tensión): Crema Anti Edad Biox Ultra o Crema Milagro Ataque de Arrugas (Prestige, con liposomas de colágeno). Cuando sepas su edad o su tipo de piel, dile qué línea le corresponde.
 
-Cómo usarlo:
-- Cuando pregunten por qué vale eso, duden del precio, comparen con otra limpieza o pregunten qué productos usan, dilo en una o dos frases. Por ejemplo: en una sola sesión se usan productos que en la tienda de Premier en Europa cuestan cerca de 190 € el frasco.
-- No conviertas euros a pesos. No digas que se lleva el producto a casa.
-- Nunca digas que cura, que trata enfermedades o dolores, ni prometas resultados. Habla de cómo se siente y se ve la piel ("más limpia", "más fresca"), no de curar.`
+LIMPIEZA CERO INVASIVA (argumento clave). En Premier no se espicha la cara ni se extrae manualmente. No maltratamos el rostro ni lo dejamos rojo: los sueros, cremas y mascarillas absorben la grasa, la suciedad y las toxinas sin espichar la piel. Mucha gente, sobre todo con piel sensible, le huye a las limpiezas porque cree que va a salir hinchada: es un alivio y una garantía de tranquilidad.
+
+LAS LIMPIEZAS Y QUÉ RESUELVE CADA UNA (precios y 2x1: manda SIEMPRE lo que diga el Catálogo y la Promoción vigente)
+- Peeling y Hidratación. Mascarilla Peeling Gel (Refinamiento Facial, línea Perfection 204; en Europa la Refining Facial Peeling Mask cuesta 190 €, es el frasco azul y dorado del anuncio). Para el brillo graso a mitad del día por el calor de Cali, poros abiertos, puntos negros y blancos, textura áspera. Actúa 2 a 3 minutos sobre piel seca y al masajearla se enrolla atrapando las células muertas y el sebo oxidado sin raspar ni irritar, y ayuda a cerrar los poros. Seguir con jabones comerciales o tapar el brillo con polvo solo asfixia más los poros.
+- Pigmentación. Mascarilla Milagro Negro (Miracle Noir, el barro negro original del Mar Muerto, 286 € en Europa, con rosa mosqueta, eucalipto y ginkgo biloba) y, según la piel, Complejo Pearl Whitening (White 201, con polvo de perla) o Complejo Prestige 204. Para manchas del sol o de la edad, tono desigual, piel opaca o "apagada" por el maquillaje diario. El barro actúa como un imán que absorbe impurezas, oxigena, hidrata y ayuda a unificar el tono, para depender menos de la base y el corrector.
+- Líneas de Expresión: efecto tensor sin agujas. Mascarilla según el diagnóstico: Experiencia Termal Biox Ultra (barra mineral + máscara con calor real que abre los poros y activa la microcirculación; 235 € en Europa) para poros dilatados y líneas de tensión, o Mascarilla de Colágeno, Beta-caroteno y Algas (Age Smart, 235 €) para piel seca, opaca, delgada o con pérdida de volumen. Cierra con Suero Biox Ultra (245 €) y Crema Biox Ultra (225 €) o Crema Milagro Ataque de Arrugas. Para arrugas en frente, entrecejo y surcos, flacidez en pómulos y cuello, y para quien no quiere inyectarse bótox.
+- Hidratación Profunda con ENEO TOTALE: la experiencia más completa. Mascarilla de Colágeno, Beta-caroteno y Algas + terapia de calor + el dispositivo ENEO TOTALE (luz, calor y micro-vibración que estimulan la piel donde las manos no llegan). Para piel madura, pérdida del óvalo facial, papada, arrugas profundas y piel que ya no responde a cremas.
+
+PRODUCTOS PARA CASA (solo si preguntan). Aquí se vende la cita, no producto: si quiere comprar, se lo confirman en la sede.
+- Gel Exfoliante de Micro Gránulos: máximo 3 veces por semana, sobre piel húmeda.
+- Experiencia Termal Biox: hasta 2 veces por semana.
+- Crema para Ojos Prestige: mañana y noche, con el dedo anular.
+- Pearl Whitening White 201 (noche): barra mineral + crema con polvo de perla para manchas; exige protector solar de día.
+- Complejo de Noche Prestige 204: renueva y atenúa manchas del sol mientras duermes.
+- Corporal: Sal Exfoliante Aromática del Mar Muerto, Mantequilla Corporal de Karité, Crema de Manos y Cuerpo, Kit de Uñas.
+
+CÓMO USARLO
+- Cuando duden del precio, comparen con otra limpieza o pregunten qué productos usan: una o dos frases con el producto y lo que cuesta en Europa. No conviertas euros a pesos. No digas que se lleva el producto a casa.
+- Nunca digas que cura, que trata enfermedades o dolores, ni prometas resultados garantizados. Habla de cómo se ve y se siente la piel ("más limpia", "desinflamada", "luminosa").`
+
+/** Cortesía para quien separa con anticipo (pedida por Premier, 20 oct 2026). */
+export const DEFAULT_DEPOSIT_PERK = 'una exfoliación de manos con la sal del Mar Muerto'
+
+/**
+ * Versión de la configuración. Al leer una guardada con una versión anterior se aplican los cambios
+ * acordados con Premier, una sola vez (al guardar desde el panel ya queda en la versión actual):
+ *   2 (v1.4, 20 oct 2026): prompt y conocimiento nuevos, anticipo fijo de $25.000, agendar en
+ *     efectivo a quien lo pide, cortesía por anticipo y mensajes prediseñados editables.
+ */
+export const CONFIG_REVISION = 2
 
 export const DEFAULT_CONFIG: AppConfig = {
+  revision: CONFIG_REVISION,
   systemPrompt: DEFAULT_SYSTEM_PROMPT,
   services: DEFAULT_SERVICES,
   hours: DEFAULT_HOURS,
@@ -47,8 +90,10 @@ export const DEFAULT_CONFIG: AppConfig = {
   nequiInstructions: '',
   intlInstructions: '',
   depositPercent: 50,
-  depositFixed: 0,
-  cashBooking: false,
+  depositFixed: 25_000,
+  cashBooking: true,
+  depositPerk: DEFAULT_DEPOSIT_PERK,
+  messages: DEFAULT_PRESETS,
   slotMinutes: 15,
   leadTimeHours: 2,
   horizonDays: 14,
@@ -58,6 +103,30 @@ export const DEFAULT_CONFIG: AppConfig = {
   promo: '',
   twoForOne: {},
 }
+
+/** Cambios de cada versión de la configuración (ver CONFIG_REVISION). */
+function migrate(config: AppConfig, from: number): AppConfig {
+  let next = config
+  if (from < 2) {
+    next = {
+      ...next,
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      brandInfo: DEFAULT_BRAND_INFO,
+      // Anticipo simbólico y efectivo para quien lo pida (Premier, 20 oct): menos fricción por desconfianza.
+      depositFixed: 25_000,
+      cashBooking: true,
+      depositPerk: DEFAULT_DEPOSIT_PERK,
+      messages: DEFAULT_PRESETS,
+    }
+  }
+  return { ...next, revision: CONFIG_REVISION }
+}
+
+/** Completa los mensajes que falten (una config guardada antes de que existiera alguno). */
+function withPresets(messages: Partial<PresetMessages> | undefined): PresetMessages {
+  return { ...DEFAULT_PRESETS, ...(messages ?? {}) }
+}
+
 
 /**
  * Acepta también la primera forma que se guardó ({ services, until }: una sola fecha para todos)
@@ -162,7 +231,10 @@ export async function getConfig(): Promise<AppConfig> {
   const raw = await redis().get<string>(keys.config)
   if (!raw) return DEFAULT_CONFIG
   try {
-    const config = { ...DEFAULT_CONFIG, ...(JSON.parse(raw) as Partial<AppConfig>) }
+    const stored = JSON.parse(raw) as Partial<AppConfig>
+    const merged = { ...DEFAULT_CONFIG, ...stored, messages: withPresets(stored.messages) }
+    // Una config guardada antes de una versión recibe sus cambios al leerla (ver CONFIG_REVISION).
+    const config = migrate(merged, Number(stored.revision) || 1)
     const twoForOne = normalizeTwoForOne(config.twoForOne, config.services.map((service) => service.id))
     return { ...config, twoForOne: 'value' in twoForOne ? twoForOne.value : {} }
   } catch {
@@ -170,12 +242,43 @@ export async function getConfig(): Promise<AppConfig> {
   }
 }
 
+/** Variables que admiten los mensajes prediseñados; una mal escrita saldría tal cual al cliente. */
+const PRESET_VARIABLE_NAMES = new Set(Object.keys(PRESET_VARIABLES))
+
+const PRESET_LIMITS: Record<keyof PresetMessages, number> = {
+  // El pie de una imagen de WhatsApp admite 1024 caracteres ya con las promociones completas.
+  welcomeCaption: 700,
+  welcomeValue: 2500,
+  welcomeClose: 1500,
+  followUpPayment: 1000,
+  followUp45: 1000,
+  followUp3h: 1000,
+  followUp22h: 1000,
+}
+
+function parsePresets(raw: unknown): PresetMessages | Issue {
+  // Un panel abierto antes de que existieran no los envía: se conservan los de por defecto.
+  if (!raw || typeof raw !== 'object') return DEFAULT_PRESETS
+  const input = raw as Record<string, unknown>
+  const out = { ...DEFAULT_PRESETS }
+  for (const id of Object.keys(PRESET_LIMITS) as Array<keyof PresetMessages>) {
+    if (input[id] === undefined) continue
+    const value = String(input[id]).replace(/\r\n/g, '\n').trim()
+    if (!value) return { error: 'Ningún mensaje prediseñado puede quedar vacío (usa "Restaurar" para volver al original).' }
+    if (value.length > PRESET_LIMITS[id]) return { error: `Un mensaje prediseñado supera ${PRESET_LIMITS[id]} caracteres.` }
+    const unknown = [...value.matchAll(/\{([^{}\s]+)\}/g)].map((match) => match[1]).find((name) => !PRESET_VARIABLE_NAMES.has(name))
+    if (unknown) return { error: `La variable {${unknown}} no existe. Revisa la lista de variables debajo de cada mensaje.` }
+    out[id] = value
+  }
+  return out
+}
+
 /** Valida campo a campo; ignora claves desconocidas. Devuelve un error legible o la config nueva. */
 export function parseConfig(input: unknown): { config: AppConfig } | { error: string } {
   if (!input || typeof input !== 'object') return { error: 'Cuerpo inválido.' }
   const body = input as Record<string, unknown>
 
-  const systemPrompt = str(body, 'systemPrompt', 6000)
+  const systemPrompt = str(body, 'systemPrompt', 12000)
   if (typeof systemPrompt === 'object') return systemPrompt
   if (!systemPrompt) return { error: 'Las instrucciones del sistema no pueden estar vacías.' }
 
@@ -183,7 +286,7 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
   if (typeof faq === 'object') return faq
 
   // Un panel abierto antes de que existiera el campo no lo envía: se conserva el texto de la marca.
-  const brandInfo = body.brandInfo === undefined ? DEFAULT_BRAND_INFO : str(body, 'brandInfo', 4000)
+  const brandInfo = body.brandInfo === undefined ? DEFAULT_BRAND_INFO : str(body, 'brandInfo', 16000)
   if (typeof brandInfo === 'object') return brandInfo
 
   // Opcional: un panel abierto antes de que existiera el campo no lo envía, y eso no es un error.
@@ -233,6 +336,10 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
   // Opcional: un panel abierto antes de que existiera el campo no lo envía (queda en 0, el porcentaje).
   const depositFixed = body.depositFixed === undefined || body.depositFixed === '' ? 0 : int(body, 'depositFixed', 0, 5_000_000)
   if (typeof depositFixed === 'object') return depositFixed
+  const depositPerk = body.depositPerk === undefined ? DEFAULT_DEPOSIT_PERK : str(body, 'depositPerk', 200)
+  if (typeof depositPerk === 'object') return depositPerk
+  const messages = parsePresets(body.messages)
+  if ('error' in messages) return messages as Issue
 
   // Una duración que no es múltiplo de la grilla dejaría huecos imposibles de reservar.
   const slot = numbers.slotMinutes as number
@@ -241,6 +348,7 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
 
   return {
     config: {
+      revision: CONFIG_REVISION,
       systemPrompt,
       faq,
       brandInfo,
@@ -256,6 +364,8 @@ export function parseConfig(input: unknown): { config: AppConfig } | { error: st
       depositPercent: numbers.depositPercent as number,
       depositFixed,
       cashBooking,
+      depositPerk,
+      messages,
       slotMinutes: slot,
       leadTimeHours: numbers.leadTimeHours as number,
       horizonDays: numbers.horizonDays as number,

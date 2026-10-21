@@ -106,6 +106,26 @@ export function weekOf(day: string): string[] {
   return Array.from({ length: 7 }, (_, index) => addDays(monday, index))
 }
 
+/** Las seis semanas (lunes a domingo) que cubren el mes de `day`: la grilla de la vista mensual. */
+export function monthGrid(day: string): string[] {
+  const first = `${day.slice(0, 7)}-01`
+  const monday = addDays(first, -((weekdayOf(first) + 6) % 7))
+  return Array.from({ length: 42 }, (_, index) => addDays(monday, index))
+}
+
+/** "octubre 2026". */
+export function monthLabel(day: string): string {
+  return `${MONTH_NAME[Number(day.slice(5, 7)) - 1]} ${day.slice(0, 4)}`
+}
+
+/** El mismo día del mes siguiente (o anterior), pegado al último día si no existe: 31 ene → 28 feb. */
+export function addMonths(day: string, amount: number): string {
+  const [year, month] = day.split('-').map(Number)
+  const target = new Date(Date.UTC(year, month - 1 + amount, 1))
+  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
+  return `${target.toISOString().slice(0, 8)}${String(Math.min(Number(day.slice(8)), last)).padStart(2, '0')}`
+}
+
 /**
  * Franjas de agendamiento del día, en minutos: `from` = primera hora de inicio, `to` = última hora
  * de inicio (la sesión puede terminar después). Vacío = cerrado. Recibe `hours` suelto para que el

@@ -3,15 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, chatPath } from '@/lib/api-client'
 import { formatPhone } from '@/lib/phone'
+import type { Revisions } from '@/lib/revision'
 import type { ChatDetail, ChatLists, ChatSummary, Message, Stage } from '@/lib/types'
 import { usePolling } from './usePolling'
 import type { ShowToast } from './useToast'
 
-// Cada poll es un viaje redondo a Upstash (HTTP, no conexión persistente); el webhook ya
-// empuja los mensajes nuevos en cuanto llegan, así que esto es solo respaldo de sincronía,
-// no necesita ser tan agresivo. Menos frecuencia = menos carga sin que se sienta "no vivo".
-const LIST_POLL_MS = 8000
-const DETAIL_POLL_MS = 4000
+// El panel ya no relee la bandeja entera cada 8 s ni el chat abierto cada 4 s: eso eran ~20.000
+// comandos de Upstash por hora y pestaña (oct 2026). Pregunta cada 8 s si cambió algo (un solo
+// comando, ver lib/revision.ts) y solo entonces recarga. La recarga completa de respaldo cubre lo
+// que no sube el contador (p. ej. el análisis de una foto que todavía no respondió Gema).
+const REVISION_POLL_MS = 8000
+const FALLBACK_REFRESH_MS = 5 * 60_000
 
 const byRecent = (a: ChatSummary, b: ChatSummary) => b.lastAt - a.lastAt
 
@@ -106,8 +108,23 @@ export function useChats(toast: ShowToast) {
   }, [])
 
   useEffect(() => { void refreshLists() }, [refreshLists])
-  usePolling(refreshLists, LIST_POLL_MS)
-  usePolling(() => refreshDetail(), DETAIL_POLL_MS, Boolean(activePhone))
+
+  /** Recarga bandeja, chat abierto y métricas solo si el contador de cambios de los chats se movió. */
+  const lastRevision = useRef<string | null>(null)
+  const checkRevision = useCallback(async () => {
+    try {
+      const { chats } = await api<Revisions>('/api/revision')
+      if (chats === lastRevision.current) return
+      const first = lastRevision.current === null
+      lastRevision.current = chats
+      if (first) return // la carga inicial ya trajo todo
+      await Promise.all([refreshLists(), refreshDetail()])
+      setStatsVersion((version) => version + 1)
+    } catch { /* el siguiente intento o la recarga de respaldo lo corrigen */ }
+  }, [refreshLists, refreshDetail])
+  // Desatendido (3 min sin tocar el panel): cada 30 s y la recarga de respaldo cada 30 min.
+  usePolling(checkRevision, REVISION_POLL_MS, true, 30_000)
+  usePolling(() => Promise.all([refreshLists(), refreshDetail()]), FALLBACK_REFRESH_MS, true, 30 * 60_000)
 
   const selectRef = useRef<(phone: string | null) => void>(() => {})
 
@@ -240,6 +257,35 @@ export function useChats(toast: ShowToast) {
     return ok
   }, [run, optimisticChat, applySummary])
 
+  /**
+   * Envía a mano un mensaje prediseñado (la bienvenida completa o un seguimiento), por si el
+   * automático falló. Sale a nombre de Gema y no la pausa.
+   */
+  const sendPreset = useCallback(async (phone: string, id: string, label: string) => {
+    try {
+      const { chat } = await api<{ chat: ChatSummary }>(`${chatPath(phone)}/presets`, { method: 'POST', body: { id } })
+      applySummary(chat)
+      setStatsVersion((version) => version + 1)
+      void refreshDetail(phone)
+      toast(`${label} enviado`)
+      return true
+    } catch (error) {
+      if (!(error instanceof ApiError && error.status === 401)) toast(`No se envió: ${errorText(error)}`, { tone: 'error' })
+      return false
+    }
+  }, [applySummary, refreshDetail, toast])
+
+  /** Quien dijo "no me interesa" vuelve a recibir seguimientos y plantillas. */
+  const reactivate = useCallback(async (phone: string) => {
+    const ok = await run({
+      optimistic: () => optimisticChat(phone, (current) => ({ ...current, optedOut: false, noMarketing: false })),
+      request: () => patchChat(phone, { optedOut: false }),
+      onSuccess: applySummary,
+      failure: 'No se pudo reactivar',
+    })
+    if (ok) toast('Mensajes automáticos reactivados para este cliente')
+  }, [run, optimisticChat, applySummary, toast])
+
   const activeChat: ChatDetail | ChatSummary | null = useMemo(() => {
     if (!activePhone) return null
     if (detail?.phone === activePhone) return detail
@@ -261,6 +307,8 @@ export function useChats(toast: ShowToast) {
     setArchived,
     remove,
     send,
+    sendPreset,
+    reactivate,
     refresh: refreshLists,
   }
 }

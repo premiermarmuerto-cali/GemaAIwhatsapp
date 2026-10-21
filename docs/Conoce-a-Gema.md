@@ -92,9 +92,9 @@ Este manual tiene cuatro partes: **1)** cuánto cuesta mantenerla, **2)** cómo 
 ### 2.1 Lo que hace
 
 1. **Responde siempre,** a cualquier hora, incluso con la clínica cerrada.
-2. **Primera respuesta directa:** quien llega desde un anuncio o pregunta por un servicio recibe de inmediato en qué consiste, su precio y la promoción vigente, y la pregunta "¿en qué sede te queda mejor?". No lo interroga primero.
+2. **Asesora y convence (v1.4):** no es una recepcionista que entrega precios. Pregunta qué le molesta de la piel, conecta ese dolor con el producto que lo resuelve, explica el **ritual de 5 pasos** (limpieza pH 5.5, mascarilla del Mar Muerto, contorno de ojos Prestige, sueros con drenaje linfático en rostro y cuello, sellado con la línea azul o roja), usa la **limpieza cero invasiva** ("no espichamos la cara ni te dejamos roja") contra el miedo, recuerda la fecha real del 2x1 y cierra con una pregunta de doble alternativa ("¿Chipichape o Unicentro?"). Todo sale de la base de conocimiento de Premier, editable en Configuración.
 3. **Agenda de verdad:** ve la disponibilidad real de 14 días en las dos sedes y solo ofrece horas libres. Aparta la cabina en el instante en que el cliente acepta.
-4. **Cobra la reserva:** pregunta si prefiere pagar el **anticipo (50 %)** o la **sesión completa**. Al apartar la cita le ofrece los dos medios y espera a que elija:
+4. **Cobra la reserva:** se separa con un **anticipo simbólico de $25.000** que se descuenta del valor (pago seguro; se pide solo porque hay personas que reservan y no llegan). Si agenda hoy con anticipo, de cortesía se lleva **una exfoliación de manos con la sal del Mar Muerto** (queda en las notas de la cita). **Si el cliente pide pagar en efectivo, se agenda sin anticipo**, sin discutir; Gema nunca lo ofrece por su cuenta. Al apartar una cita con anticipo le ofrece los dos medios y espera a que elija:
    - **Link de Bold** (PSE, tarjeta débito o crédito, Nequi o Daviplata): un link único por cita. Cuando Bold confirma el pago, la cita queda confirmada sola y el cliente recibe el aviso por WhatsApp, sin intervención del operador.
    - **Transferencia directa** a Nequi 3114644721, Daviplata 3214040436 o la cuenta de ahorros Bancolombia 91232333868: el cliente manda la captura del comprobante y el chat pasa a una asesora para validarlo.
 
@@ -112,7 +112,7 @@ Este manual tiene cuatro partes: **1)** cuánto cuesta mantenerla, **2)** cómo 
 | Sedes | Unicentro y Chipichape, **2 cabinas cada una** |
 | Horario de citas | Lunes–jueves: primera cita 10:00 a.m., **última 6:30 p.m.** · Viernes y sábado: 10:00 a.m. a **8:00 p.m.** · Domingo: 10:00 a.m. a **5:00 p.m.** *(son horas de inicio; la sesión puede terminar después)* |
 | Horario de asesoras | Lunes a sábado 10:00 a.m.–6:00 p.m. · Domingo no hay atención humana |
-| Anticipo | 50 % del valor, o el pago completo si el cliente lo prefiere |
+| Anticipo | **$25.000 fijos por cita** (se descuentan del valor), o el pago completo si el cliente lo pide. Con anticipo: cortesía de exfoliación de manos con sal del Mar Muerto. **Efectivo:** quien lo pide se agenda sin anticipo y recibe recordatorio un día antes y 2 h antes |
 | Apartado | El horario se guarda **120 minutos** mientras se paga; si no, se libera solo |
 | Anticipación mínima | 2 horas |
 | Catálogo | Peeling y Hidratación $130.000 (30 min) · Hidratación y Pigmentación $170.000 · Disminución de Líneas de Expresión $200.000 · Hidratación Profunda con Dispositivo Médico $250.000 (45 min cada una). Las duraciones son estándar y aproximadas |
@@ -134,13 +134,14 @@ Gema también escribe sola, sin que la clienta haya escrito. Un programador la d
 
 | Mensaje | Cuándo | Cómo |
 |---|---|---|
-| **Bienvenida en bloques** | Primer mensaje de cada cliente nuevo, mientras haya algún 2x1 vigente | Texto libre (gratis): imagen del bono con las promociones 2x1 de HOY (valor por persona y días que quedan si tiene fecha), qué incluye cada limpieza con sus productos del Mar Muerto, el anticipo que se descuenta, las sedes y horas libres para dos personas, y "cuál te separo?". Lo arma el servidor con la configuración y la agenda; si el primer mensaje pregunta algo más, Gema lo responde después |
-| Aviso de pago pendiente | ~30 min antes de que se libere un horario apartado sin pago | Texto libre (gratis) |
+| **Bienvenida en bloques** | Primer mensaje de cada cliente nuevo, mientras haya algún 2x1 vigente | Texto libre (gratis), tres mensajes: (1) imagen del bono con las promociones 2x1 de HOY y los días que quedan; (2) el valor: ritual de 5 pasos, limpieza cero invasiva y qué resuelve cada limpieza; (3) el anticipo de $25.000 que se descuenta, la cortesía, las sedes, horas libres para dos personas y "cuál te separo?". Si el mensaje llegó con retraso, antes va "perdona la demora". Si el primer mensaje pregunta algo más, Gema lo responde después |
+| Aviso de pago pendiente | ~30 min antes de que se libere un horario apartado sin pago | Texto libre (gratis): pago seguro, se descuenta, la cortesía y "¿tuviste algún inconveniente con el link?" |
 | Recordatorio de la cita | 24 h antes de cada cita **pagada** | Texto libre si la clienta escribió en las últimas 24 h; si no, plantilla `recordatorio_cita` |
 | Recordatorio del día | 2–3 h antes, si confirmó asistencia o si **paga en efectivo** | Texto libre. A las citas en efectivo, este y el del día anterior les llegan siempre con la plantilla aprobada `recordatorio_cita` (≈ COP 3 cada uno) |
-| Seguimiento con horas | ~45 min sin responder después de la respuesta de Gema, sin cita | Texto libre: si recibió la bienvenida, un cierre con una hora concreta ("te lo separo?"); si no, dos horas libres de su sede |
-| Seguimiento con el 2x1 | ~3 h sin responder, sin cita | Texto libre: el 2x1 vigente del servicio que le interesa y la pregunta de sede |
-| Seguimiento | ~22 h después de su último mensaje, si no respondió y no tiene cita | Texto libre |
+| Seguimiento 45 min | ~45 min sin responder después de la respuesta de Gema, sin cita | Texto libre: el dolor (calor de Cali, brillo, mirada cansada), el ritual de 5 pasos, el 2x1 con su fecha y una hora libre concreta ("te lo aparto?") |
+| Seguimiento 3 h | ~3 h sin responder, sin cita | Texto libre: la limpieza cero invasiva, el 2x1 vigente del servicio que le interesa y la pregunta de sede |
+| Seguimiento 22 h | ~22 h después de su último mensaje, si no respondió y no tiene cita | Texto libre: última llamada antes de que se cierre el chat ("escríbeme SEDE y te guardo un espacio") |
+| **Mensaje sin responder** | Un mensaje del cliente lleva más de 5 min sin respuesta (entrega tardía de Meta, caída del servidor) | Gema lo responde en la siguiente corrida, a cualquier hora, disculpándose por la demora. Si ya pasaron 24 h, el chat pasa a una asesora para escribirle con plantilla |
 | Gema retoma (efectivo) | 30 min en horario de asesoras después de pasar a Johanna a quien quería pagar todo en efectivo, si nadie le escribió | Texto libre con el anticipo y dos horas concretas; Gema vuelve a atender ese chat |
 | Retomar la cita | Más de 24 h sin escribir y sin cita (hasta 7 días) | Plantilla `retomar_cita_limpieza` |
 | Anticipo pendiente | El horario se liberó sin pago hace más de 24 h y la fecha aún no pasa | Plantilla `anticipo_pendiente`. Si toca **"Reenviar el link"**, Gema vuelve a apartar el mismo horario (si sigue libre) y le manda un link nuevo |
@@ -151,11 +152,12 @@ Gema también escribe sola, sin que la clienta haya escrito. Un programador la d
 - Nunca a un chat que está atendiendo una persona (Gema en pausa o con alerta de asesora).
 - Cada mensaje se envía **una sola vez** y queda registrado en la ficha del chat ("Automáticos").
 - Máximo 25 envíos por corrida y una plantilla de marketing por persona cada 3 días.
-- Si la clienta toca **"Ahora no"**, no recibe más plantillas de marketing; los recordatorios de su cita sí le llegan.
+- Si la clienta toca **"Ahora no"** o escribe "no me interesa", "no gracias", "no me escribas más" o similar, **se detienen todos sus mensajes automáticos** (seguimientos, recordatorios y plantillas) para que no nos reporte como spam. Gema se despide en una frase, sin insistir. En el panel aparece "Mensajes automáticos: detenidos" con un botón **Reactivar**. Si después agenda, vuelve a recibir los recordatorios de su cita.
+- **Los textos de la bienvenida y de los seguimientos se editan en Configuración → Mensajes prediseñados**, con vista previa y botón para restaurar el original. Si alguno no salió, se envía a mano desde el panel de control del chat (**Mensajes prediseñados**).
 
 **Interruptores** (variables en Vercel): `AUTOMATIONS=off` apaga todo lo automático; `WHATSAPP_TEMPLATES=on` activa las plantillas (activas desde el 19 de octubre de 2026).
 
-**Medición de la campaña.** Cuando una clienta llega desde un anuncio, Gema guarda el anuncio y el clic. Con eso le avisa a Meta cuando esa clienta **agenda** (evento *LeadSubmitted*, "cliente potencial") y cuando **paga** (evento *Purchase*, con el monto pagado): por Bold apenas llega la confirmación, y por transferencia cuando la asesora confirma la cita en la agenda. Así Ads Manager muestra qué anuncio trajo ventas, no solo conversaciones. Los eventos van al dataset **1636157554637715**, el que está vinculado a la cuenta de WhatsApp (el 38756680020642307 no lo estaba y Meta los rechazaba). En la ficha de cada chat, "Conversión Meta" dice si el último evento se envió o por qué no.
+**Medición de la campaña.** Cuando una clienta llega desde un anuncio, Gema guarda el anuncio y el clic. Con eso le avisa a Meta cuando esa clienta **agenda** (evento *LeadSubmitted*, "cliente potencial") y cuando **paga** (evento *Purchase*, con el monto pagado): por Bold apenas llega la confirmación, por transferencia cuando la asesora confirma la cita en la agenda, y **en efectivo cuando la asesora marca la cita como "Realizada"** (con el valor completo; si ya se había reportado el anticipo, no se cuenta dos veces). Así Ads Manager muestra qué anuncio trajo ventas, no solo conversaciones. Los eventos van al dataset **1636157554637715**, el que está vinculado a la cuenta de WhatsApp (el 38756680020642307 no lo estaba y Meta los rechazaba). En la ficha de cada chat, "Conversión Meta" dice si el último evento se envió o por qué no.
 
 ### 2.5 Cómo es una reserva por dentro
 
@@ -171,7 +173,7 @@ Gema escala (el chat aparece marcado en la bandeja) cuando:
 - el cliente pide hablar con una persona;
 - **envía el comprobante de una transferencia** (aparece como *Pago por validar*);
 - **cancela una cita ya pagada** (aparece como *Reembolso*) o pregunta algo sobre su dinero;
-- **insiste en pagar todo en efectivo, sin anticipo** (aparece como *Pago en efectivo*). Antes, Gema ya le explicó que el resto se paga en la sede en efectivo y que el anticipo se descuenta del valor. Johanna decide si hace una excepción; si nadie le escribe en 30 minutos de horario de asesoras, Gema retoma con el anticipo y un horario concreto;
+- **insiste en pagar todo en efectivo, sin anticipo**, solo si en Configuración está **apagado** "Agendar sin anticipo a quien pida pagar en efectivo" (desde la v1.4 está encendido y Gema agenda directamente en efectivo a quien lo pide);
 - tiene un reclamo o describe una condición médica;
 - pregunta algo que Gema no sabe (precio no configurado, condiciones de promoción que no están escritas);
 - algo falla (Bold no generó el link, WhatsApp rechazó el mensaje, se superó el tope de respuestas).
@@ -187,8 +189,9 @@ Siempre le dice al cliente **cuándo** lo atiende una asesora, según el horario
 El panel (`https://premier-agente.vercel.app`, con la clave de administrador) tiene dos zonas:
 
 - **Consola:** bandeja de chats con filtros **Todas · IA · Humano · Agendados**. Cada chat muestra quién lo atiende: *Gema (IA)* o *Operador*, y una etiqueta roja si necesita una persona. Al abrir un chat se ve la ficha del cliente, la cita y si llegó **desde un anuncio** ("Desde anuncio").
-- **Agenda:** semana por sede. Cada cita es un bloque; una **pareja ocupa dos columnas**. Se puede crear una cita a mano (queda **confirmada**, sin anticipo), bloquear un horario (almuerzo, capacitación) y cerrar un día completo (festivo).
-- **⚙ Configuración:** voz de Gema, catálogo y precios, horarios, sedes, cabinas, cobro, promoción, 2x1 por servicio y preguntas frecuentes.
+- **Agenda:** vista **Semana** (por horas) o **Mes** (las citas de cada día en lista; clic en el número del día abre esa semana), por sede. Cada cita es un bloque; una **pareja ocupa dos columnas**. Se puede crear una cita a mano (queda **confirmada**, sin anticipo), bloquear un horario (almuerzo, capacitación) y cerrar un día completo (festivo). **Cada cita lleva un "Asesor"**: quién la agendó y a quién le corresponde la sesión. Las de Gema dicen "Gema"; al crear una a mano es obligatorio escribirlo, y se puede reasignar desde la ficha de la cita.
+- **⚙ Configuración:** voz y método de venta de Gema, mensajes prediseñados (bienvenida y seguimientos), catálogo y precios, horarios, sedes, cabinas, cobro, cortesía por anticipo, promoción, 2x1 por servicio, conocimiento de Premier (protocolos y productos) y preguntas frecuentes.
+- **Versión:** la etiqueta **v1.4** junto al logo (y en la pantalla de inicio de sesión) dice qué actualización está corriendo. Cada cambio sube el número en `package.json` y queda anotado en `CHANGELOG.md`.
 
 ### 3.2 Rutina diaria
 

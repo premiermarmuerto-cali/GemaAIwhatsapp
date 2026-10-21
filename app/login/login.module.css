@@ -27,6 +27,7 @@
   max-width: 960px;
 }
 .topbarEnd { display: flex; align-items: center; gap: 10px; }
+.topbarStart { display: flex; align-items: center; gap: 10px; }
 
 .panel {
   position: relative;

@@ -23,18 +23,29 @@
  *   recordatorio_cita      24 h antes de la cita (utilidad)
  *
  * Nada se envía a chats que atiende una persona (Gema en pausa o pidiendo asesor), ni de noche, y
- * cada automatización queda registrada para no repetirse. Las de marketing respetan "Ahora no".
+ * cada automatización queda registrada para no repetirse. Quien dijo "no me interesa", "ahora no" o
+ * similar (lib/optout.ts) no recibe NADA automático hasta que agende o el operador lo reactive.
+ *
+ * Los textos de los seguimientos son los mensajes prediseñados del panel (lib/presets.ts).
+ *
+ * Además, a cualquier hora: mensajes de clientes que quedaron sin respuesta más de 5 min (una entrega
+ * tardía de Meta, una caída del servidor) se vuelven a responder; si ya pasaron 24 h, pasan a una
+ * persona. 20 oct: cinco chats del 18 y 19 recibieron la primera respuesta más de un día después.
  */
+import { autoReply, markPendingReply } from './autoreply'
 import { bookingsOfPhone, getBookings, liveBookingOf, markBookingAuto, serviceText, suggestStarts, sweepExpiredHolds } from './booking'
-import { addDays, clock12, dayKey, dayLabel, fullDayLabel, minuteOfDay, nextHumanWindow } from './calendar'
-import { listChats, markChatAuto, recordOutbound, updateChat } from './chats'
+import { clock12, dayKey, fullDayLabel, minuteOfDay, nextHumanWindow } from './calendar'
+import { getHistory, getSummary, listChats, markChatAuto, recordOutbound, requestAgent, updateChat } from './chats'
 import { ESCALATION_HOURS, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
-import { amountOf, depositOf, getConfig, pesos, serviceById, twoForOneApplies } from './config'
+import { depositOf, getConfig, pesos, serviceById } from './config'
+import { firstName, renderPreset, whenText } from './presets'
 import { keys, redis } from './redis'
 import { SEPARATOR, toMessages } from './reply-style'
 import { HOLD_STATUSES, type AppConfig, type Booking, type ChatSummary, type Location } from './types'
 import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsapp'
 import { isWindowOpen, WHATSAPP_WINDOW_MS } from './window'
+
+export { firstName }
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -75,17 +86,14 @@ const publicUrl = () => (process.env.PUBLIC_APP_URL || 'https://premier-agente.v
 
 export type Outcome = { kind: string; phone: string; how: 'texto' | 'plantilla' | 'simulado' | 'omitido' | 'error'; detail?: string }
 
-/** Primer nombre con letras ("Ana 🌸 Pérez" → "Ana"). Vacío si no hay. */
-export function firstName(name: string): string {
-  const word = name.split(/\s+/).map((part) => part.replace(/[^\p{L}'-]/gu, '')).find((part) => /\p{L}{2,}/u.test(part))
-  return word ? word[0].toUpperCase() + word.slice(1) : ''
-}
-
 /** "10:00 a. m.": formato de hora de las plantillas. */
 const templateClock = (hhmm: string) => clock12(hhmm).replace('a.m.', 'a. m.').replace('p.m.', 'p. m.')
 
-/** Una persona atiende el chat: Gema no le escribe sola. */
-const humanHandling = (chat: ChatSummary) => !chat.botActive || chat.needsAgent
+/**
+ * Gema no le escribe sola: una persona atiende el chat, o el cliente dijo que no le interesa
+ * (entonces no recibe ningún mensaje automático, para que no nos reporte como spam).
+ */
+const humanHandling = (chat: ChatSummary) => !chat.botActive || chat.needsAgent || chat.optedOut
 
 class Run {
   sends = 0
@@ -168,11 +176,6 @@ async function imageAvailable(url: string): Promise<boolean> {
   return imageChecks.get(url)!
 }
 
-async function chatsByPhone(): Promise<Map<string, ChatSummary>> {
-  const { inbox, archived } = await listChats()
-  return new Map([...inbox, ...archived].map((chat) => [chat.phone, chat]))
-}
-
 /** Citas de un índice (holds por vencimiento, estado por fecha de inicio) en un rango de tiempo. */
 async function bookingsBetween(key: string, from: number, to: number): Promise<Booking[]> {
   const ids = await redis().zrange<string[]>(key, from, to, { byScore: true })
@@ -187,11 +190,8 @@ async function holdNudges(run: Run, chats: Map<string, ChatSummary>) {
     if (!HOLD_STATUSES.includes(booking.status) || booking.paidAt || booking.autoSent.seguimiento_pago || !booking.phone) continue
     const chat = chats.get(booking.phone)
     if (!chat || humanHandling(chat) || !isWindowOpen(chat, run.now)) continue
-    const minutes = Math.max(5, Math.round((booking.holdUntil - run.now) / MINUTE))
-    const name = firstName(booking.name)
-    await run.text(chat, 'seguimiento_pago',
-      `Hola${name ? ` ${name}` : ''}, tu horario del ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]} sigue apartado ${minutes} minutos más y vi que el pago quedó pendiente${SEPARATOR}tuviste algún problema con el pago o prefieres que te ayude a cambiar el horario?`,
-      booking)
+    const body = await renderPreset(run.config, 'followUpPayment', { chat, booking, now: run.now })
+    if (body) await run.text(chat, 'seguimiento_pago', body, booking)
   }
 }
 
@@ -272,17 +272,9 @@ async function silentProspects(run: Run, chats: Map<string, ChatSummary>) {
     if (!chat.lastInboundAt || silence < 22 * HOUR || silence > WHATSAPP_WINDOW_MS - 30 * MINUTE) continue
     if (chat.lastSender === 'user' || humanHandling(chat) || (chat.autoSent.seguimiento_22h ?? 0) > chat.lastInboundAt) continue
     if (await liveBookingOf(chat.phone)) continue
-    const name = firstName(chat.name)
-    await run.text(chat, 'seguimiento_22h',
-      `Hola${name ? ` ${name}` : ''}, sigo por aquí. Si quieres, te dejo apartado un espacio en Chipichape o Unicentro para tu limpieza facial${SEPARATOR}cuál te queda mejor?`)
+    const body = await renderPreset(run.config, 'followUp22h', { chat, now: run.now })
+    if (body) await run.text(chat, 'seguimiento_22h', body)
   }
-}
-
-/** "hoy a las 4:00 p.m.", "mañana a las 10:00 a.m.", "el jueves 23 oct a las 11:00 a.m.". */
-function whenText(now: number, { day, start }: { day: string; start: string }): string {
-  const today = dayKey(now)
-  const label = day === today ? 'hoy' : day === addDays(today, 1) ? 'mañana' : `el ${dayLabel(day)}`
-  return `${label} a las ${clock12(start)}`
 }
 
 /**
@@ -317,45 +309,23 @@ async function waitingProspect(chat: ChatSummary, run: Run, kind: string, fromMs
 
 /**
  * Seguimientos dentro de la ventana de 24 h (gratis). La mitad de los chats dejaba de responder
- * después de la primera respuesta y solo había un seguimiento a las 22 h (VIRAND, 19 oct). Cada uno
- * trae algo nuevo: primero dos horas concretas, después el 2x1 vigente con la pregunta de sede.
+ * después de la primera respuesta (VIRAND, 19 oct). Cada uno trae algo nuevo, con los textos del
+ * panel: a los 45 min el ritual de 5 pasos y una hora concreta; a las 3 h la limpieza cero invasiva
+ * y el 2x1 vigente con la pregunta de sede.
  */
 async function earlyFollowUps(run: Run, chats: Map<string, ChatSummary>) {
   for (const chat of chats.values()) {
-    const name = firstName(chat.name)
-    const hi = name ? `${name}, ` : ''
     if (await waitingProspect(chat, run, 'seguimiento_45m', 40 * MINUTE, 3 * HOUR)) {
-      // Con la bienvenida ya tiene la lista de horas: el seguimiento es un cierre con UNA hora concreta.
-      if (chat.autoSent.bienvenida) {
-        const location = chat.lead.location || LOCATIONS.find((sede) => (run.config.cabins[sede] ?? 1) >= 2) || LOCATIONS[0]
-        const [first] = await suggestStarts(run.config, location, { now: run.now, count: 1 })
-        if (first) await run.text(chat, 'seguimiento_45m', `${hi}alcanzaste a ver los horarios? te puedo separar ${whenText(run.now, first)} en ${LOCATION_LABEL[location]} y te paso el link del anticipo${SEPARATOR}te lo separo?`)
-        continue
-      }
-      const offer = await hoursOffer(run, chat.lead.location)
-      if (offer.text) await run.text(chat, 'seguimiento_45m', `${hi}por si te sirve para organizarte, ${offer.text}${SEPARATOR}${offer.location ? 'te separo alguno?' : 'cuál te queda mejor?'}`)
+      // Sin ninguna hora libre que ofrecer, este seguimiento no sale (renderPreset devuelve null).
+      const body = await renderPreset(run.config, 'followUp45', { chat, now: run.now })
+      if (body) await run.text(chat, 'seguimiento_45m', body)
       continue
     }
     if (await waitingProspect(chat, run, 'seguimiento_3h', 3 * HOUR, 22 * HOUR)) {
-      const promo = promoReminder(run, chat)
-      if (!promo) continue
-      const sede = chat.lead.location
-      await run.text(chat, 'seguimiento_3h', `${hi}${promo}${SEPARATOR}${sede ? `te separo un espacio en ${LOCATION_LABEL[sede]}?` : 'en qué sede te queda mejor, Unicentro o Chipichape?'}`)
+      const body = await renderPreset(run.config, 'followUp3h', { chat, now: run.now })
+      if (body) await run.text(chat, 'seguimiento_3h', body)
     }
   }
-}
-
-/** "te recuerdo que el 2x1 de la X va hasta el 31 de octubre: vienes con alguien y pagan una sola sesión de $130.000". */
-function promoReminder(run: Run, chat: ChatSummary): string {
-  const today = dayKey(run.now)
-  const live = run.config.services.filter((service) => twoForOneApplies(run.config, service.id, today) && amountOf(service.price))
-  if (!live.length) return ''
-  // El servicio que le interesa, si tiene 2x1; si no, el que vence primero (el que tiene fecha).
-  const interest = chat.lead.serviceId ? serviceById(run.config, chat.lead.serviceId) : undefined
-  const service = live.find((item) => item.id === interest?.id)
-    ?? [...live].sort((a, b) => (run.config.twoForOne[a.id] || '9999').localeCompare(run.config.twoForOne[b.id] || '9999'))[0]
-  const until = run.config.twoForOne[service.id]
-  return `te recuerdo que el 2x1 de la ${service.label} ${until ? `va hasta el ${offerText(until)}` : 'sigue vigente'}: vienes con alguien y pagan una sola sesión de ${pesos(amountOf(service.price))}`
 }
 
 /** Minutos de horario de asesoras transcurridos entre dos momentos (de 5 en 5). */
@@ -442,22 +412,94 @@ async function lastDaysTemplates(run: Run, chats: Map<string, ChatSummary>) {
   }
 }
 
+// ───────────────────────── Mensajes sin respuesta ─────────────────────────
+
+/** Un mensaje del cliente que sigue sin respuesta pasado este tiempo se vuelve a atender. */
+const UNANSWERED_AFTER_MS = 5 * MINUTE
+/** Cuántos chats se reprocesan por corrida (cada uno es un turno de IA dentro del límite de 60 s). */
+const MAX_REANSWERS = 3
+
+/**
+ * Chats cuyo último mensaje es del cliente, con Gema activa, y que nadie respondió en 5 min: una
+ * entrega tardía de Meta, un corte del servidor a mitad de la respuesta o un error pasajero. Con la
+ * ventana abierta Gema responde ahora (y se disculpa por la demora); con la ventana cerrada ya solo
+ * cabe una plantilla, así que el chat pasa a una persona. Corre a cualquier hora: Gema atiende 24/7.
+ *
+ * Lee el índice `awaiting` (lib/chats.ts), no la bandeja entera: lo normal es que esté vacío y la
+ * revisión cueste un solo comando de Upstash por corrida.
+ */
+async function answerPending(now: number, dryRun: boolean): Promise<Outcome[]> {
+  const db = redis()
+  // La primera vez se llena con los chats que ya esperaban respuesta antes de que existiera el índice.
+  if (!dryRun && !(await db.exists(keys.awaitingSeeded))) {
+    const { inbox } = await listChats()
+    const waiting = inbox.filter((chat) => chat.lastSender === 'user' && chat.lastInboundAt > 0)
+    const tx = db.multi()
+    for (const chat of waiting) tx.zadd(keys.awaiting, { score: chat.lastInboundAt, member: chat.phone })
+    tx.set(keys.awaitingSeeded, String(now))
+    await tx.exec()
+  }
+  const phones = await db.zrange<string[]>(keys.awaiting, 0, now - UNANSWERED_AFTER_MS, { byScore: true })
+  const outcomes: Outcome[] = []
+  const toAnswer: string[] = []
+  // Sale del índice lo que no le toca a Gema: si el cliente vuelve a escribir, entra de nuevo.
+  const drop = (phone: string) => (dryRun ? null : db.zrem(keys.awaiting, phone))
+  for (const phone of phones) {
+    if (toAnswer.length >= MAX_REANSWERS) break
+    const chat = await getSummary(phone)
+    if (!chat || chat.lastSender !== 'user' || now - chat.lastInboundAt > 7 * DAY) { await drop(phone); continue }
+    // Lo atiende una persona (Gema en pausa o con alerta): ya está a la vista en el panel.
+    if (!chat.botActive || chat.needsAgent) { await drop(phone); continue }
+    // Stickers, reacciones o ubicaciones sueltas no se responden: no es un olvido.
+    const [last] = await getHistory(phone, 1)
+    if (!last || last.sender !== 'user' || (!last.media && /^\[[^\]]+\]$/.test(last.text.trim()))) { await drop(phone); continue }
+    // Gema está respondiendo ese chat en este momento.
+    if (await db.exists(keys.replyLock(phone))) continue
+    if (!isWindowOpen(chat, now)) {
+      if (!dryRun) {
+        await requestAgent(phone, 'Mensaje sin responder y ya pasaron 24 h: solo se le puede escribir con una plantilla')
+        await drop(phone)
+      }
+      outcomes.push({ kind: 'sin_respuesta', phone, how: 'omitido', detail: 'ventana cerrada: pasa a una asesora' })
+      continue
+    }
+    toAnswer.push(phone)
+  }
+  if (dryRun) return [...outcomes, ...toAnswer.map((phone): Outcome => ({ kind: 'sin_respuesta', phone, how: 'simulado', detail: 'Gema respondería ahora' }))]
+  // En paralelo: cada turno de IA tarda varios segundos y la corrida tiene 60 s en total.
+  const results = await Promise.all(toAnswer.map(async (phone): Promise<Outcome> => {
+    try {
+      console.warn(`[cron] ${phone}: mensaje sin respuesta hace más de 5 min; Gema lo atiende ahora`)
+      await markPendingReply(phone)
+      await autoReply(phone)
+      return { kind: 'sin_respuesta', phone, how: 'texto', detail: 'respuesta tardía' }
+    } catch (error) {
+      return { kind: 'sin_respuesta', phone, how: 'error', detail: error instanceof Error ? error.message : String(error) }
+    }
+  }))
+  return [...outcomes, ...results]
+}
+
 /**
  * Una corrida del programador. `dryRun` decide a quién le tocaría qué, sin enviar ni marcar nada.
  * Un candado evita dos corridas a la vez (si el programador se solapa).
  */
 export async function runAutomations({ now = Date.now(), dryRun = false } = {}): Promise<Outcome[]> {
   if (!automationsOn()) return [{ kind: 'todas', phone: '-', how: 'omitido', detail: 'automatizaciones apagadas (AUTOMATIONS=off)' }]
+  // Responder a quien escribió no es un mensaje automático: va a cualquier hora, antes que todo.
+  const pending = await answerPending(now, dryRun).catch((error): Outcome[] => [{ kind: 'sin_respuesta', phone: '-', how: 'error', detail: error instanceof Error ? error.message : String(error) }])
   const minute = minuteOfDay(now)
-  if (minute < SEND_FROM_MIN || minute >= SEND_TO_MIN) return [{ kind: 'todas', phone: '-', how: 'omitido', detail: 'fuera del horario de envío (8:00 a 21:00)' }]
+  if (minute < SEND_FROM_MIN || minute >= SEND_TO_MIN) return [...pending, { kind: 'todas', phone: '-', how: 'omitido', detail: 'fuera del horario de envío (8:00 a 21:00)' }]
   if (!dryRun && !(await redis().set(keys.automationsLock, '1', { nx: true, ex: 300 }))) {
-    return [{ kind: 'todas', phone: '-', how: 'omitido', detail: 'otra corrida en curso' }]
+    return [...pending, { kind: 'todas', phone: '-', how: 'omitido', detail: 'otra corrida en curso' }]
   }
   try {
     // Libera los apartados vencidos aunque nadie haya escrito (normalmente lo hace el tráfico).
     if (!dryRun) await sweepExpiredHolds(now, { force: true })
     const run = new Run(await getConfig(), now, dryRun)
-    const chats = await chatsByPhone()
+    // La bandeja se lee UNA vez por corrida (~40 comandos) y la usan todas las automatizaciones.
+    const lists = await listChats()
+    const chats = new Map([...lists.inbox, ...lists.archived].map((chat) => [chat.phone, chat]))
     // Primero lo más urgente (pagos y citas), al final el marketing: si se llega al tope, cae lo menos importante.
     await holdNudges(run, chats)
     await cashRetakes(run, chats)
@@ -469,7 +511,7 @@ export async function runAutomations({ now = Date.now(), dryRun = false } = {}):
     // Cerca del fin de una promo, el aviso de últimos días va antes que el genérico de retomar.
     await lastDaysTemplates(run, chats)
     await reengageTemplates(run, chats)
-    return run.outcomes
+    return [...pending, ...run.outcomes]
   } finally {
     if (!dryRun) await redis().del(keys.automationsLock)
   }

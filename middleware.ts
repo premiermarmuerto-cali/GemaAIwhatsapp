@@ -34,7 +34,9 @@ export async function middleware(request: NextRequest) {
     if (request.method !== 'GET' && origin && origin !== request.nextUrl.origin) {
       return NextResponse.json({ error: 'Origen no permitido.' }, { status: 403 })
     }
-    const limit = await rateLimit('api', clientIp(request.headers), API_LIMIT_PER_MINUTE, 60).catch(() => null)
+    // Solo las escrituras: las lecturas del panel ya exigen sesión, y contarlas en Redis costaba 2
+    // comandos por consulta (miles por hora con el panel abierto, oct 2026).
+    const limit = request.method === 'GET' ? null : await rateLimit('api', clientIp(request.headers), API_LIMIT_PER_MINUTE, 60).catch(() => null)
     if (limit && !limit.ok) {
       return NextResponse.json({ error: 'Demasiadas peticiones.' }, { status: 429, headers: { 'Retry-After': String(limit.resetIn) } })
     }

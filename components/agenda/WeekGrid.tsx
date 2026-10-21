@@ -119,6 +119,7 @@ export function WeekGrid({ week, location, activeId, onSelect, onPick }: Props) 
                     <span className={styles.eventTime}>{booking.start}</span>
                     <span className={styles.eventName}>{booking.kind === 'block' ? (booking.notes || 'Bloqueado') : (booking.name || booking.phone)}</span>
                     <span className={styles.eventService}>{booking.serviceLabel}{booking.people > 1 && ` · ${booking.people} personas`}</span>
+                    {booking.advisor && <span className={styles.eventAdvisor}>Asesor: {booking.advisor}</span>}
                     {booking.status === 'pending_payment' && (
                       <span className={styles.eventHold}>{STATUS_LABEL.pending_payment} · {holdCountdown(booking.holdUntil)}</span>
                     )}

@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react'
 import { CloseIcon } from '@/components/icons'
 import { api } from '@/lib/api-client'
-import { dayLabel } from '@/lib/calendar'
+import { dayKey, dayLabel } from '@/lib/calendar'
 import { LOCATION_LABEL, LOCATIONS } from '@/lib/clinic'
 import type { NewAppointment } from '@/hooks/useAgenda'
 import type { AgendaWeek, Location } from '@/lib/types'
+import { AdvisorOptions, lastAdvisor, rememberAdvisor } from './AdvisorOptions'
 import styles from './Agenda.module.css'
 
 type Props = {
@@ -32,6 +33,12 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
   const [phone, setPhone] = useState('')
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
+  // Quién agenda: se recuerda el último en este navegador para no escribirlo en cada cita.
+  const [advisor, setAdvisor] = useState('')
+  useEffect(() => { setAdvisor(lastAdvisor()) }, [])
+  // En la vista mensual llegan 42 días: solo se ofrecen los que todavía se pueden agendar.
+  const today = dayKey()
+  const days = week.days.filter((item) => item >= today || item === seed.day)
   const [slots, setSlots] = useState<Slots | null>(null)
   const [pair, setPair] = useState(false)
   // Pareja = dos cabinas a la vez: solo se ofrece en sedes con al menos dos.
@@ -53,7 +60,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
     if (slots && slots.starts.length && !slots.starts.includes(start)) setStart(slots.starts[0])
   }, [slots, start])
 
-  const canSubmit = Boolean(start) && (kind === 'block' || (phone.replace(/\D/g, '').length >= 8 && name.trim() && serviceId))
+  const canSubmit = Boolean(start) && (kind === 'block' || (phone.replace(/\D/g, '').length >= 8 && name.trim() && serviceId && advisor.trim()))
 
   return (
     <aside className={styles.panel} aria-label="Nueva cita">
@@ -81,7 +88,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
         <label>
           <span className="eyebrow">Día</span>
           <select value={day} onChange={(event) => setDay(event.target.value)}>
-            {week.days.map((item) => <option key={item} value={item}>{dayLabel(item)}</option>)}
+            {days.map((item) => <option key={item} value={item}>{dayLabel(item)}</option>)}
           </select>
         </label>
 
@@ -133,6 +140,11 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
               <span className="eyebrow">WhatsApp</span>
               <input value={phone} inputMode="tel" onChange={(event) => setPhone(event.target.value)} placeholder="573001234567" />
             </label>
+            <label>
+              <span className="eyebrow">Asesor</span>
+              <input value={advisor} maxLength={60} list="advisor-options" onChange={(event) => setAdvisor(event.target.value)} placeholder="Quién agenda y atiende esta cita" />
+              <AdvisorOptions />
+            </label>
           </>
         )}
 
@@ -144,7 +156,10 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
         <button
           className="btn btn-primary"
           disabled={busy || !canSubmit}
-          onClick={() => onSubmit({ kind, location, day, start, serviceId, phone, name: name.trim(), notes, people })}
+          onClick={() => {
+            if (kind === 'appointment') rememberAdvisor(advisor)
+            onSubmit({ kind, location, day, start, serviceId, phone, name: name.trim(), notes, people, advisor: advisor.trim() })
+          }}
         >
           {kind === 'block' ? 'Bloquear' : 'Crear cita confirmada'}
         </button>

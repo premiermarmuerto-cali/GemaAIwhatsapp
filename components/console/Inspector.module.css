@@ -23,11 +23,45 @@
 .muted { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.5; }
 
 .facts { display: flex; flex-direction: column; margin: 0; border-radius: var(--radius); background: var(--surface-2); }
-.facts > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; }
+.facts > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 9px 12px; }
 .facts > div + div { border-top: 1px solid var(--line-soft); }
-.facts dt { color: var(--faint); font-size: 12px; white-space: nowrap; }
-.facts dd { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; text-align: right; }
+.facts dt { flex: none; color: var(--faint); font-size: 12px; white-space: nowrap; }
+.facts dd { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-width: 0; margin: 0; font-size: 12px; line-height: 1.45; text-align: right; overflow-wrap: anywhere; }
 .facts dd[data-closed] { color: var(--danger); }
+/* Valores largos (motivo, conversión, automáticos): la etiqueta arriba y el texto debajo, a lo ancho.
+   Antes se apretaban a la derecha y se partían en columnas de dos palabras. */
+.facts > div[data-stack] { flex-direction: column; align-items: stretch; gap: 5px; }
+.facts > div[data-stack] dd { flex-direction: column; align-items: flex-start; justify-content: flex-start; text-align: left; color: var(--text); }
+.facts > div[data-alert] { background: var(--primary-soft); }
+.facts > div[data-alert] dt { color: var(--primary); font-weight: 600; }
+.facts > div[data-alert] :global(.btn) { min-height: 30px; padding: 0 12px; font-size: 11px; }
+
+.autoList { display: grid; gap: 4px; width: 100%; margin: 0; padding: 0; list-style: none; }
+.autoList li { display: flex; justify-content: space-between; gap: 10px; }
+.autoList time { flex: none; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+.section > :global(.eyebrow) { display: inline-flex; align-items: center; gap: 6px; }
+.section > :global(.eyebrow) svg { width: 12px; height: 12px; }
+.presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.preset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+}
+.preset:first-child { grid-column: 1 / -1; border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); color: var(--text); }
+.preset:hover:not(:disabled) { border-color: var(--primary); color: var(--text); background: var(--primary-soft); }
+.preset svg { width: 14px; height: 14px; flex: none; color: var(--primary); }
 
 .action {
   display: flex;

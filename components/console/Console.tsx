@@ -79,6 +79,7 @@ export function Console() {
             onSend={(text) => chats.send(chat.phone, text)}
             onResolveAgent={() => chats.resolveAgent(chat.phone)}
             onOpenPanel={() => setPanelOpen(true)}
+            onResendWelcome={() => void chats.sendPreset(chat.phone, 'welcome', 'Bienvenida')}
             toast={show}
           />
         ) : (
@@ -94,7 +95,15 @@ export function Console() {
       </main>
 
       {panelOpen && <div className={styles.backdrop} onClick={() => setPanelOpen(false)} aria-hidden="true" />}
-      <Inspector stats={stats} chat={chat} onOpenSettings={openSettings} onClose={() => setPanelOpen(false)} toast={show} />
+      <Inspector
+        stats={stats}
+        chat={chat}
+        onOpenSettings={openSettings}
+        onClose={() => setPanelOpen(false)}
+        onSendPreset={chats.sendPreset}
+        onReactivate={chats.reactivate}
+        toast={show}
+      />
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} toast={show} />}
       <Toasts toasts={toasts} onDismiss={dismiss} />

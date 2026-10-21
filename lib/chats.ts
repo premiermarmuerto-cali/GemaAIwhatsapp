@@ -4,6 +4,7 @@ import { attachMediaInfo } from './media'
 import { previewOf } from './media-text'
 import { countryOf, regionOf } from './phone'
 import { keys, redis, toHash } from './redis'
+import { bumpRev, queueRev } from './revision'
 import { queueStat } from './stats'
 import type { AgentKind, Box, ChatDetail, ChatLists, ChatPatch, ChatSummary, Lead, Location, Message, Sender } from './types'
 
@@ -40,6 +41,9 @@ function toSummary(phone: string, raw: Record<string, string>): ChatSummary {
     paymentNotice: raw.paymentNotice ?? '',
     paymentNoticeAt: Number(raw.paymentNoticeAt ?? 0),
     noMarketing: raw.noMarketing === '1',
+    optedOut: raw.optedOut === '1',
+    optedOutAt: Number(raw.optedOutAt ?? 0),
+    optedOutText: raw.optedOutText ?? '',
     adSourceId: raw.adSourceId ?? '',
     adHeadline: raw.adHeadline ?? '',
     ctwaClid: raw.ctwaClid ?? '',
@@ -125,6 +129,9 @@ export async function recordInbound(phone: string, message: Message, name?: stri
   tx.zadd(keys.box('inbox'), { score: message.at, member: phone })
   queueStat(tx, 'inbound')
   if (isNew) queueStat(tx, 'newChats')
+  queueRev(tx, 'chats')
+  // Queda esperando respuesta hasta que Gema o una persona le escriba (vigilante de lib/automations.ts).
+  tx.zadd(keys.awaiting, { score: message.at, member: phone })
   await tx.exec()
 }
 
@@ -144,22 +151,37 @@ export async function recordOutbound(phone: string, message: Message) {
   tx.zadd(keys.box('inbox'), { xx: true }, { score: message.at, member: phone })
   tx.zadd(keys.box('archived'), { xx: true }, { score: message.at, member: phone })
   queueStat(tx, message.sender === 'gem' ? 'aiReplies' : 'humanReplies')
+  queueRev(tx, 'chats')
+  tx.zrem(keys.awaiting, phone)
   await tx.exec()
 }
 
 /** Tocó "Ahora no" en una plantilla de marketing: no se le vuelven a enviar plantillas de marketing. */
 export async function setNoMarketing(phone: string): Promise<void> {
   await redis().hset(keys.chat(phone), { noMarketing: '1' })
+  await bumpRev('chats')
+}
+
+/**
+ * Dijo "no me interesa", "ahora no" o similar: se detienen TODOS sus mensajes automáticos (también las
+ * plantillas de marketing). Vuelven solo si agenda (attachBooking) o si el operador lo reactiva.
+ */
+export async function setOptOut(phone: string, text: string): Promise<void> {
+  await redis().hset(keys.chat(phone), { optedOut: '1', optedOutAt: String(Date.now()), optedOutText: text.trim().slice(0, 120), noMarketing: '1' })
+  await bumpRev('chats')
 }
 
 /** La primera objeción que frenó la venta queda en el chat ("efectivo"), para medir cuántos caen ahí. */
 export async function setObjection(phone: string, objection: string): Promise<void> {
-  await redis().hsetnx(keys.chat(phone), 'objection', objection)
+  if (await redis().hsetnx(keys.chat(phone), 'objection', objection)) await bumpRev('chats')
 }
 
 /** Estado del último evento de conversión enviado a Meta, para auditarlo desde el panel. */
 export async function setCapiStatus(phone: string, status: { event: string; ok: boolean; reason?: string; at: number }): Promise<void> {
-  if (await redis().exists(keys.chat(phone))) await redis().hset(keys.chat(phone), { capiStatus: JSON.stringify(status) })
+  if (await redis().exists(keys.chat(phone))) {
+    await redis().hset(keys.chat(phone), { capiStatus: JSON.stringify(status) })
+    await bumpRev('chats')
+  }
 }
 
 /** Deja constancia de que una automatización ya se envió a este chat (no se repite). */
@@ -167,6 +189,7 @@ export async function markChatAuto(chat: Pick<ChatSummary, 'phone'>, kind: strin
   // Se lee el registro actual (no el de la corrida) para no pisar otra marca hecha en la misma corrida.
   const current = parseAutoSent(await redis().hget<string>(keys.chat(chat.phone), 'autoSent') ?? undefined)
   await redis().hset(keys.chat(chat.phone), { autoSent: JSON.stringify({ ...current, [kind]: Date.now() }) })
+  await bumpRev('chats')
 }
 
 /** Guarda lo que Gema averiguó del prospecto. Solo escribe los campos que traen valor nuevo. */
@@ -175,7 +198,9 @@ export async function saveLead(phone: string, lead: Partial<Lead>) {
   if (lead.concern) patch.leadConcern = lead.concern.slice(0, 300)
   if (lead.serviceId) patch.leadService = lead.serviceId.slice(0, 40)
   if (lead.location && isLocation(lead.location)) patch.leadLocation = lead.location
-  if (Object.keys(patch).length) await redis().hset(keys.chat(phone), patch)
+  if (!Object.keys(patch).length) return
+  await redis().hset(keys.chat(phone), patch)
+  await bumpRev('chats')
 }
 
 /** El chat produjo una cita: queda enlazada y el chat pasa a "agendado" (cuenta en las métricas). */
@@ -183,6 +208,8 @@ export async function attachBooking(phone: string, bookingId: string, lead: Part
   const db = redis()
   const current = await getSummary(phone)
   const tx = db.multi()
+  // Agendó: vuelve a recibir lo automático de su cita (recordatorios), aunque antes dijera "ahora no".
+  if (current?.optedOut) tx.hdel(keys.chat(phone), 'optedOut', 'optedOutAt', 'optedOutText')
   tx.hset(keys.chat(phone), {
     bookingId,
     ...(lead.name ? { name: lead.name } : {}),
@@ -194,6 +221,7 @@ export async function attachBooking(phone: string, bookingId: string, lead: Part
     tx.hset(keys.chat(phone), { stage: 'booked', bookedAt: String(bookedAt) })
     queueStat(tx, 'booked', 1, bookedAt)
   }
+  queueRev(tx, 'chats')
   await tx.exec()
 }
 
@@ -206,15 +234,18 @@ export async function updateChat(phone: string, patch: ChatPatch): Promise<ChatS
   const botChanged = patch.botActive !== undefined && patch.botActive !== current.botActive
   const stageChanged = patch.stage !== undefined && patch.stage !== current.stage
   const archiveChanged = patch.archived !== undefined && patch.archived !== current.archived
+  const optInChanged = patch.optedOut === false && current.optedOut
   // Devolver el chat a Gema o dar la cita por hecha también da por atendida la solicitud de asesor.
   const agentResolved = current.needsAgent && (patch.needsAgent === false || (botChanged && patch.botActive) || (stageChanged && patch.stage === 'booked'))
   // Las acciones son idempotentes: repetir "agendado" no vuelve a sumar en las métricas.
-  if (!botChanged && !stageChanged && !archiveChanged && !agentResolved) return current
+  if (!botChanged && !stageChanged && !archiveChanged && !agentResolved && !optInChanged) return current
 
   const tx = db.multi()
 
   if (botChanged) tx.hset(chatKey, { botActive: patch.botActive ? '1' : '0' })
   if (agentResolved) tx.hset(chatKey, { needsAgent: '0' })
+  // El operador lo reactiva: vuelve a recibir seguimientos y plantillas.
+  if (optInChanged) tx.hdel(chatKey, 'optedOut', 'optedOutAt', 'optedOutText', 'noMarketing')
 
   if (stageChanged) {
     if (patch.stage === 'booked') {
@@ -237,6 +268,7 @@ export async function updateChat(phone: string, patch: ChatPatch): Promise<ChatS
     tx.zadd(keys.box(to), { score: current.lastAt || Date.now(), member: phone })
   }
 
+  queueRev(tx, 'chats')
   await tx.exec()
   return getSummary(phone)
 }
@@ -253,6 +285,7 @@ export async function notePayment(phone: string, notice: string) {
     paymentNoticeAt: String(Date.now()),
     ...(current.needsAgent && current.agentKind === 'payment' ? { needsAgent: '0' } : {}),
   })
+  await bumpRev('chats')
 }
 
 /** Pausa a Gema y marca el chat para que una persona lo atienda. */
@@ -265,6 +298,7 @@ export async function requestAgent(phone: string, reason: string, kind: AgentKin
     agentReason: clean ? clean[0].toUpperCase() + clean.slice(1) : kind === 'payment' ? 'Comprobante recibido' : 'Gema pidió ayuda de un asesor',
     agentAt: String(Date.now()),
   })
+  await bumpRev('chats')
 }
 
 export async function deleteChat(phone: string) {
@@ -272,5 +306,7 @@ export async function deleteChat(phone: string) {
     .del(keys.chat(phone), keys.messages(phone))
     .zrem(keys.box('inbox'), phone)
     .zrem(keys.box('archived'), phone)
+    .zrem(keys.awaiting, phone)
+    .incr(keys.rev('chats'))
     .exec()
 }

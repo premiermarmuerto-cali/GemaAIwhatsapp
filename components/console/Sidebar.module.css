@@ -5,20 +5,34 @@
   background: var(--surface);
 }
 
+/* Dos filas: logotipo y versión arriba, herramientas abajo. En una sola fila el nombre se partía en
+   tres líneas junto a los cuatro iconos (v1.4). */
 .brand {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 4px;
-  height: 76px;
   flex: none;
-  padding: 0 12px 0 20px;
+  padding: 14px 12px 8px 20px;
 }
-/* El isotipo es ancho (1.74:1): a 24 px de alto ocupa 42 de ancho, que es lo que
-   deja sitio al nombre en los 320 px de la barra. */
-.brandMark { height: 24px; margin-right: 10px; color: var(--primary-bright); }
-.brand > div { flex: 1; min-width: 0; }
-/* Logotipo al estilo del sitio: Montserrat ligera, mayúsculas y tracking ancho. */
-.brandName { font-family: var(--font-brand); font-size: 12px; font-weight: 400; letter-spacing: .2em; text-transform: uppercase; line-height: 1.4; }
+.brandRow { display: flex; align-items: center; gap: 10px; min-width: 0; padding-right: 8px; }
+/* El isotipo es ancho (1.74:1): a 22 px de alto ocupa 38 de ancho. */
+.brandMark { height: 22px; color: var(--primary-bright); }
+/* Logotipo al estilo del sitio: Montserrat ligera, mayúsculas y tracking ancho, siempre en una línea. */
+.brandName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: .18em;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.brandTools { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.brandTools > :global(.eyebrow) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .tabs {
   display: grid;
@@ -222,9 +236,13 @@
   place-items: center;
   width: 30px;
   height: 30px;
+  flex: none;
   border-radius: 50%;
-  background: var(--secondary);
+  /* Tan de marca en lugar del musgo (v1.4): el verde se confundía con los estados del chat. */
+  background: linear-gradient(135deg, var(--primary-bright), color-mix(in srgb, var(--primary-bright) 70%, var(--primary)));
+  color: #1b1f12;
   font: 600 10px var(--font-sans);
+  letter-spacing: .04em;
 }
 .operatorCopy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; font-size: 12px; }
 .operatorCopy :global(.eyebrow) { font-size: 9px; color: var(--primary); }

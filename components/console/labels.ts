@@ -37,9 +37,10 @@ export const PREVIEW_PREFIX: Record<Sender, string> = {
 
 /** Nombres de las automatizaciones (lib/automations.ts) tal como se muestran en el panel. */
 export const AUTO_LABEL: Record<string, string> = {
+  bienvenida: 'Bienvenida con el 2x1',
   seguimiento_pago: 'Aviso: el horario se libera',
-  seguimiento_45m: 'Seguimiento: horas concretas',
-  seguimiento_3h: 'Seguimiento: 2x1 y sede',
+  seguimiento_45m: 'Seguimiento 45 min: ritual y hora',
+  seguimiento_3h: 'Seguimiento 3 h: cero invasiva y 2x1',
   seguimiento_22h: 'Seguimiento a las 22 h',
   efectivo_retoma: 'Gema retomó (pago en efectivo)',
   retomar_cita_limpieza: 'Plantilla: retomar cita',

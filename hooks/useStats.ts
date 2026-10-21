@@ -14,7 +14,8 @@ export function useStats(version: number) {
   }, [])
 
   useEffect(() => { void load() }, [load, version])
-  usePolling(load, 15_000)
+  // Se recargan cuando cambia un chat (`version`, ver useChats); esto es solo el respaldo.
+  usePolling(load, 5 * 60_000, true, 30 * 60_000)
 
   return stats
 }

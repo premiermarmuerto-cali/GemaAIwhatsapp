@@ -24,26 +24,30 @@ export function MessageThread({ chat, messages }: { chat: ChatSummary; messages:
   }, [count])
 
   return (
-    <div className={styles.thread} ref={scroller}>
-      {messages === null && <div className={styles.threadNotice}>Cargando mensajes…</div>}
-      {messages?.length === 0 && <div className={styles.threadNotice}>Sin mensajes todavía.</div>}
-      {messages?.map((message, index) => {
-        const previous = messages[index - 1]
-        const newDay = !previous || !isSameDay(previous.at, message.at)
-        return (
-          <Fragment key={message.id}>
-            {newDay && <div className={styles.day}><span>{formatDayLabel(message.at)}</span></div>}
-            <div className={styles.message} data-sender={message.sender} data-pending={message.pending}>
-              <div className={styles.messageMeta}>
-                {message.sender === 'user' && chat.name ? chat.name : SENDER_LABEL[message.sender]}
-                <time>{message.pending === 'sending' ? 'Enviando…' : formatClock(message.at)}</time>
+    <div className={styles.threadWrap}>
+      {/* El patrón de cristal del login, muy tenue, como textura del fondo del chat (v1.4). */}
+      <div className="gem-pattern-soft" aria-hidden="true" />
+      <div className={styles.thread} ref={scroller}>
+        {messages === null && <div className={styles.threadNotice}>Cargando mensajes…</div>}
+        {messages?.length === 0 && <div className={styles.threadNotice}>Sin mensajes todavía.</div>}
+        {messages?.map((message, index) => {
+          const previous = messages[index - 1]
+          const newDay = !previous || !isSameDay(previous.at, message.at)
+          return (
+            <Fragment key={message.id}>
+              {newDay && <div className={styles.day}><span>{formatDayLabel(message.at)}</span></div>}
+              <div className={styles.message} data-sender={message.sender} data-pending={message.pending}>
+                <div className={styles.messageMeta}>
+                  {message.sender === 'user' && chat.name ? chat.name : SENDER_LABEL[message.sender]}
+                  <time>{message.pending === 'sending' ? 'Enviando…' : formatClock(message.at)}</time>
+                </div>
+                {message.ad && <p className={styles.mediaNote}><b>Desde anuncio</b>{message.ad.headline || message.ad.body}</p>}
+                {message.media ? <MediaBubble message={message} /> : <div className={styles.bubble}>{message.text}</div>}
               </div>
-              {message.ad && <p className={styles.mediaNote}><b>Desde anuncio</b>{message.ad.headline || message.ad.body}</p>}
-              {message.media ? <MediaBubble message={message} /> : <div className={styles.bubble}>{message.text}</div>}
-            </div>
-          </Fragment>
-        )
-      })}
+            </Fragment>
+          )
+        })}
+      </div>
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { formatListTime } from '@/lib/format'
 import { formatPhone } from '@/lib/phone'
 import type { AgentKind, Box, ChatLists, ChatSummary } from '@/lib/types'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { APP_VERSION } from '@/lib/version'
 import { AGENT_LABEL, avatarLabel, PREVIEW_PREFIX } from './labels'
 import styles from './Sidebar.module.css'
 
@@ -70,15 +71,18 @@ export function Sidebar({ lists, box, onBoxChange, activePhone, onSelect, loaded
   return (
     <aside className={styles.sidebar}>
       <header className={styles.brand}>
-        <span className={`brand-mark ${styles.brandMark}`} aria-hidden="true" />
-        <div>
+        <div className={styles.brandRow}>
+          <span className={`brand-mark ${styles.brandMark}`} aria-hidden="true" />
           <div className={styles.brandName}>Premier Mar Muerto</div>
-          <div className="eyebrow">Conversaciones</div>
+          <span className="version-tag" title="Versión del panel">v{APP_VERSION}</span>
         </div>
-        <Link className="btn btn-ghost btn-icon" href="/agenda" aria-label="Abrir la agenda" title="Abrir la agenda"><CalendarIcon /></Link>
-        <ThemeToggle />
-        <button className="btn btn-ghost btn-icon" onClick={onOpenSettings} aria-label="Gema y la agenda" title="Gema y la agenda"><SettingsIcon /></button>
-        <button className="btn btn-ghost btn-icon only-narrow" onClick={onOpenPanel} aria-label="Panel de control" title="Panel de control"><PanelIcon /></button>
+        <div className={styles.brandTools}>
+          <span className="eyebrow">Conversaciones</span>
+          <Link className="btn btn-ghost btn-icon" href="/agenda" aria-label="Abrir la agenda" title="Abrir la agenda"><CalendarIcon /></Link>
+          <ThemeToggle />
+          <button className="btn btn-ghost btn-icon" onClick={onOpenSettings} aria-label="Gema y la agenda" title="Gema y la agenda"><SettingsIcon /></button>
+          <button className="btn btn-ghost btn-icon only-narrow" onClick={onOpenPanel} aria-label="Panel de control" title="Panel de control"><PanelIcon /></button>
+        </div>
       </header>
 
       <div className={styles.tabs} role="tablist" aria-label="Bandejas">

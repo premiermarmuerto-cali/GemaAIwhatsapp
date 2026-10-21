@@ -7,11 +7,13 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 import { Toasts } from '@/components/console/Toasts'
 import { useAgenda } from '@/hooks/useAgenda'
 import { useToast } from '@/hooks/useToast'
-import { addDays, dayKey, dayLabel } from '@/lib/calendar'
+import { addDays, addMonths, dayKey, dayLabel, monthLabel } from '@/lib/calendar'
 import { LOCATION_LABEL, LOCATIONS } from '@/lib/clinic'
 import type { Booking, Location } from '@/lib/types'
+import { APP_VERSION } from '@/lib/version'
 import { BookingPanel } from './BookingPanel'
 import { holdCountdown } from './labels'
+import { MonthGrid } from './MonthGrid'
 import { NewBookingForm } from './NewBookingForm'
 import { WeekGrid } from './WeekGrid'
 import styles from './Agenda.module.css'
@@ -41,17 +43,24 @@ export function Agenda() {
 
   const closedReason = week?.closed ?? {}
   const today = dayKey()
-  const thisWeek = agenda.days.includes(today)
+  const monthView = agenda.view === 'month'
+  // "Hoy" se apaga cuando el periodo que se ve ya contiene el día de hoy.
+  const showingToday = monthView ? agenda.anchor.slice(0, 7) === today.slice(0, 7) : agenda.days.includes(today)
+  const step = (direction: 1 | -1) => agenda.goTo(monthView ? addMonths(agenda.anchor, direction) : addDays(agenda.anchor, 7 * direction))
+  // Las citas de la sede que se ven en el mes (no las de los días de otros meses en los bordes).
+  const inPeriod = (booking: Booking) => !week?.month || booking.day.startsWith(week.month)
 
   const openBooking = (booking: Booking) => setAside({ mode: 'booking', id: booking.id })
 
   return (
     <div className={styles.shell} data-aside={aside ? 'open' : undefined}>
+      <div className="gem-pattern-soft" aria-hidden="true" />
       <header className={styles.top}>
         <div className={styles.brand}>
           <span className={`brand-mark ${styles.mark}`} aria-hidden="true" />
           <span className={styles.wordmark}>Premier Mar Muerto</span>
           <span className="eyebrow">Agenda</span>
+          <span className="version-tag" title="Versión del panel">v{APP_VERSION}</span>
         </div>
 
         <div className={styles.topEnd}>
@@ -62,17 +71,27 @@ export function Agenda() {
 
       <div className={styles.toolbar}>
         <div className={styles.nav}>
-          <button className="btn btn-secondary btn-icon" onClick={() => agenda.goTo(addDays(agenda.anchor, -7))} aria-label="Semana anterior"><BackIcon /></button>
-          <button className="btn btn-secondary" onClick={() => agenda.goTo(today)} disabled={thisWeek}><CalendarIcon />Hoy</button>
-          <button className="btn btn-secondary btn-icon" onClick={() => agenda.goTo(addDays(agenda.anchor, 7))} aria-label="Semana siguiente"><ArrowIcon /></button>
-          <span className={styles.range}>{dayLabel(agenda.days[0], { short: true })} – {dayLabel(agenda.days[6], { short: true })}</span>
+          <button className="btn btn-secondary btn-icon" onClick={() => step(-1)} aria-label={monthView ? 'Mes anterior' : 'Semana anterior'}><BackIcon /></button>
+          <button className="btn btn-secondary" onClick={() => agenda.goTo(today)} disabled={showingToday}><CalendarIcon />Hoy</button>
+          <button className="btn btn-secondary btn-icon" onClick={() => step(1)} aria-label={monthView ? 'Mes siguiente' : 'Semana siguiente'}><ArrowIcon /></button>
+          <span className={styles.range}>
+            {monthView ? monthLabel(agenda.anchor) : `${dayLabel(agenda.days[0], { short: true })} – ${dayLabel(agenda.days[6], { short: true })}`}
+          </span>
+        </div>
+
+        <div className={styles.tabs} role="tablist" aria-label="Vista">
+          {(['week', 'month'] as const).map((mode) => (
+            <button key={mode} role="tab" aria-selected={agenda.view === mode} className={styles.tab} onClick={() => agenda.setView(mode)}>
+              {mode === 'week' ? 'Semana' : 'Mes'}
+            </button>
+          ))}
         </div>
 
         <div className={styles.tabs} role="tablist" aria-label="Sede">
           {LOCATIONS.map((item) => (
             <button key={item} role="tab" aria-selected={location === item} className={styles.tab} onClick={() => setLocation(item)}>
               {LOCATION_LABEL[item]}
-              {week && <span className={styles.tabCount}>{week.bookings.filter((booking) => booking.location === item).length}</span>}
+              {week && <span className={styles.tabCount}>{week.bookings.filter((booking) => booking.location === item && inPeriod(booking)).length}</span>}
             </button>
           ))}
         </div>
@@ -105,6 +124,14 @@ export function Agenda() {
           </div>
         ) : !week ? (
           <div className={styles.empty}><p className={styles.dim}>Cargando la agenda…</p></div>
+        ) : monthView ? (
+          <MonthGrid
+            week={week}
+            location={location}
+            activeId={selected?.id ?? null}
+            onSelect={openBooking}
+            onPickDay={(day) => { agenda.goTo(day); agenda.setView('week') }}
+          />
         ) : (
           <>
             <WeekGrid
@@ -142,6 +169,7 @@ export function Agenda() {
             if (status === 'cancelled') setAside(null)
           }}
           onAnnotate={(id, notes) => void agenda.annotate(id, notes)}
+          onAdvisor={(id, advisor) => void agenda.setAdvisor(id, advisor)}
         />
       )}
 
@@ -160,13 +188,13 @@ export function Agenda() {
 
       {aside?.mode === 'booking' && !selected && week && (
         <aside className={styles.panel}>
-          <p className={styles.dim}>Esa cita ya no está en esta semana. Puede que se haya cancelado o reprogramado.</p>
+          <p className={styles.dim}>Esa cita ya no está en {monthView ? 'este mes' : 'esta semana'}. Puede que se haya cancelado o reprogramado.</p>
           <button className="btn btn-secondary" onClick={() => setAside(null)}>Cerrar</button>
         </aside>
       )}
 
       <Toasts toasts={toasts} onDismiss={dismiss} />
-      <p className="sr-only" role="status">{week ? `${week.bookings.length} citas esta semana. ${awaiting.length} esperando validación.` : ''}</p>
+      <p className="sr-only" role="status">{week ? `${week.bookings.filter(inPeriod).length} citas ${monthView ? 'este mes' : 'esta semana'}. ${awaiting.length} esperando validación.` : ''}</p>
     </div>
   )
 }

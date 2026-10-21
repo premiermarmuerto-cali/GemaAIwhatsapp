@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { annotateBooking, bookingsOfPhone, getBooking, moveBooking, rescheduleBooking } from '@/lib/booking'
+import { annotateBooking, bookingsOfPhone, getBooking, moveBooking, rescheduleBooking, setBookingAdvisor } from '@/lib/booking'
 import { isClock, isDayKey } from '@/lib/calendar'
 import { isLocation } from '@/lib/clinic'
 import { amountOf, getConfig } from '@/lib/config'
@@ -39,6 +39,9 @@ export const PATCH = route(async (request: Request, context: Params) => {
   if (typeof body.notes === 'string') {
     await annotateBooking(id, body.notes)
   }
+  if (typeof body.advisor === 'string') {
+    await setBookingAdvisor(id, body.advisor)
+  }
 
   if (body.day !== undefined || body.start !== undefined) {
     const day = String(body.day ?? '')
@@ -65,6 +68,11 @@ export const PATCH = route(async (request: Request, context: Params) => {
     // Las que confirma Bold ya se reportan solas; las creadas a mano por el operador no tienen pago.
     if (status === 'confirmed' && before && HOLD_STATUSES.includes(before.status) && before.phone && !before.paymentRef) {
       await trackConversion({ name: 'Purchase', phone: before.phone, eventId: `pago_${before.phone}_${before.id}`, value: amountOf(before.deposit) })
+    }
+    // La sesión se realizó: quien pagó todo en la sede (efectivo, o cita creada a mano) también es una
+    // venta del anuncio. Mismo event_id que el anticipo: si ese ya se reportó, Meta no lo cuenta dos veces.
+    if (status === 'done' && before && before.kind !== 'block' && before.phone) {
+      await trackConversion({ name: 'Purchase', phone: before.phone, eventId: `pago_${before.phone}_${before.id}`, value: amountOf(before.price) })
     }
     return NextResponse.json(moved)
   }

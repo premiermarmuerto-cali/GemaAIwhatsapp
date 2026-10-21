@@ -1,6 +1,8 @@
 /* Agenda · Premier Mar Muerto. Todo el color sale de los tokens de globals.css. */
 
 .shell {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: 1fr;
   grid-template-rows: auto auto auto 1fr;
@@ -14,6 +16,9 @@
     grid-template-areas: 'top top' 'toolbar toolbar' 'queue queue' 'main panel';
   }
 }
+
+/* El patrón de cristal, muy tenue, detrás de toda la agenda (v1.4). */
+.shell > :global(.gem-pattern-soft) { z-index: -1; }
 
 /* ── Cabecera ─────────────────────────────────────────────── */
 
@@ -190,6 +195,98 @@
 .eventName { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .eventService { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .eventHold { font: 500 10px/1.2 var(--font-sans); color: var(--primary); }
+.eventAdvisor { font: 500 10px/1.2 var(--font-sans); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Vista mensual ────────────────────────────────────────── */
+
+.month {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(92px, 1fr));
+  min-width: 700px;
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line-soft);
+}
+.monthHead {
+  padding: 8px;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line);
+  color: var(--faint);
+  font: 600 10px/1 var(--font-sans);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.monthCell {
+  display: flex;
+  min-width: 0;
+  min-height: 118px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-right: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+.monthCell[data-outside] { background: transparent; opacity: .55; }
+.monthCell[data-today] { background: var(--primary-soft); box-shadow: inset 0 2px 0 var(--primary); }
+.monthCell[data-closed] { background: repeating-linear-gradient(135deg, transparent 0 5px, var(--line-soft) 5px 6px); }
+.monthCellHead { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.monthDay {
+  display: grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: 600 12px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.monthDay:hover { border-color: var(--primary); color: var(--primary); }
+.monthCell[data-today] .monthDay { background: var(--primary); color: var(--primary-ink); }
+.monthNote { overflow: hidden; color: var(--faint); font-size: 10px; white-space: nowrap; text-overflow: ellipsis; }
+.monthList { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.monthEvent {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  text-align: left;
+}
+.monthEvent time { flex: none; color: var(--muted); font: 600 10px/1.3 var(--font-sans); font-variant-numeric: tabular-nums; }
+.monthEvent span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.monthEvent:hover { border-color: var(--primary); }
+.monthEvent[data-active] { box-shadow: 0 0 0 2px var(--primary); }
+.monthEvent[data-status='confirmed'] { border-color: var(--secondary); background: color-mix(in srgb, var(--secondary) 12%, var(--surface)); }
+.monthEvent[data-status='pending_payment'] { border-color: var(--primary); background: color-mix(in srgb, var(--primary-bright) 16%, var(--surface)); }
+.monthEvent[data-status='hold'] { border-style: dashed; border-color: var(--faint); }
+.monthEvent[data-status='done'] { opacity: .7; }
+.monthEvent[data-status='no_show'] { border-color: var(--danger); background: var(--danger-soft); }
+.monthEvent[data-kind='block'] { background: repeating-linear-gradient(135deg, var(--surface-2) 0 6px, var(--surface-3) 6px 12px); }
+.monthMore { padding: 2px 5px; border: 0; background: transparent; color: var(--primary); font: 600 10px var(--font-sans); text-align: left; }
+.monthMore:hover { text-decoration: underline; }
+
+/* Asesor editable en la ficha de la cita. */
+.advisorField { flex-wrap: wrap; }
+.advisorField input {
+  flex: 1;
+  min-width: 140px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+  font-size: 13px;
+}
+.advisorField input:focus { border-color: var(--primary); outline: none; }
+.advisorField :global(.btn) { min-height: 32px; font-size: 11px; }
 
 /* El color del bloque dice el estado sin tener que abrirlo:
    musgo = confirmada (todo en orden), tan = falta validar el anticipo. */

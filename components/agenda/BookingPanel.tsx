@@ -7,6 +7,7 @@ import { dayLabel, toClock, toMinutes } from '@/lib/calendar'
 import { LOCATION_LABEL } from '@/lib/clinic'
 import { formatPhone, isWhatsAppUserId } from '@/lib/phone'
 import type { Booking, BookingStatus } from '@/lib/types'
+import { AdvisorOptions } from './AdvisorOptions'
 import { ACTION_LABEL, holdCountdown, NEXT_STATUSES, PAYMENT_METHOD_LABEL, STATUS_LABEL } from './labels'
 import styles from './Agenda.module.css'
 
@@ -16,14 +17,17 @@ type Props = {
   onClose: () => void
   onStatus: (id: string, status: BookingStatus) => void
   onAnnotate: (id: string, notes: string) => void
+  onAdvisor: (id: string, advisor: string) => void
 }
 
 /** Ficha de la cita: lo que el bot extrajo del prospecto, el historial y las acciones del operador. */
-export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate }: Props) {
+export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onAdvisor }: Props) {
   const [notes, setNotes] = useState(booking.notes)
+  const [advisor, setAdvisor] = useState(booking.advisor)
   const [history, setHistory] = useState<Booking[]>([])
 
   useEffect(() => { setNotes(booking.notes) }, [booking.id, booking.notes])
+  useEffect(() => { setAdvisor(booking.advisor) }, [booking.id, booking.advisor])
 
   useEffect(() => {
     let active = true
@@ -70,6 +74,24 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate }: P
         )}
         {booking.concern && <div><dt>Lo que nos contó</dt><dd className={styles.quote}>{booking.concern}</dd></div>}
         <div><dt>Origen</dt><dd>{booking.source === 'bot' ? 'Gema · WhatsApp' : 'Operador'}</dd></div>
+        {booking.kind !== 'block' && (
+          <div>
+            <dt>Asesor</dt>
+            <dd className={styles.advisorField}>
+              {/* Quién generó la cita y a quién le corresponde la sesión. Se puede reasignar. */}
+              <input
+                value={advisor}
+                maxLength={60}
+                list="advisor-options"
+                placeholder="Nombre del asesor"
+                aria-label="Asesor de la cita"
+                onChange={(event) => setAdvisor(event.target.value)}
+              />
+              <button className="btn btn-secondary" disabled={busy || !advisor.trim() || advisor.trim() === booking.advisor} onClick={() => onAdvisor(booking.id, advisor.trim())}>Guardar</button>
+              <AdvisorOptions />
+            </dd>
+          </div>
+        )}
         {booking.holdUntil > 0 && (
           <div><dt>Apartado</dt><dd>se libera en {holdCountdown(booking.holdUntil)}</dd></div>
         )}

@@ -13,8 +13,11 @@ import { rateLimit } from './ratelimit'
 import { insertAfter, SEPARATOR, styleModelText, toMessages } from './reply-style'
 import { keys, redis } from './redis'
 import { sendWhatsAppImage, sendWhatsAppText } from './whatsapp'
-import { buildWelcome, needsAnswerAfterWelcome, WELCOME_KIND } from './welcome'
-import { HOLD_STATUSES, type AppConfig, type Booking, type Location, type Message } from './types'
+import { buildWelcome, needsAnswerAfterWelcome, WELCOME_KIND, type Welcome } from './welcome'
+import { availabilityNote } from './availability-note'
+import { isOptOut } from './optout'
+import { bumpRev } from './revision'
+import { HOLD_STATUSES, type AppConfig, type Booking, type ChatSummary, type Location, type Message } from './types'
 
 const HISTORY_FOR_MODEL = 30
 // Mitigación para el plan Hobby de Vercel: el after() del webhook corre en segundo plano
@@ -37,6 +40,8 @@ const BOLD_TIMEOUT_MS = 5_000
 // presupuesto del after() del webhook (ver nota de arriba), y una respuesta lleva hasta 4 mensajes.
 const MESSAGE_GAP_MS = 1_200
 const PENDING_SECONDS = 600
+// Un mensaje que se responde más de 30 min después de escrito (entrega tardía de Meta, caída): Gema se disculpa.
+const LATE_REPLY_MS = 30 * 60_000
 const PER_PHONE_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_PHONE) || 15 // por cada 10 min
 const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
 
@@ -59,7 +64,13 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
 const MARKERS = /\[\[\s*(ASESOR|PAGO|EFECTIVO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO|REPROGRAMAR|CANCELAR|ASISTE)\s*(?::([^\]]*))?\]\]/gi
 
 // El cliente quiere pagar en efectivo o en la sede: la objeción que más frena la venta (VIRAND, 19 oct).
-const SAYS_CASH = /\befectivo\b|\bpag(o|ar|amos|aria)\s+(all[aá]|en\s+(el\s+local|la\s+sede|la\s+cl[ií]nica|cabina|el\s+sitio))|contra\s*entrega/i
+// 20 oct: una clienta escribió "pago cuando llegue" y no se reconoció; ahora cubre "al llegar",
+// "en el lugar", "en físico", "allá mismo" y similares.
+const SAYS_CASH = /\befectivo\b|\bcash\b|contra\s*entrega|\ben\s+f[ií]sico\b|\bpag(o|ar|amos|ar[ií]a|ue|uemos)\b[^.?!\n]{0,30}?\b(all[aá]|ah[ií]\s+mismo|al\s+llegar|cuando\s+llegue|el\s+d[ií]a\s+de\s+la\s+cita|en\s+(el\s+|la\s+)?(local|sede|cl[ií]nica|cabina|sitio|lugar|establecimiento|spa|centro\s+comercial|persona))(?![a-záéíóúñ])/i
+// "el resto lo pago allá": acepta el anticipo y pregunta por el saldo; no es pagar todo en efectivo.
+const CASH_REMAINDER = /\b(resto|saldo|lo\s+dem[aá]s|diferencia|restante|lo\s+que\s+falta)\b/i
+/** Pide pagar todo en efectivo o en la sede (no solo el saldo después del anticipo). */
+export const saysCash = (text: string) => SAYS_CASH.test(text) && !CASH_REMAINDER.test(text)
 /** Motivo con el que el chat pasa a Johanna; lib/automations.ts lo reconoce para retomar a los 30 min. */
 export const CASH_REASON = 'Pago en efectivo: quiere pagar todo en la sede, sin anticipo'
 
@@ -247,22 +258,45 @@ const INSISTS_CASH = /\bnada\s+antes|\bsolo\s+(en\s+)?efectivo|\btodo\s+(en\s+ef
  * contestaba "el anticipo se debe pagar antes" (0 de 5 decían que se descuenta del valor, 20 oct): el
  * encuadre que VIRAND pidió evitar. La nota llega después del historial, justo antes de responder.
  */
-export function paymentNote(history: Message[], cashBooking = false): string | undefined {
+export function paymentNote(history: Message[], cashBooking = false, perk = ''): string | undefined {
   const last = history.at(-1)
   if (last?.sender !== 'user') return undefined
-  if (cashBooking && SAYS_CASH.test(last.text)) {
-    return 'Nota del sistema: el cliente quiere pagar en efectivo. Dile que sí: paga todo en la sede el día de la cita y no tiene que pagar nada antes. Pide solo lo que falte (cuál limpieza, sede, día y hora, nombre completo). Si ya tienes todo, reserva YA con [[RESERVA]] y [[EFECTIVO]]: no le pidas que confirme nada (ni el nombre ni el pago), ya lo dijo. No le ofrezcas link ni anticipo.'
+  if (cashBooking && (saysCash(last.text) || INSISTS_CASH.test(last.text))) {
+    return 'Nota del sistema: el cliente quiere pagar en efectivo en la sede. La respuesta es SÍ: paga todo en la sede el día de la cita y no tiene que pagar nada antes. NO le digas que necesita el anticipo para agendar, no le ofrezcas link ni le insistas. Pide solo lo que falte (cuál limpieza, sede, día y hora, nombre completo). Si ya tienes todo, reserva YA con [[RESERVA]] y [[EFECTIVO]]: no le pidas que confirme nada (ni el nombre ni el pago), ya lo dijo.'
   }
   const explained = history.slice(0, -1).some((message) => message.sender === 'gem' && EXPLAINED_DEPOSIT.test(message.text) && /efectivo|en la sede/i.test(message.text))
-  if (SAYS_CASH.test(last.text) || (explained && INSISTS_CASH.test(last.text))) {
+  if (saysCash(last.text) || (explained && INSISTS_CASH.test(last.text))) {
     return explained && INSISTS_CASH.test(last.text)
       ? 'Nota del sistema: ya le explicaste que el anticipo se descuenta del valor y el cliente insiste en no pagar nada antes. No le discutas: dile que lo confirmas con la sede y cuándo le respondes, y usa la marca [[EFECTIVO]].'
       : 'Nota del sistema: el cliente quiere pagar en efectivo o en la sede. Respóndele que sí: el resto lo paga en la sede el día de la cita, en efectivo o como prefiera. Solo el anticipo se paga antes, porque separa su cupo, y se descuenta del valor de su limpieza: no es un costo adicional. Dilo con esas palabras, con la cuenta del catálogo para su servicio, y una sola pregunta (por ejemplo si le envías el link para separarlo). No uses [[EFECTIVO]] todavía.'
   }
   if (ASKS_DEPOSIT.test(last.text)) {
-    return 'Nota del sistema: al hablar del anticipo di que se descuenta del valor de la limpieza (no es un cobro extra), con la cuenta del catálogo para ese servicio: cuánto deja ahora, cuánto paga en la sede y el total. No ofrezcas reservar sin anticipo ni pagar todo en la sede: esa opción no existe.'
+    return [
+      'Nota del sistema: al hablar del anticipo dilo como algo simbólico y seguro: se descuenta del valor de la limpieza (no es un cobro extra) y se pide solo para asegurar su espacio, porque hay personas que reservan y no llegan. Da la cuenta del catálogo para ese servicio: cuánto deja ahora, cuánto paga en la sede y el total.',
+      perk ? `Cuéntale que si agenda hoy con su anticipo, de cortesía le regalamos ${perk}.` : '',
+      cashBooking ? 'No le ofrezcas tú pagar todo en la sede: eso solo si él lo pide.' : 'No ofrezcas reservar sin anticipo ni pagar todo en la sede: esa opción no existe.',
+    ].filter(Boolean).join(' ')
   }
   return undefined
+}
+
+/** Dijo que no le interesa: Gema se despide sin insistir (los automáticos ya se detuvieron en el webhook). */
+export function optOutNote(chat: Pick<ChatSummary, 'optedOut'>, history: Message[]): string | undefined {
+  const last = history.at(-1)
+  if (!chat.optedOut || last?.sender !== 'user' || !(isOptOut(last.text) || /ahora_no$/i.test(last.buttonPayload ?? ''))) return undefined
+  return 'Nota del sistema: el cliente dijo que no le interesa o que ahora no. Despídete en una o dos frases cortas y amables, sin insistir, sin ofrecer nada y sin hacer preguntas. Puedes decirle que si más adelante quiere consentir su piel, aquí estás. No uses marcas.'
+}
+
+/**
+ * Su mensaje llegó o se procesó tarde (Meta reintentó la entrega, o se cayó el servicio): Gema
+ * empieza disculpándose por la demora. 20 oct: chats del 18 y 19 recibieron la primera respuesta
+ * más de un día después, sin una palabra al respecto.
+ */
+export function lateNote(history: Message[], now = Date.now()): string | undefined {
+  const last = history.at(-1)
+  if (last?.sender !== 'user' || now - last.at < LATE_REPLY_MS) return undefined
+  const hours = Math.round((now - last.at) / 3_600_000)
+  return `Nota del sistema: el mensaje del cliente nos llegó con retraso (lo escribió hace ${hours >= 1 ? `unas ${hours} horas` : 'un buen rato'}). Empieza con una disculpa corta y humana por la demora ("perdona la demora en responderte") y sigue normal.`
 }
 
 /**
@@ -355,31 +389,52 @@ const WELCOME_GAP_MS = 1_500
  * el servidor, así que no gasta IA ni puede inventar precios. Devuelve 'none' si no corresponde,
  * 'answer' si además hay una pregunta que los bloques no responden (la contesta Gema) u 'only'.
  */
-async function sendWelcome(phone: string, send: SendFn, sendImage: SendImageFn, testConfig?: AppConfig): Promise<'none' | 'answer' | 'only'> {
+async function sendWelcome(chat: ChatSummary, send: SendFn, sendImage: SendImageFn, testConfig?: AppConfig): Promise<'none' | 'answer' | 'only'> {
+  const { phone } = chat
   const history = await getHistory(phone, 20)
   if (!history.length || history.some((message) => message.sender !== 'user')) return 'none'
-  const welcome = await buildWelcome(testConfig ?? await getConfig(), process.env.PUBLIC_APP_URL || 'https://premier-agente.vercel.app')
+  // "No me interesa" como primer mensaje: no se le manda la bienvenida, Gema solo se despide.
+  if (chat.optedOut) return 'none'
+  const welcome = await buildWelcome(testConfig ?? await getConfig(), process.env.PUBLIC_APP_URL || 'https://premier-agente.vercel.app', { chat })
   if (!welcome) return 'none'
-  const record = (id: string | undefined, text: string) => recordOutbound(phone, { id: id ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now(), auto: WELCOME_KIND })
+  // Llegó (o se procesó) tarde: primero una disculpa corta, después la bienvenida de siempre.
+  const late = Date.now() - history[0].at > LATE_REPLY_MS
   try {
-    // Si la imagen falla (Meta no la pudo descargar), el texto sale igual sin ella.
-    const imageId = await sendImage(phone, welcome.imageUrl, welcome.caption).catch(async (error) => {
-      console.warn(`[autoreply] ${phone}: la imagen de bienvenida no salió, va solo el texto:`, error instanceof Error ? error.message : error)
-      return send(phone, welcome.caption)
-    })
-    await record(imageId, welcome.caption)
-    for (const message of welcome.messages) {
-      await sleep(WELCOME_GAP_MS)
-      await record(await send(phone, message), message)
-    }
+    await deliverWelcome(phone, welcome, send, sendImage, { late })
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    await requestAgent(phone, `WhatsApp rechazó la bienvenida: ${detail}`)
+    await requestAgent(phone, `${WELCOME_FAILED} ${detail}`)
     return 'only'
   }
-  await markChatAuto({ phone }, WELCOME_KIND)
   const clientTexts = history.filter((message) => message.sender === 'user')
   return clientTexts.some((message) => message.media) || needsAnswerAfterWelcome(clientTexts.map((message) => message.text).join(' ')) ? 'answer' : 'only'
+}
+
+/** Motivo con el que un chat pasa a una persona si la bienvenida no salió (el panel ofrece reenviarla). */
+export const WELCOME_FAILED = 'WhatsApp rechazó la bienvenida:'
+
+/**
+ * Envía la bienvenida (imagen con su pie + los demás bloques) y la deja registrada. La usa también
+ * el botón "Enviar bienvenida" del panel cuando falló o hay que repetirla.
+ */
+export async function deliverWelcome(phone: string, welcome: Welcome, send: SendFn = sendWhatsAppText, sendImage: SendImageFn = sendWhatsAppImage, { late = false } = {}) {
+  const record = (id: string | undefined, text: string) => recordOutbound(phone, { id: id ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now(), auto: WELCOME_KIND })
+  if (late) {
+    const apology = 'perdona la demora en responderte 🙏 se nos cruzaron unos mensajes, ya te cuento todo'
+    await record(await send(phone, apology), apology)
+    await sleep(WELCOME_GAP_MS)
+  }
+  // Si la imagen falla (Meta no la pudo descargar), el texto sale igual sin ella.
+  const imageId = await sendImage(phone, welcome.imageUrl, welcome.caption).catch(async (error) => {
+    console.warn(`[autoreply] ${phone}: la imagen de bienvenida no salió, va solo el texto:`, error instanceof Error ? error.message : error)
+    return send(phone, welcome.caption)
+  })
+  await record(imageId, welcome.caption)
+  for (const message of welcome.messages) {
+    await sleep(WELCOME_GAP_MS)
+    await record(await send(phone, message), message)
+  }
+  await markChatAuto({ phone }, WELCOME_KIND)
 }
 
 /** El webhook lo llama tras guardar un mensaje del cliente que merece respuesta. */
@@ -450,6 +505,17 @@ function cashBookedText(config: AppConfig, booking: Booking): string {
 function bookedLine(booking: Booking): string {
   const firstName = booking.name.split(' ')[0]
   return `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${serviceText(booking)}* queda apartada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}.`
+}
+
+/** Nota de la cita con la cortesía por anticipo (la ve la cabina en la agenda). */
+export function perkNote(config: AppConfig): string {
+  return `Cortesía por agendar con anticipo: ${config.depositPerk.trim()} (si el anticipo queda pagado)`
+}
+
+/** " 🎁 Y como agendaste hoy, te regalamos …": se añade al cobro de una cita con anticipo. */
+function perkLine(config: AppConfig, booking: Booking): string {
+  const perk = config.depositPerk.trim()
+  return perk && booking.paymentPlan !== 'cash' && booking.notes.includes('Cortesía') ? `\n\n🎁 Y como agendaste hoy, con tu anticipo te regalamos ${perk}` : ''
 }
 
 /** "ahora" o "mañana a las 10:00 a.m.": cuándo atiende una persona, con el mismo horario de agendamiento. */
@@ -657,6 +723,9 @@ export async function applyReserva(
 
   const chat = await getSummary(phone)
   const pair = companion !== null
+  // Cortesía por agendar con anticipo (no aplica a quien paga todo en efectivo): queda en las notas
+  // para que la cabina la vea. Se entrega si el anticipo queda pagado.
+  const perk = !cash && config.depositPerk.trim() ? perkNote(config) : ''
   const result = await createBooking(config, {
     phone,
     name: parsed.name,
@@ -665,8 +734,9 @@ export async function applyReserva(
     day: parsed.day,
     start: parsed.start,
     concern: chat?.lead.concern ?? '',
-    notes: pair ? 'Pareja 2x1' : '',
+    notes: [pair ? 'Pareja 2x1' : '', perk].filter(Boolean).join(' · '),
     source: 'bot',
+    advisor: 'Gema',
     people: pair ? 2 : 1,
     payFull,
     cash,
@@ -710,7 +780,7 @@ export async function applyReserva(
   // lo compone el servidor entero, porque en este paso el modelo tiende a inventarse los datos.
   if (method === 'transfer') {
     const result = transferAppend(config, booking)
-    return { ...result, replaceText: `${bookedLine(booking)}${result.append}` }
+    return { ...result, replaceText: `${bookedLine(booking)}${result.append}${perkLine(config, booking)}` }
   }
 
   const payment = paymentFor(config, regionOf(phone))
@@ -727,7 +797,7 @@ export async function applyReserva(
   if (!method && payment.bold && payment.instructions) {
     return {
       append: '',
-      replaceText: `${bookedLine(booking)}\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Lo puedes pagar de dos formas:\nCon el link de Bold, que acepta PSE, tarjeta débito o crédito, Nequi y Daviplata, y la cita se confirma sola apenas pagas.\nO por transferencia directa a Nequi, Daviplata o a la cuenta de ahorros Bancolombia, y me mandas el comprobante.\nTu horario queda apartado ${config.holdMinutes} minutos\n\ncómo prefieres pagar, con el link o por transferencia?`,
+      replaceText: `${bookedLine(booking)}\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Lo puedes pagar de dos formas:\nCon el link de Bold, que acepta PSE, tarjeta débito o crédito, Nequi y Daviplata, y la cita se confirma sola apenas pagas.\nO por transferencia directa a Nequi, Daviplata o a la cuenta de ahorros Bancolombia, y me mandas el comprobante.\nTu horario queda apartado ${config.holdMinutes} minutos${perkLine(config, booking)}\n\ncómo prefieres pagar, con el link o por transferencia?`,
     }
   }
 
@@ -741,7 +811,7 @@ export async function applyReserva(
     await setPaymentLink(booking.id, boldUrl)
     return {
       summary: bookedLine(booking),
-      append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Puedes pagarlo aquí ${linkMethods(phone)}:\n${boldUrl}\nTu horario queda apartado ${config.holdMinutes} minutos y apenas se confirme el pago te aviso por aquí`,
+      append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Puedes pagarlo aquí ${linkMethods(phone)}:\n${boldUrl}\nTu horario queda apartado ${config.holdMinutes} minutos y apenas se confirme el pago te aviso por aquí${perkLine(config, booking)}`,
     }
   }
 
@@ -758,7 +828,7 @@ export async function applyReserva(
   }
   return {
     summary: bookedLine(booking),
-    append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}.\n${how}\nTu horario queda apartado ${config.holdMinutes} minutos. Cuando pagues, mándame el comprobante por aquí`,
+    append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}.\n${how}\nTu horario queda apartado ${config.holdMinutes} minutos. Cuando pagues, mándame el comprobante por aquí${perkLine(config, booking)}`,
   }
 }
 
@@ -819,6 +889,7 @@ export async function applyCancel(phone: string, reason: string): Promise<Applie
   await redis().hset(keys.booking(booking.id), { cancelReason: `Cancelada por la clienta${reason ? `: ${reason.slice(0, 160)}` : ''}` })
   // El chat deja de estar "agendado": ya no tiene cita.
   await redis().hdel(keys.chat(phone), 'bookingId')
+  await bumpRev('chats')
   await updateChat(phone, { stage: 'open' })
   const line = `Listo, cancelé tu cita de *${serviceText(booking)}* del ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}`
   if (!isPaid(booking)) return { append: '', replaceText: `${line}\n\nsi quieres la agendamos para otro día` }
@@ -840,7 +911,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
 
   // Con un envío simulado (pruebas) la imagen tampoco sale a Meta: va como texto por el mismo envío.
   const image = sendImage ?? (send === sendWhatsAppText ? sendWhatsAppImage : (to: string, _link: string, caption: string) => send(to, caption))
-  const welcome = await sendWelcome(phone, send, image, testConfig)
+  const welcome = await sendWelcome(chat, send, image, testConfig)
   if (welcome === 'only') return
 
   // Protecciones contra gasto de cuota: si se superan, el chat pasa a una persona en vez de quedar sin respuesta.
@@ -869,12 +940,19 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     // cliente queda al final y Gema la contesta (si no, ve su propio mensaje como el último y calla).
     if (welcome === 'answer') history = [...history.filter((message) => message.auto === WELCOME_KIND), ...history.filter((message) => message.auto !== WELCOME_KIND)]
     // Notas del servidor justo antes de responder: cuando la regla del prompt sola no bastó.
-    const hint = [
-      welcome === 'answer' ? 'Nota del sistema: acabas de enviar la bienvenida automática (las promociones 2x1, precios, qué incluye cada limpieza, el anticipo y horarios libres). No repitas nada de eso: responde solo lo que preguntó y no está ahí, en una o dos frases, y termina preguntando cuál de esos horarios le separas.' : '',
+    const optOut = optOutNote(chat, history)
+    const hint = (optOut ?? [
+      welcome === 'answer' ? 'Nota del sistema: acabas de enviar la bienvenida automática (las promociones 2x1, precios, el ritual de 5 pasos, el anticipo, la cortesía y horarios libres). No repitas nada de eso: responde solo lo que preguntó y no está ahí, en una o dos frases, y termina preguntando cuál de esos horarios le separas.' : '',
+      welcome === 'none' ? lateNote(history) : '',
       serviceHint(config, history),
       serviceChoiceNote(config, history),
-      paymentNote(history, config.cashBooking),
-    ].filter(Boolean).join('\n') || undefined
+      paymentNote(history, config.cashBooking, config.depositPerk.trim()),
+      // La agenda real del día y la sede que pregunta (20 oct: dijo "no hay espacio" en Chipichape y sí había).
+      await availabilityNote(config, history, chat.lead).catch((error) => {
+        console.warn(`[autoreply] ${phone}: no se pudo verificar la agenda pedida:`, error instanceof Error ? error.message : error)
+        return undefined
+      }),
+    ].filter(Boolean).join('\n')) || undefined
     if (hint && draft === 0) console.log(`[autoreply] ${phone}: nota del servidor → ${hint.slice(0, 160)}`)
     try {
       reply = await generateReply(prompt, history, hint).catch((error) => {
@@ -943,7 +1021,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     ?? (cash && !config.cashBooking ? { kind: 'ASESOR', payload: CASH_REASON } : undefined)
     ?? markers.find((marker) => marker.kind === 'ASESOR')
   // Se mide cuántos clientes frenan por querer pagar en efectivo (la primera objeción queda en el chat).
-  if (cash || history.filter((message) => message.sender === 'user').slice(-3).some((message) => SAYS_CASH.test(message.text))) {
+  if (cash || history.filter((message) => message.sender === 'user').slice(-3).some((message) => saysCash(message.text))) {
     await setObjection(phone, 'efectivo')
   }
   const reserva = markers.find((marker) => marker.kind === 'RESERVA')
@@ -955,7 +1033,9 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   const pairChoice = latestOf(clientTexts, [[SAYS_PAIR, 'pair'], [SAYS_ALONE, 'alone']] as Array<[RegExp, 'pair' | 'alone']>)
   // Con config.cashBooking, quien quiere pagar en efectivo se agenda sin anticipo. Gana lo último que
   // dijo el cliente: si después pidió el link, transferir o dejar el anticipo, ya no es efectivo.
-  const cashChoice = latestOf(clientTexts, [[SAYS_CASH, 'cash'], [WANTS_TRANSFER, 'other'], [SAYS_LINK, 'other'], [SAYS_DEPOSIT, 'other']] as Array<[RegExp, 'cash' | 'other']>)
+  // "el resto lo pago allá" no cuenta como efectivo: acepta el anticipo y pregunta por el saldo.
+  const cashTexts = clientTexts.map((text) => (CASH_REMAINDER.test(text) ? text.replace(new RegExp(SAYS_CASH.source, 'gi'), ' ') : text))
+  const cashChoice = latestOf(cashTexts, [[SAYS_CASH, 'cash'], [INSISTS_CASH, 'cash'], [WANTS_TRANSFER, 'other'], [SAYS_LINK, 'other'], [SAYS_DEPOSIT, 'other']] as Array<[RegExp, 'cash' | 'other']>)
   const payCash = config.cashBooking && (cashChoice === 'cash' || (cash && !cashChoice))
   // El modelo a veces "entrega" los datos de pago él mismo (con un relleno entre corchetes) en vez de
   // usar la marca: se trata igual que [[TRANSFERENCIA]] y los datos reales los pega el servidor.

@@ -96,4 +96,18 @@ export const keys = {
   /** Registro de envíos a la API de conversiones (últimos 200), con la respuesta de Meta. */
   get capiLog() { return `${prefix()}capi:log` },
   boldSeen: (eventId: string) => `${prefix()}bold:seen:${eventId}`,
+  /**
+   * Contador de cambios de los chats o de la agenda (lib/revision.ts). El panel lo consulta en vez de
+   * releer todo cada pocos segundos: con 34 chats eso eran ~20.000 comandos por hora y pestaña.
+   */
+  rev: (name: 'chats' | 'agenda') => `${prefix()}rev:${name}`,
+  /**
+   * Chats cuyo último mensaje es del cliente (todavía sin respuesta), por momento del mensaje. Lo usa
+   * el vigilante de mensajes sin responder (lib/automations.ts) sin leer toda la bandeja.
+   */
+  get awaiting() { return `${prefix()}awaiting` },
+  /** Marca de que `awaiting` ya se llenó una vez con los chats que existían antes de crearlo. */
+  get awaitingSeeded() { return `${prefix()}awaiting:seeded` },
+  /** Disponibilidad ya calculada para el prompt de Gema (lib/prompt.ts), por versión de agenda y config. */
+  agendaCache: (id: string) => `${prefix()}cache:agenda:${id}`,
 }
