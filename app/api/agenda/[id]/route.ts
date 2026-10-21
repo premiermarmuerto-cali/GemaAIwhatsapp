@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { annotateBooking, bookingsOfPhone, getBooking, moveBooking, rescheduleBooking, setBookingAdvisor } from '@/lib/booking'
+import { annotateBooking, bookingsOfPhone, getBooking, moveBooking, rescheduleBooking, setBookingAdvisor, updateBookingDetails } from '@/lib/booking'
+import { canonicalPhone, isValidPhone } from '@/lib/phone'
 import { isClock, isDayKey } from '@/lib/calendar'
 import { isLocation } from '@/lib/clinic'
 import { amountOf, getConfig } from '@/lib/config'
@@ -45,15 +46,35 @@ export const PATCH = route(async (request: Request, context: Params) => {
     await rememberAdvisor(body.advisor)
   }
 
+  // Editar la cita (panel): datos de la persona.
+  const details: { name?: string; companion?: string; phone?: string; contactPhone?: string } = {}
+  if (typeof body.name === 'string') {
+    if (!body.name.trim()) throw new HttpError(400, 'El nombre no puede quedar vacío.')
+    details.name = body.name
+  }
+  if (typeof body.companion === 'string') details.companion = body.companion
+  if (typeof body.phone === 'string') {
+    // Escrito a mano: un celular colombiano de 10 dígitos se completa con 57.
+    const phone = canonicalPhone(body.phone)
+    if (!isValidPhone(phone)) throw new HttpError(400, 'Teléfono inválido.')
+    details.phone = phone
+  }
+  if (typeof body.contactPhone === 'string') details.contactPhone = body.contactPhone ? canonicalPhone(body.contactPhone) : ''
+  if (Object.keys(details).length && !(await updateBookingDetails(id, details))) throw new HttpError(404, 'La cita no existe.')
+
   if (body.day !== undefined || body.start !== undefined) {
     const day = String(body.day ?? '')
     const start = String(body.start ?? '')
     if (!isDayKey(day) || !isClock(start)) throw new HttpError(400, 'Fecha u hora inválidas para reprogramar.')
     const location = body.location === undefined ? undefined : String(body.location)
     if (location !== undefined && !isLocation(location)) throw new HttpError(400, 'Sede inválida.')
-    const moved = await rescheduleBooking(config, id, day, start, location)
+    const serviceId = typeof body.serviceId === 'string' ? body.serviceId : undefined
+    const moved = await rescheduleBooking(config, id, day, start, location, serviceId)
     if (!moved) throw new HttpError(404, 'La cita no existe.')
     if (!moved.ok) {
+      if (moved.reason === 'service') throw new HttpError(400, 'Ese servicio no existe en el catálogo.')
+      if (moved.reason === 'closed') throw new HttpError(409, 'Ese día está cerrado.')
+      if (moved.reason === 'cabins') throw new HttpError(409, 'Esa sede no tiene cabinas suficientes para dos personas a la vez.')
       throw new HttpError(409, moved.alternatives.length ? `Ese horario está ocupado. Libres: ${moved.alternatives.join(', ')}.` : 'Ese horario no está disponible.')
     }
     return NextResponse.json(moved.booking)

@@ -16,7 +16,6 @@ type Props = {
   busy: boolean
   onClose: () => void
   onSubmit: (input: NewAppointment) => void
-  onRemoveAdvisor: (name: string) => void
 }
 
 type Slots = { starts: string[]; closed: string | null }
@@ -25,7 +24,7 @@ type Slots = { starts: string[]; closed: string | null }
  * Alta manual. Las horas disponibles se piden al servidor para el servicio elegido, así que
  * el operador solo puede escoger huecos que de verdad existen (y la creación los revalida).
  */
-export function NewBookingForm({ week, seed, busy, onClose, onSubmit, onRemoveAdvisor }: Props) {
+export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
   const [kind, setKind] = useState<'appointment' | 'block'>('appointment')
   const [location, setLocation] = useState<Location>(seed.location)
   const [day, setDay] = useState(seed.day)
@@ -44,7 +43,6 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit, onRemoveAd
   // Quién agenda: se recuerda el último en este navegador para no escribirlo en cada cita.
   const [advisor, setAdvisor] = useState('')
   useEffect(() => { setAdvisor(lastAdvisor()) }, [])
-  const removeAdvisor = (name: string) => { onRemoveAdvisor(name); if (advisor === name) setAdvisor('') }
   // En la vista mensual llegan 42 días: solo se ofrecen los que todavía se pueden agendar.
   const today = dayKey()
   const days = week.days.filter((item) => item >= today || item === seed.day)
@@ -165,7 +163,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit, onRemoveAd
             </label>
             <label>
               <span className="eyebrow">Asesor</span>
-              <AdvisorSelect value={advisor} onChange={setAdvisor} options={week.advisors ?? []} onRemove={removeAdvisor} />
+              <AdvisorSelect value={advisor} onChange={setAdvisor} options={week.advisors ?? []} />
             </label>
           </>
         )}

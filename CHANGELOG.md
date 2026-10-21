@@ -3,6 +3,20 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.5 · 20 de octubre de 2026
+
+**Clientes con número oculto**
+- Al agendar, Gema le pide un celular de contacto a quien escribe con nombre de usuario de WhatsApp (Meta no entrega su número). Es opcional: si no lo da, agenda igual. El celular queda en el chat y en la cita, con enlace para escribirle.
+
+**Editar citas**
+- Botón "Editar cita" en la ficha: nombre, acompañante, WhatsApp (o celular de contacto), servicio, sede, día y hora. Al cambiar de servicio se recalcula el valor y se conserva lo ya pagado. Las horas que ofrece cuentan como libre el lugar de la misma cita.
+
+**Asesores**
+- Botón "Asesores" en la agenda: editar el nombre de un asesor (se actualiza en la lista y en todas sus citas) o quitarlo de la lista (sus citas conservan el nombre). El selector de la cita ya no tiene "Quitar de la lista".
+
+**Agenda verificada**
+- La nota de disponibilidad dice explícitamente cuando una sede tiene una sola cabina (no se pueden agendar dos personas a la misma hora), para que Gema no lo confunda con "no hay espacio".
+
 ## 1.4 · 20 de octubre de 2026
 
 **Gema vende, no solo informa**

@@ -6,8 +6,9 @@ import { api } from '@/lib/api-client'
 import { dayLabel, toClock, toMinutes } from '@/lib/calendar'
 import { LOCATION_LABEL } from '@/lib/clinic'
 import { formatPhone, isWhatsAppUserId } from '@/lib/phone'
-import type { Booking, BookingStatus } from '@/lib/types'
+import { LIVE_STATUSES, type AgendaWeek, type Booking, type BookingStatus } from '@/lib/types'
 import { AdvisorSelect } from './AdvisorSelect'
+import { EditBookingForm } from './EditBookingForm'
 import { ACTION_LABEL, holdCountdown, NEXT_STATUSES, PAYMENT_METHOD_LABEL, STATUS_LABEL } from './labels'
 import styles from './Agenda.module.css'
 
@@ -20,10 +21,17 @@ type Props = {
   onAdvisor: (id: string, advisor: string) => void
   /** Asesores guardados, para elegir a quién le corresponde la cita. */
   advisors: string[]
+  services: AgendaWeek['services']
+  /** Guarda la edición de la cita (datos de la persona, servicio, sede, día u hora). */
+  onEdit: (id: string, changes: Record<string, unknown>) => Promise<unknown>
 }
 
 /** Ficha de la cita: lo que el bot extrajo del prospecto, el historial y las acciones del operador. */
-export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onAdvisor, advisors }: Props) {
+export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onAdvisor, advisors, services, onEdit }: Props) {
+  const [editing, setEditing] = useState(false)
+  useEffect(() => { setEditing(false) }, [booking.id])
+  // Se editan las citas vivas; una ya realizada o cancelada es historia.
+  const editable = booking.kind !== 'block' && LIVE_STATUSES.includes(booking.status)
   const [notes, setNotes] = useState(booking.notes)
   const [advisor, setAdvisor] = useState(booking.advisor)
   const [history, setHistory] = useState<Booking[]>([])
@@ -51,6 +59,17 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onA
         <button className="btn btn-ghost btn-icon" onClick={onClose} aria-label="Cerrar ficha"><CloseIcon /></button>
       </header>
 
+      {editing ? (
+        <EditBookingForm
+          booking={booking}
+          services={services}
+          busy={busy}
+          onCancel={() => setEditing(false)}
+          onSave={async (changes) => { const result = await onEdit(booking.id, changes); if (result) setEditing(false) }}
+        />
+      ) : (
+      <>
+      {editable && <button className="btn btn-secondary" onClick={() => setEditing(true)}>Editar cita</button>}
       <dl className={styles.facts}>
         <div><dt>Servicio</dt><dd>{booking.serviceLabel}{booking.people > 1 && <span className={styles.dim}> · {booking.people} personas</span>}</dd></div>
         {booking.companion && <div><dt>Acompañante</dt><dd>{booking.companion}</dd></div>}
@@ -72,6 +91,12 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onA
                 ? <span className={styles.link}><ChatIcon /> {formatPhone(booking.phone)}</span>
                 : <a className={styles.link} href={`https://wa.me/${booking.phone}`} target="_blank" rel="noreferrer"><ChatIcon /> {formatPhone(booking.phone)}</a>}
             </dd>
+          </div>
+        )}
+        {booking.contactPhone && (
+          <div>
+            <dt>Celular de contacto</dt>
+            <dd><a className={styles.link} href={`https://wa.me/${booking.contactPhone}`} target="_blank" rel="noreferrer"><ChatIcon /> {formatPhone(booking.contactPhone)}</a></dd>
           </div>
         )}
         {booking.concern && <div><dt>Lo que nos contó</dt><dd className={styles.quote}>{booking.concern}</dd></div>}
@@ -140,6 +165,8 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onA
             ))}
           </ul>
         </div>
+      )}
+      </>
       )}
     </aside>
   )

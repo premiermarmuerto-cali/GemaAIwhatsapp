@@ -90,6 +90,7 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     paymentRef: raw.paymentRef ?? '',
     paymentLink: raw.paymentLink ?? '',
     companion: raw.companion ?? '',
+    contactPhone: raw.contactPhone ?? '',
     attendanceConfirmedAt: Number(raw.attendanceConfirmedAt ?? 0),
     autoSent: parseAutoSent(raw.autoSent),
   }
@@ -252,6 +253,8 @@ export type NewBooking = {
   people?: number
   /** El cliente prefiere pagar la sesión completa en vez del anticipo. */
   payFull?: boolean
+  /** Celular de contacto de un cliente con número oculto. */
+  contactPhone?: string
   /** Nombre completo de la segunda persona (pareja del 2x1). */
   companion?: string
   /** Paga todo en la sede, sin anticipo: la cita queda confirmada (no apartada) y sin link. */
@@ -329,6 +332,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     paymentRef: '',
     paymentLink: '',
     companion: input.companion ?? '',
+    contactPhone: input.contactPhone ?? '',
     attendanceConfirmedAt: 0,
     autoSent: {},
   }
@@ -411,10 +415,16 @@ export async function setBookingAdvisor(id: string, advisor: string): Promise<vo
  * link de Bold (que referencia el id) y el acompañante. Suelta las cabinas viejas, aparta las nuevas
  * y, si el horario nuevo no está libre, vuelve a apartar las viejas. Lo usan el panel y Gema.
  */
-export async function rescheduleBooking(config: AppConfig, id: string, day: string, start: string, location?: Location): Promise<BookingResult | null> {
+export async function rescheduleBooking(config: AppConfig, id: string, day: string, start: string, location?: Location, serviceId?: string): Promise<BookingResult | null> {
   const db = redis()
-  const booking = await getBooking(id)
-  if (!booking) return null
+  const current = await getBooking(id)
+  if (!current) return null
+  // Cambio de servicio (desde el panel): otra duración, otro precio. El anticipo se recalcula solo si
+  // todavía no se pagó; lo ya pagado se conserva tal cual.
+  const service = serviceId && serviceId !== current.serviceId ? serviceById(config, serviceId) : undefined
+  if (serviceId && serviceId !== current.serviceId && !service) return { ok: false, reason: 'service', alternatives: [] }
+  const booking = current
+  const durationMin = service?.durationMin ?? booking.durationMin
   if (!LIVE_STATUSES.includes(booking.status)) return { ok: false, reason: 'taken', alternatives: [] }
   const target = location ?? booking.location
   const cabins = config.cabins[target] ?? 1
@@ -430,29 +440,62 @@ export async function rescheduleBooking(config: AppConfig, id: string, day: stri
   // Se suelta primero el horario viejo: así una cita puede moverse 15 minutos sin chocar consigo misma.
   await releaseSlots(booking)
   const occupancy = await occupancyOf(target, day, { force: true })
-  const free = freeStarts(config, target, day, booking.durationMin, occupancy, { people: booking.people })
+  const free = freeStarts(config, target, day, durationMin, occupancy, { people: booking.people })
   if (booking.kind !== 'block' && !free.includes(start)) {
     await reclaimOld()
     return { ok: false, reason: 'taken', alternatives: free }
   }
   const startMin = toMinutes(start)
-  const cabin = Number(await db.eval(CLAIM, [keys.slots(target, day)], [id, String(cabins), String(booking.people), ...slotsOf(config, startMin, booking.durationMin)]))
+  const cabin = Number(await db.eval(CLAIM, [keys.slots(target, day)], [id, String(cabins), String(booking.people), ...slotsOf(config, startMin, durationMin)]))
   if (!cabin) {
     await reclaimOld()
-    return { ok: false, reason: 'taken', alternatives: freeStarts(config, target, day, booking.durationMin, await occupancyOf(target, day), { people: booking.people }) }
+    return { ok: false, reason: 'taken', alternatives: freeStarts(config, target, day, durationMin, await occupancyOf(target, day), { people: booking.people }) }
   }
+  const unpaid = !booking.paidAt && booking.status !== 'confirmed'
+  const price = service ? bookingPrice(config, service, booking.people, day) : booking.price
+  const serviceFields = service ? {
+    serviceId: service.id,
+    serviceLabel: service.label,
+    durationMin,
+    price,
+    ...(booking.paymentPlan === 'cash' || !unpaid ? {} : { deposit: booking.paymentPlan === 'full' ? pesos(amountOf(price)) : depositOf(config, price) }),
+  } : {}
 
   const startTs = timestampOf(day, start)
   // Recordatorios ya enviados eran para la fecha vieja: se olvidan, y la asistencia se vuelve a confirmar.
-  const moved: Booking = { ...booking, location: target, day, start, startMin, startTs, cabin, autoSent: {}, attendanceConfirmedAt: 0 }
+  const moved: Booking = { ...booking, ...serviceFields, location: target, day, start, startMin, startTs, cabin, autoSent: {}, attendanceConfirmedAt: 0 }
   const tx = db.multi()
-  tx.hset(keys.booking(id), toFields({ location: target, day, start, startMin, startTs, cabin, autoSent: {}, attendanceConfirmedAt: 0 }))
+  tx.hset(keys.booking(id), toFields({ ...serviceFields, location: target, day, start, startMin, startTs, cabin, autoSent: {}, attendanceConfirmedAt: 0 }))
   tx.zrem(keys.day(booking.day), id)
   tx.zadd(keys.day(day), { score: startMin, member: id })
   tx.zadd(keys.byStatus(booking.status), { score: startTs, member: id })
   queueRev(tx, 'agenda')
   await tx.exec()
   return { ok: true, booking: moved }
+}
+
+/**
+ * Corrige los datos de la persona en una cita (panel): nombre, acompañante, teléfono y celular de
+ * contacto. Si cambia el teléfono, la cita pasa al historial del número nuevo.
+ */
+export async function updateBookingDetails(id: string, patch: { name?: string; companion?: string; phone?: string; contactPhone?: string }): Promise<Booking | null> {
+  const booking = await getBooking(id)
+  if (!booking) return null
+  const fields: Record<string, string> = {}
+  if (patch.name !== undefined) fields.name = patch.name.trim().slice(0, 80)
+  if (patch.companion !== undefined) fields.companion = patch.companion.trim().slice(0, 80)
+  if (patch.contactPhone !== undefined) fields.contactPhone = patch.contactPhone.trim().slice(0, 20)
+  const tx = redis().multi()
+  if (patch.phone !== undefined && patch.phone !== booking.phone) {
+    fields.phone = patch.phone
+    if (booking.phone) tx.lrem(keys.byPhone(booking.phone), 0, id)
+    if (patch.phone) tx.lpush(keys.byPhone(patch.phone), id)
+  }
+  if (!Object.keys(fields).length) return booking
+  tx.hset(keys.booking(id), fields)
+  queueRev(tx, 'agenda')
+  await tx.exec()
+  return { ...booking, ...fields } as Booking
 }
 
 /** El cliente confirmó que asiste (botón de la plantilla de recordatorio o mensaje). */

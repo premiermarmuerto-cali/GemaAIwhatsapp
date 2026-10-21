@@ -41,6 +41,7 @@ function toSummary(phone: string, raw: Record<string, string>): ChatSummary {
     paymentNotice: raw.paymentNotice ?? '',
     paymentNoticeAt: Number(raw.paymentNoticeAt ?? 0),
     noMarketing: raw.noMarketing === '1',
+    contactPhone: raw.contactPhone ?? '',
     optedOut: raw.optedOut === '1',
     optedOutAt: Number(raw.optedOutAt ?? 0),
     optedOutText: raw.optedOutText ?? '',
@@ -159,6 +160,12 @@ export async function recordOutbound(phone: string, message: Message) {
 /** Tocó "Ahora no" en una plantilla de marketing: no se le vuelven a enviar plantillas de marketing. */
 export async function setNoMarketing(phone: string): Promise<void> {
   await redis().hset(keys.chat(phone), { noMarketing: '1' })
+  await bumpRev('chats')
+}
+
+/** Celular que dio un cliente con número oculto: queda en el chat y en su cita viva. */
+export async function saveContactPhone(phone: string, contact: string): Promise<void> {
+  await redis().hset(keys.chat(phone), { contactPhone: contact })
   await bumpRev('chats')
 }
 

@@ -77,6 +77,8 @@ export type ChatSummary = {
   /** Cuándo lo dijo (0 si nunca) y con qué palabras, para mostrarlo en el panel. */
   optedOutAt: number
   optedOutText: string
+  /** Celular que dio un cliente con número oculto (ver Booking.contactPhone). */
+  contactPhone: string
   /** Anuncio de origen (atribución): id del anuncio en Meta y clic. */
   adSourceId: string
   adHeadline: string
@@ -179,6 +181,11 @@ export type Booking = {
   paymentRef: string
   /** Link de Bold generado para el anticipo de esta cita; se guarda para poder reenviarlo. */
   paymentLink: string
+  /**
+   * Celular de contacto que dio un cliente con número oculto (usuario de WhatsApp): su "phone" es un
+   * identificador sin número, y así la sede lo puede llamar. Vacío si no lo dio o si no hace falta.
+   */
+  contactPhone: string
   /** Nombre completo de la segunda persona (2x1 de pareja). Vacío si la cita es individual. */
   companion: string
   /** El cliente confirmó que asiste (botón "Confirmo mi cita" o mensaje). No es lo mismo que pagada. */

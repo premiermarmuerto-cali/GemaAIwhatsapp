@@ -112,12 +112,14 @@ export async function availabilityNote(config: AppConfig, history: Message[], le
     const occupancy = await occupancyOf(location, day)
     const all = freeStarts(config, location, day, duration, occupancy, { now })
     const single = all.filter(inPart(part))
-    const pairs = (config.cabins[location] ?? 1) >= 2 ? freeStarts(config, location, day, duration, occupancy, { now, people: 2 }).filter(inPart(part)) : []
+    const twoCabins = (config.cabins[location] ?? 1) >= 2
+    const pairs = twoCabins ? freeStarts(config, location, day, duration, occupancy, { now, people: 2 }).filter(inPart(part)) : []
     if (!single.length) {
-      lines.push(`- ${name}: SIN espacio${part ? ` en la ${part}` : ''}.${part && all.length ? ` Ese día sí hay a otras horas: ${rangesText(all, config.slotMinutes)}.` : ''}`)
+      lines.push(`- ${name}: SIN espacio${part ? ` en la ${part}` : ''}${part && all.length ? `; ese día sí hay a otras horas: ${rangesText(all, config.slotMinutes)}` : ''}`)
       continue
     }
-    lines.push(`- ${name}: SÍ hay espacio. Horas de inicio libres para una persona: ${rangesText(single, config.slotMinutes)}. Para dos personas a la misma hora: ${pairs.length ? rangesText(pairs, config.slotMinutes) : 'no hay'}.`)
+    const pairText = !twoCabins ? 'esta sede tiene una sola cabina, así que dos personas a la misma hora no se agendan aquí' : pairs.length ? rangesText(pairs, config.slotMinutes) : 'no hay'
+    lines.push(`- ${name}: SÍ hay espacio. Horas de inicio libres para una persona: ${rangesText(single, config.slotMinutes)} · Para dos personas a la misma hora: ${pairText}`)
   }
   const outside = day > addDays(today, config.horizonDays - 1)
   return [

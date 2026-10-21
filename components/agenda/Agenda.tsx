@@ -13,6 +13,7 @@ import type { Booking, Location } from '@/lib/types'
 import { APP_VERSION } from '@/lib/version'
 import { BookingPanel } from './BookingPanel'
 import { holdCountdown } from './labels'
+import { AdvisorManager } from './AdvisorManager'
 import { MonthGrid } from './MonthGrid'
 import { NewBookingForm } from './NewBookingForm'
 import { WeekGrid } from './WeekGrid'
@@ -21,6 +22,7 @@ import styles from './Agenda.module.css'
 type Aside =
   | { mode: 'booking'; id: string }
   | { mode: 'new'; day: string; start: string; location: Location }
+  | { mode: 'advisors' }
   | null
 
 export function Agenda() {
@@ -95,6 +97,7 @@ export function Agenda() {
           ))}
         </div>
 
+        <button className="btn btn-secondary" onClick={() => setAside({ mode: 'advisors' })} title="Editar o quitar nombres de asesores">Asesores</button>
         <button className="btn btn-primary" onClick={() => setAside({ mode: 'new', day: today, start: '', location })}><PlusIcon />Nueva cita</button>
       </div>
 
@@ -170,6 +173,8 @@ export function Agenda() {
           onAnnotate={(id, notes) => void agenda.annotate(id, notes)}
           onAdvisor={(id, advisor) => void agenda.setAdvisor(id, advisor)}
           advisors={week?.advisors ?? []}
+          services={week?.services ?? []}
+          onEdit={(id, changes) => agenda.edit(id, changes)}
         />
       )}
 
@@ -183,7 +188,16 @@ export function Agenda() {
             const created = await agenda.create(input)
             if (created) setAside({ mode: 'booking', id: created.id })
           }}
-          onRemoveAdvisor={(name) => void agenda.removeAdvisor(name)}
+        />
+      )}
+
+      {aside?.mode === 'advisors' && (
+        <AdvisorManager
+          advisors={week?.advisors ?? []}
+          busy={agenda.busy}
+          onClose={() => setAside(null)}
+          onRename={(from, to) => void agenda.renameAdvisor(from, to)}
+          onRemove={(name) => void agenda.removeAdvisor(name)}
         />
       )}
 

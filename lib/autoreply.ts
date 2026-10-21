@@ -2,12 +2,13 @@ import { extractReserva, generateReply, type ExtractedReserva } from './ai'
 import { bookingsOfPhone, chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
 import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
 import { isLocation, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
-import { attachBooking, getHistory, getSummary, markChatAuto, recordOutbound, requestAgent, saveLead, setObjection, updateChat } from './chats'
+import { attachBooking, getHistory, getSummary, markChatAuto, recordOutbound, requestAgent, saveContactPhone, saveLead, setObjection, updateChat } from './chats'
 import { trackConversion } from './conversions'
 import { generarLinkPagoBold } from './bold'
 import { amountOf, getConfig, paymentFor, pesos, resolveService, twoForOneApplies } from './config'
 import { mediaBusy } from './media'
-import { regionOf } from './phone'
+import { isWhatsAppUserId, regionOf } from './phone'
+import { updateBookingDetails } from './booking'
 import { buildPromptContext, buildSystemPrompt, promoLive } from './prompt'
 import { rateLimit } from './ratelimit'
 import { insertAfter, SEPARATOR, styleModelText, toMessages } from './reply-style'
@@ -278,6 +279,27 @@ export function paymentNote(history: Message[], cashBooking = false, perk = ''):
     ].filter(Boolean).join(' ')
   }
   return undefined
+}
+
+/**
+ * Cliente con nombre de usuario de WhatsApp: Meta no entrega su número, solo un identificador. Se le
+ * escribe igual por WhatsApp, pero la sede no tiene cómo llamarlo; por eso Gema le pide un celular al
+ * agendar (Premier, 20 oct 2026). Es opcional: si no lo da, la cita se agenda igual.
+ */
+const HIDDEN_NUMBER_NOTE = 'Nota del sistema: este cliente usa nombre de usuario de WhatsApp y su número no es visible para nosotros. SOLO cuando le pidas el nombre completo para agendar (no antes), pídele en esa misma frase un número de celular de contacto, por si la sede necesita llamarlo ("me regalas tu nombre completo y un celular de contacto?"). Si no lo quiere dar, agenda igual y no se lo vuelvas a pedir.'
+
+/** Celular en los mensajes recientes del cliente: "300 123 4567", "+57 3001234567", "+1 305…". */
+export function contactPhoneIn(history: Message[]): string | null {
+  for (const message of [...history].reverse()) {
+    if (message.sender !== 'user') continue
+    const text = message.text.replace(/[\s.\-()]+/g, ' ')
+    // Con "+" y otro indicativo (no +57), es un número del exterior: va tal cual.
+    const international = /\+\s?(\d[\d\s]{7,16}\d)/.exec(text)
+    if (international && !/^57/.test(international[1])) return international[1].replace(/\s/g, '')
+    const colombian = /(?:\+?57\s?)?\b(3\d{2})\s?(\d{3})\s?(\d{4})\b/.exec(text)
+    if (colombian) return `57${colombian[1]}${colombian[2]}${colombian[3]}`
+  }
+  return null
 }
 
 /** Dijo que no le interesa: Gema se despide sin insistir (los automáticos ya se detuvieron en el webhook). */
@@ -737,6 +759,7 @@ export async function applyReserva(
     notes: [pair ? 'Pareja 2x1' : '', perk].filter(Boolean).join(' · '),
     source: 'bot',
     advisor: 'Gema',
+    contactPhone: chat?.contactPhone ?? '',
     people: pair ? 2 : 1,
     payFull,
     cash,
@@ -927,6 +950,17 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   }
 
   const config = testConfig ?? await getConfig()
+  // Cliente con número oculto: si en sus mensajes dio un celular, queda en el chat y en su cita.
+  const hidden = isWhatsAppUserId(phone)
+  let contactPhone = chat.contactPhone
+  if (hidden && !contactPhone) {
+    contactPhone = contactPhoneIn(await getHistory(phone, 12)) ?? ''
+    if (contactPhone) {
+      await saveContactPhone(phone, contactPhone)
+      const live = await liveBookingOf(phone)
+      if (live && !live.contactPhone) await updateBookingDetails(live.id, { contactPhone })
+    }
+  }
   const prompt = buildSystemPrompt(config, phone, await buildPromptContext(config, phone, chat.lead))
   let reply: string | null = null
   // La reserva salió de la lectura de respaldo: el texto del modelo no la acompaña (pedía otra cosa
@@ -944,6 +978,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     const hint = (optOut ?? [
       welcome === 'answer' ? 'Nota del sistema: acabas de enviar la bienvenida automática (las promociones 2x1, precios, el ritual de 5 pasos, el anticipo, la cortesía y horarios libres). No repitas nada de eso: responde solo lo que preguntó y no está ahí, en una o dos frases, y termina preguntando cuál de esos horarios le separas.' : '',
       welcome === 'none' ? lateNote(history) : '',
+      hidden && !contactPhone ? HIDDEN_NUMBER_NOTE : '',
       serviceHint(config, history),
       serviceChoiceNote(config, history),
       paymentNote(history, config.cashBooking, config.depositPerk.trim()),

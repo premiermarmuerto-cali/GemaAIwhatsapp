@@ -291,6 +291,19 @@
 .advisorRemove { justify-self: start; padding: 0; border: 0; background: transparent; color: var(--faint); font-size: 11px; text-decoration: underline; }
 .advisorRemove:hover { color: var(--danger); }
 
+/* Panel de asesores. */
+.advisorList { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.advisorList li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+.advisorList li > span { flex: 1; min-width: 120px; font-size: 13px; font-weight: 500; }
+.advisorList :global(.btn) { min-height: 30px; padding: 0 10px; font-size: 11px; }
+.advisorEdit { display: flex; flex: 1; flex-wrap: wrap; gap: 6px; }
+.advisorEdit input { flex: 1; min-width: 140px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--field-bg); font-size: 13px; }
+.advisorEdit input:focus { border-color: var(--primary); outline: none; }
+
+/* Edición de una cita. */
+.editActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.editActions :global(.btn) { flex: 1 1 auto; }
+
 /* Asesor editable en la ficha de la cita. */
 .advisorField { flex-wrap: wrap; }
 .advisorField input {

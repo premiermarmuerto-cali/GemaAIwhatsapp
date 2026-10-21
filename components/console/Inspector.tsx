@@ -71,6 +71,7 @@ export function Inspector({ stats, chat, onOpenSettings, onClose, onSendPreset, 
           <dl className={styles.facts}>
             <div><dt>Número</dt><dd className="mono">{formatPhone(chat.phone)}</dd></div>
             {chat.name && <div><dt>Nombre</dt><dd>{chat.name}</dd></div>}
+            {chat.contactPhone && <div><dt>Celular de contacto</dt><dd className="mono">{formatPhone(chat.contactPhone)}</dd></div>}
             {leadSummary(chat) && <div data-stack><dt>Ficha de Gema</dt><dd>{leadSummary(chat)}</dd></div>}
             <div><dt>Cobro</dt><dd>{regionLabel(chat)}</dd></div>
             <div data-stack><dt>Métodos</dt><dd>{paymentMethods(chat)}</dd></div>

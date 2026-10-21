@@ -22,7 +22,10 @@ export const GET = route(async (request: NextRequest) => {
   const closed = await isClosed(day)
   if (closed) return NextResponse.json({ day, location, closed, starts: [], windows: [] })
 
-  const occupancy = await occupancyOf(location, day)
+  const raw = await occupancyOf(location, day)
+  // Al editar una cita, sus propias casillas cuentan como libres (si no, no podría moverse 15 minutos).
+  const exclude = params.get('exclude')
+  const occupancy = exclude ? Object.fromEntries(Object.entries(raw).filter(([, id]) => id !== exclude)) : raw
   const serviceId = params.get('service')
   const service = serviceId ? serviceById(config, serviceId) : undefined
   if (serviceId && !service) throw new HttpError(400, 'Ese servicio no existe.')

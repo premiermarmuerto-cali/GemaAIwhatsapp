@@ -27,11 +27,9 @@ type Props = {
   onChange: (name: string) => void
   /** Asesores guardados (los trae la agenda). */
   options: string[]
-  /** Quitar de la lista el asesor elegido (no cambia sus citas). */
-  onRemove?: (name: string) => void
 }
 
-export function AdvisorSelect({ value, onChange, options, onRemove }: Props) {
+export function AdvisorSelect({ value, onChange, options }: Props) {
   const all = ['Gema', ...options.filter((name) => name.toLowerCase() !== 'gema')]
   const known = all.includes(value)
   // Escribiendo uno nuevo: también si la cita ya trae un nombre que no está en la lista.
@@ -54,14 +52,6 @@ export function AdvisorSelect({ value, onChange, options, onRemove }: Props) {
       </select>
       {typing && (
         <input value={value} maxLength={60} autoFocus placeholder="Nombre del asesor" aria-label="Nombre del nuevo asesor" onChange={(event) => onChange(event.target.value)} />
-      )}
-      {onRemove && !typing && known && value !== 'Gema' && (
-        <button
-          type="button"
-          className={styles.advisorRemove}
-          title="Quitar este nombre de la lista (sus citas no cambian)"
-          onClick={() => { if (window.confirm(`¿Quitar a "${value}" de la lista de asesores? Sus citas conservan el nombre.`)) onRemove(value) }}
-        >Quitar de la lista</button>
       )}
     </div>
   )
