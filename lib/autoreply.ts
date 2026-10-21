@@ -866,7 +866,8 @@ export async function applyReserva(
 /** La cita está pagada (anticipo o completo): Bold la confirmó, un operador la validó o hay comprobante. */
 function isPaid(booking: Booking): boolean {
   // En efectivo la cita está confirmada pero no pagada: si cancela, no hay nada que reembolsar.
-  return booking.paidAt > 0 || (booking.status === 'confirmed' && booking.paymentPlan !== 'cash')
+  // De cortesía tampoco: no se cobró nada que reembolsar.
+  return booking.paidAt > 0 || (booking.status === 'confirmed' && booking.paymentPlan !== 'cash' && booking.paymentPlan !== 'courtesy')
 }
 
 /**
@@ -897,7 +898,9 @@ export async function applyReprogram(config: AppConfig, phone: string, payload: 
   }
   const moved = result.booking
   const paid = isPaid(moved)
-  const payment = moved.paymentPlan === 'cash'
+  const payment = moved.paymentPlan === 'courtesy'
+    ? 'Sigue siendo de cortesía.'
+    : moved.paymentPlan === 'cash'
     ? 'El pago lo sigues haciendo en la sede el día de la cita.'
     : paid
     ? `Tu ${moved.paymentPlan === 'full' ? 'pago de la sesión completa' : 'anticipo'} queda para la nueva fecha.`

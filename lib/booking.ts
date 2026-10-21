@@ -67,7 +67,7 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     cabin: Number(raw.cabin ?? 1),
     people: Number(raw.people ?? 1) || 1,
     sequential: raw.sequential === 'true',
-    paymentPlan: raw.paymentPlan === 'full' || raw.paymentPlan === 'cash' ? raw.paymentPlan : 'deposit',
+    paymentPlan: raw.paymentPlan === 'full' || raw.paymentPlan === 'cash' || raw.paymentPlan === 'courtesy' ? raw.paymentPlan : 'deposit',
     serviceId: raw.serviceId ?? '',
     serviceLabel: raw.serviceLabel ?? '',
     durationMin: Number(raw.durationMin ?? 0),
@@ -116,6 +116,7 @@ function toFields(booking: Partial<Booking>): Record<string, string> {
 /** "el anticipo" o "el pago completo": cómo se nombra al cliente lo que paga para reservar. */
 export function chargeText(booking: Pick<Booking, 'paymentPlan'>): string {
   if (booking.paymentPlan === 'cash') return 'el pago en la sede'
+  if (booking.paymentPlan === 'courtesy') return 'nada (es de cortesía)'
   return booking.paymentPlan === 'full' ? 'el pago completo de la sesión' : 'el anticipo'
 }
 
@@ -262,6 +263,8 @@ export type NewBooking = {
   cash?: boolean
   /** Quién la agenda: "Gema" o el nombre del asesor que la creó en el panel. */
   advisor?: string
+  /** Limpieza de cortesía (por compra de productos en la sede): no se cobra nada. */
+  courtesy?: boolean
   /** Ya pagó lo que dice `paymentPlan` (cita creada a mano por un asesor que recibió el anticipo o el total). */
   paid?: boolean
 }
@@ -305,7 +308,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
   const status = input.status ?? (input.cash ? 'confirmed' : 'pending_payment')
   const price = service ? bookingPrice(config, service, people, input.day) : ''
   // `deposit` es lo que se cobra para reservar: el anticipo, el total si paga completo, nada en efectivo.
-  const paymentPlan = input.cash ? 'cash' : input.payFull && amountOf(price) ? 'full' : 'deposit'
+  const paymentPlan = input.courtesy ? 'courtesy' : input.cash ? 'cash' : input.payFull && amountOf(price) ? 'full' : 'deposit'
   const booking: Booking = {
     id,
     kind: input.kind ?? 'appointment',
@@ -324,7 +327,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     startTs: timestampOf(input.day, input.start),
     status,
     price,
-    deposit: paymentPlan === 'cash' ? '' : paymentPlan === 'full' ? pesos(amountOf(price)) : depositOf(config, price),
+    deposit: paymentPlan === 'cash' || paymentPlan === 'courtesy' ? '' : paymentPlan === 'full' ? pesos(amountOf(price)) : depositOf(config, price),
     paymentPlan,
     concern: input.concern ?? '',
     notes: input.notes ?? '',
@@ -332,7 +335,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     advisor: (input.advisor ?? (input.source === 'operator' ? '' : 'Gema')).trim().slice(0, 60),
     createdAt: now,
     holdUntil: HOLD_STATUSES.includes(status) ? now + config.holdMinutes * 60_000 : 0,
-    paidAt: input.paid && paymentPlan !== 'cash' ? now : 0,
+    paidAt: input.paid && paymentPlan !== 'cash' && paymentPlan !== 'courtesy' ? now : 0,
     confirmedAt: status === 'confirmed' ? now : 0,
     paymentMethod: '',
     paymentRef: '',
@@ -469,7 +472,7 @@ export async function rescheduleBooking(config: AppConfig, id: string, day: stri
     serviceId: service.id,
     serviceLabel: service.label,
     price,
-    ...(booking.paymentPlan === 'cash' || !unpaid ? {} : { deposit: booking.paymentPlan === 'full' ? pesos(amountOf(price)) : depositOf(config, price) }),
+    ...(booking.paymentPlan === 'cash' || booking.paymentPlan === 'courtesy' || !unpaid ? {} : { deposit: booking.paymentPlan === 'full' ? pesos(amountOf(price)) : depositOf(config, price) }),
     } : {}),
   }
 
@@ -511,7 +514,7 @@ export async function updateBookingDetails(id: string, patch: { name?: string; c
 }
 
 /** Cómo paga una cita creada o editada en el panel. */
-export type ManualPayment = 'onsite' | 'deposit' | 'full'
+export type ManualPayment = 'onsite' | 'deposit' | 'full' | 'courtesy'
 
 /**
  * El asesor registra cómo paga la cita: todo en la sede, ya pagó el anticipo o ya pagó completo.
@@ -521,8 +524,8 @@ export async function setBookingPayment(config: AppConfig, id: string, payment: 
   const booking = await getBooking(id)
   if (!booking) return null
   const now = Date.now()
-  const fields = payment === 'onsite'
-    ? { paymentPlan: 'cash', deposit: '', paidAt: '0' }
+  const fields = payment === 'onsite' || payment === 'courtesy'
+    ? { paymentPlan: payment === 'courtesy' ? 'courtesy' : 'cash', deposit: '', paidAt: '0' }
     : payment === 'full'
       ? { paymentPlan: 'full', deposit: pesos(amountOf(booking.price)), paidAt: String(booking.paidAt || now) }
       : { paymentPlan: 'deposit', deposit: booking.paymentPlan === 'deposit' && booking.deposit ? booking.deposit : depositOf(config, booking.price), paidAt: String(booking.paidAt || now) }

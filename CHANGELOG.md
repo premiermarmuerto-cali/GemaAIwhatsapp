@@ -3,6 +3,10 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.6.1 · 20 de octubre de 2026
+
+- Nueva opción de pago al crear o editar una cita: **"Limpieza de cortesía (por compra de productos)"**. No se cobra, no se reporta a Meta como venta, y si se cancela no pide reembolso. Recibe los recordatorios igual que las demás.
+
 ## 1.6 · 20 de octubre de 2026
 
 **2x1 con una sola cabina**

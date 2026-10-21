@@ -36,8 +36,8 @@ export function EditBookingForm({ booking, services, busy, onCancel, onSave }: P
   const [start, setStart] = useState(booking.start)
   const [slots, setSlots] = useState<Slots | null>(null)
   // Cómo paga. Una cita de Gema esperando el anticipo se valida con "Confirmar anticipo", no aquí.
-  const initialPayment = booking.paymentPlan === 'cash' ? 'onsite' : booking.paymentPlan === 'full' ? 'full' : 'deposit'
-  const [payment, setPayment] = useState<'onsite' | 'deposit' | 'full'>(initialPayment)
+  const initialPayment = booking.paymentPlan === 'cash' ? 'onsite' : booking.paymentPlan === 'courtesy' ? 'courtesy' : booking.paymentPlan === 'full' ? 'full' : 'deposit'
+  const [payment, setPayment] = useState<'onsite' | 'deposit' | 'full' | 'courtesy'>(initialPayment)
   const awaitingPayment = booking.status !== 'confirmed'
 
   useEffect(() => {
@@ -96,6 +96,7 @@ export function EditBookingForm({ booking, services, busy, onCancel, onSave }: P
             <option value="onsite">No ha pagado: paga todo en la sede</option>
             <option value="deposit">Ya pagó el anticipo</option>
             <option value="full">Ya pagó la sesión completa</option>
+                <option value="courtesy">Limpieza de cortesía (por compra de productos)</option>
           </select>
         </label>
       )}

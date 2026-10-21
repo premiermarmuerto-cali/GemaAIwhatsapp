@@ -295,6 +295,7 @@
 .eventPay { font: 600 10px/1.2 var(--font-sans); color: var(--primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .eventPay[data-state='deposit-paid'], .eventPay[data-state='full-paid'] { color: var(--secondary-text); }
 .payState { font-weight: 600; }
+.payState[data-state='courtesy'], .eventPay[data-state='courtesy'] { color: var(--muted); }
 .payState[data-state='onsite'], .payState[data-state='deposit-pending'], .payState[data-state='full-pending'] { color: var(--primary); }
 .payState[data-state='deposit-paid'], .payState[data-state='full-paid'] { color: var(--secondary-text); }
 

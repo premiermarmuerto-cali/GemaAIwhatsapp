@@ -40,7 +40,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
   const fullPhone = dialCode && national ? `${dialCode}${national}` : ''
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
-  const [payment, setPayment] = useState<'onsite' | 'deposit' | 'full'>('onsite')
+  const [payment, setPayment] = useState<'onsite' | 'deposit' | 'full' | 'courtesy'>('onsite')
   // Quién agenda: se recuerda el último en este navegador para no escribirlo en cada cita.
   const [advisor, setAdvisor] = useState('')
   useEffect(() => { setAdvisor(lastAdvisor()) }, [])
@@ -174,6 +174,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
                 <option value="onsite">No ha pagado: paga todo en la sede</option>
                 <option value="deposit">Ya pagó el anticipo</option>
                 <option value="full">Ya pagó la sesión completa</option>
+                <option value="courtesy">Limpieza de cortesía (por compra de productos)</option>
               </select>
             </label>
           </>

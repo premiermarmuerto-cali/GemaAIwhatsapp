@@ -282,7 +282,9 @@ export async function buildPromptContext(config: AppConfig, phone: string, lead:
 
 function bookingBlock(booking: Booking | null): string {
   if (!booking) return 'El cliente no tiene ninguna cita activa. Si quiere agendar, es una cita nueva.'
-  const state = booking.paymentPlan === 'cash'
+  const state = booking.paymentPlan === 'courtesy'
+    ? 'de cortesía: la sede se la regaló por una compra de productos (no paga nada; no le hables de anticipo ni de link)'
+    : booking.paymentPlan === 'cash'
     ? 'agendada para pagar en efectivo en la sede (no pagó nada antes y no debe pagar nada antes; no le envíes link)'
     : booking.status === 'confirmed'
     ? 'ya confirmada (el anticipo está pagado)'

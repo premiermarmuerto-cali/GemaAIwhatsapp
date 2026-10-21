@@ -155,7 +155,8 @@ export type Booking = {
   sequential: boolean
   /** Qué pagó o debe pagar para reservar: el anticipo o la sesión completa. `deposit` es ese monto. */
   /** cash: agendada sin anticipo, paga todo en la sede (config.cashBooking). Confirmada pero NO pagada. */
-  paymentPlan: 'deposit' | 'full' | 'cash'
+  /** courtesy: limpieza de cortesía (la sede la regala por compra de productos): no se cobra. */
+  paymentPlan: 'deposit' | 'full' | 'cash' | 'courtesy'
   serviceId: string
   serviceLabel: string
   durationMin: number

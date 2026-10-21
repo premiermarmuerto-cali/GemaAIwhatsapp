@@ -61,7 +61,7 @@ export const PATCH = route(async (request: Request, context: Params) => {
   }
   if (typeof body.contactPhone === 'string') details.contactPhone = body.contactPhone ? canonicalPhone(body.contactPhone) : ''
   if (Object.keys(details).length && !(await updateBookingDetails(id, details))) throw new HttpError(404, 'La cita no existe.')
-  if (body.payment === 'onsite' || body.payment === 'deposit' || body.payment === 'full') await setBookingPayment(config, id, body.payment)
+  if (body.payment === 'onsite' || body.payment === 'deposit' || body.payment === 'full' || body.payment === 'courtesy') await setBookingPayment(config, id, body.payment)
 
   if (body.day !== undefined || body.start !== undefined) {
     const day = String(body.day ?? '')
@@ -95,7 +95,8 @@ export const PATCH = route(async (request: Request, context: Params) => {
     }
     // La sesión se realizó: quien pagó todo en la sede (efectivo, o cita creada a mano) también es una
     // venta del anuncio. Mismo event_id que el anticipo: si ese ya se reportó, Meta no lo cuenta dos veces.
-    if (status === 'done' && before && before.kind !== 'block' && before.phone) {
+    // Una limpieza de cortesía no es una venta del anuncio: no se reporta a Meta.
+    if (status === 'done' && before && before.kind !== 'block' && before.phone && before.paymentPlan !== 'courtesy') {
       await trackConversion({ name: 'Purchase', phone: before.phone, eventId: `pago_${before.phone}_${before.id}`, value: amountOf(before.price) })
     }
     return NextResponse.json(moved)

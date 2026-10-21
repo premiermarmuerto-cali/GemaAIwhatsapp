@@ -46,11 +46,12 @@ export function holdCountdown(holdUntil: number, now = Date.now()): string {
 }
 
 /** Cómo va el pago de una cita, para que la cabina sepa cuánto cobrar. */
-export type PaymentState = 'onsite' | 'deposit-paid' | 'deposit-pending' | 'full-paid' | 'full-pending'
+export type PaymentState = 'courtesy' | 'onsite' | 'deposit-paid' | 'deposit-pending' | 'full-paid' | 'full-pending'
 
 /** Lo que se registró como pago para agendar: la marca `paidAt` la ponen Bold, la asesora al confirmar o el alta manual. */
 export function paymentState(booking: Pick<Booking, 'paymentPlan' | 'paidAt' | 'paymentRef'>): PaymentState {
   const paid = booking.paidAt > 0 || Boolean(booking.paymentRef)
+  if (booking.paymentPlan === 'courtesy') return 'courtesy'
   if (booking.paymentPlan === 'cash') return 'onsite'
   if (booking.paymentPlan === 'full') return paid ? 'full-paid' : 'full-pending'
   return paid ? 'deposit-paid' : 'deposit-pending'
@@ -61,6 +62,7 @@ export function paymentSummary(booking: Pick<Booking, 'paymentPlan' | 'paidAt' |
   const total = amountOf(booking.price)
   const deposit = amountOf(booking.deposit)
   switch (paymentState(booking)) {
+    case 'courtesy': return { short: 'Cortesía', long: 'Limpieza de cortesía (por compra de productos): no se cobra' }
     case 'onsite': return { short: 'Paga en sede', long: `No ha pagado nada: paga ${total ? pesos(total) : 'todo'} en la sede` }
     case 'deposit-paid': return { short: 'Anticipo pagado', long: `Anticipo pagado ${pesos(deposit)} · faltan ${pesos(Math.max(0, total - deposit))} en la sede` }
     case 'deposit-pending': return { short: 'Anticipo pendiente', long: `Anticipo de ${pesos(deposit)} sin pagar todavía` }
