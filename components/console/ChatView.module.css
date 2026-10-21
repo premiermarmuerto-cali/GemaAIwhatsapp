@@ -162,31 +162,6 @@
 .agentActions { display: flex; gap: 6px; flex: none; }
 .agentBanner :global(.btn) { flex: none; min-height: 32px; font-size: 12px; }
 
-/* Plantillas de Meta con la ventana de 24 h cerrada. */
-.templateBar { display: grid; gap: 8px; flex: none; margin: 0 20px 6px; padding: 10px 12px; border: 1px solid var(--line); background: var(--surface-2); }
-.templateBar p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
-.templateBar p b { color: var(--danger); font-weight: 600; }
-.templateOptions { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
-.templateOption {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  text-align: left;
-}
-.templateOption > span { display: grid; gap: 2px; min-width: 0; }
-.templateOption b { font-size: 12px; font-weight: 600; }
-.templateOption small { overflow: hidden; color: var(--faint); font-size: 11px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.templateOption em { color: var(--primary); font: normal 600 9px var(--font-sans); letter-spacing: .12em; text-transform: uppercase; }
-.templateOption svg { width: 15px; height: 15px; flex: none; color: var(--primary); }
-.templateOption[data-suggested] { border-color: var(--primary); background: var(--primary-soft); }
-.templateOption:hover:not(:disabled) { border-color: var(--primary); }
-
 /* Composer */
 .composerWrap { flex: none; padding: 8px 20px 18px; }
 .composerMode { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--faint); font-size: 11px; }

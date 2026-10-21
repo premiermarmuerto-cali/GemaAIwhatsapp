@@ -3,9 +3,17 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.6.3 · 21 de octubre de 2026
+
+- Las plantillas de Meta manuales pasan al panel de control, plegadas bajo "Mensajes prediseñados" como **"Plantillas de Meta · solo emergencias"**. Las plantillas siguen saliendo solas; esto es solo para adelantar una.
+- **Anti-spam**: una sola plantilla por cliente hasta que responda (manual o automática), máximo una de marketing cada 3 días, y nunca entre 9 p.m. y 8 a.m. El servidor lo bloquea aunque se intente.
+- **Franja de silencio reforzada (9 p.m. a 8 a.m.)**: además de las automatizaciones, ahora tampoco se contestan de madrugada los mensajes que Meta entrega con retraso ni los que quedaron sin responder; esperan a las 8 a.m. Gema sí responde a quien le escribe en ese momento.
+- Confirmaciones con la estética del panel en lugar del cuadro del navegador.
+- Las plantillas ya no saludan con iniciales ("Hola Ll"): si el nombre son iniciales, dicen "Hola de nuevo".
+
 ## 1.6.2 · 20 de octubre de 2026
 
-- **Plantillas de Meta desde el chat**: con la ventana de 24 h cerrada aparece una barra encima del cuadro de mensaje con las plantillas que aplican a ese cliente (retomar, últimos días del 2x1, anticipo pendiente, recordatorio), la más lógica marcada como "Sugerida" y las que no aplican deshabilitadas con el motivo. Al enviar una, se quita la alerta y Gema vuelve a atender el chat para responder cuando el cliente conteste.
+- **Plantillas de Meta desde el panel**: con la ventana de 24 h cerrada se ofrecen con las plantillas que aplican a ese cliente (retomar, últimos días del 2x1, anticipo pendiente, recordatorio), la más lógica marcada como "Sugerida" y las que no aplican deshabilitadas con el motivo. Al enviar una, se quita la alerta y Gema vuelve a atender el chat para responder cuando el cliente conteste.
 - Corrección: la plantilla automática de retomar no salía para los chats que el propio sistema había marcado "Requiere asesor" por un mensaje tardío, porque esa alerta pausa a Gema. Ahora sí sale y, al enviarse, Gema retoma el chat.
 
 ## 1.6.1 · 20 de octubre de 2026

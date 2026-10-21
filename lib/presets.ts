@@ -47,7 +47,11 @@ function pitchOf(service: Service): string {
 
 /** Primer nombre con letras ("💛VICKY💛" → "Vicky", "ana maría" → "Ana"). Vacío si no hay. */
 export function firstName(name: string): string {
-  const word = name.split(/\s+/).map((part) => part.replace(/[^\p{L}'-]/gu, '')).find((part) => /\p{L}{2,}/u.test(part))
+  // Iniciales ("L.L", "M.") no son un nombre: saldría "Hola Ll". Mejor sin nombre ("Hola de nuevo").
+  const word = name.split(/\s+/)
+    .filter((part) => !/\p{L}\.\p{L}|^\p{L}\.?$/u.test(part.replace(/[^\p{L}.]/gu, '')))
+    .map((part) => part.replace(/[^\p{L}'-]/gu, ''))
+    .find((part) => /\p{L}{2,}/u.test(part))
   if (!word) return ''
   const lower = word === word.toUpperCase() ? word.toLowerCase() : word
   return lower[0].toUpperCase() + lower.slice(1)

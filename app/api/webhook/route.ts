@@ -4,6 +4,7 @@ import { recordInbound, requestAgent, setNoMarketing, setOptOut } from '@/lib/ch
 import { beginMediaJob, isStoredKind, processMedia, type StoredKind } from '@/lib/media'
 import { isOptOut } from '@/lib/optout'
 import { WHATSAPP_WINDOW_MS } from '@/lib/window'
+import { isQuietHours, NIGHT_REPLY_MAX_AGE_MS } from '@/lib/calendar'
 import { isValidPhone, normalizePhone } from '@/lib/phone'
 import { keys, redis } from '@/lib/redis'
 import type { MediaKind, Message, MessageMedia } from '@/lib/types'
@@ -212,7 +213,12 @@ export async function POST(request: NextRequest) {
             if (!(await processMedia(phone, stored))) await requestAgent(phone, MEDIA_FAILURE[stored.kind])
           })
         }
-        if (conversational && Date.now() - at < MAX_AUTOREPLY_AGE_MS) {
+        const age = Date.now() - at
+        if (conversational && age < MAX_AUTOREPLY_AGE_MS && isQuietHours() && age > NIGHT_REPLY_MAX_AGE_MS) {
+          // Meta lo entregó con horas de retraso y es de noche: no se escribe de madrugada. Queda en el
+          // índice de pendientes y el programador lo responde a partir de las 8:00 a.m.
+          console.warn(`[webhook] ${phone}: mensaje tardío de noche; se responde a las 8:00 a.m.`)
+        } else if (conversational && age < MAX_AUTOREPLY_AGE_MS) {
           await markPendingReply(phone)
           toReply.add(phone)
         } else if (conversational) {

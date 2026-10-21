@@ -35,7 +35,7 @@
  */
 import { autoReply, markPendingReply } from './autoreply'
 import { bookingsOfPhone, getBookings, liveBookingOf, markBookingAuto, serviceText, suggestStarts, sweepExpiredHolds } from './booking'
-import { clock12, dayKey, fullDayLabel, minuteOfDay, nextHumanWindow } from './calendar'
+import { clock12, dayKey, fullDayLabel, isQuietHours, NIGHT_REPLY_MAX_AGE_MS, nextHumanWindow } from './calendar'
 import { getHistory, getSummary, listChats, markChatAuto, recordOutbound, requestAgent, updateChat } from './chats'
 import { ESCALATION_HOURS, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
 import { depositOf, getConfig, pesos, serviceById } from './config'
@@ -52,9 +52,6 @@ const MINUTE = 60_000
 const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 
-/** Solo se escribe entre 8:00 a.m. y 9:00 p.m. (hora de Colombia). */
-const SEND_FROM_MIN = 8 * 60
-const SEND_TO_MIN = 21 * 60
 /** Tope de envíos por corrida: si algo se descontrola, no sale una avalancha de mensajes. */
 const MAX_SENDS_PER_RUN = 25
 const MESSAGE_GAP_MS = 1_200
@@ -480,7 +477,9 @@ async function answerPending(now: number, dryRun: boolean): Promise<Outcome[]> {
     tx.set(keys.awaitingSeeded, String(now))
     await tx.exec()
   }
-  const phones = await db.zrange<string[]>(keys.awaiting, 0, now - UNANSWERED_AFTER_MS, { byScore: true })
+  // De noche solo se atiende lo reciente: un mensaje viejo sin responder espera a las 8 a.m.
+  const quiet = isQuietHours(now)
+  const phones = await db.zrange<string[]>(keys.awaiting, quiet ? now - NIGHT_REPLY_MAX_AGE_MS : 0, now - UNANSWERED_AFTER_MS, { byScore: true })
   const outcomes: Outcome[] = []
   const toAnswer: string[] = []
   // Sale del índice lo que no le toca a Gema: si el cliente vuelve a escribir, entra de nuevo.
@@ -532,8 +531,8 @@ export async function runAutomations({ now = Date.now(), dryRun = false } = {}):
   if (!automationsOn()) return [{ kind: 'todas', phone: '-', how: 'omitido', detail: 'automatizaciones apagadas (AUTOMATIONS=off)' }]
   // Responder a quien escribió no es un mensaje automático: va a cualquier hora, antes que todo.
   const pending = await answerPending(now, dryRun).catch((error): Outcome[] => [{ kind: 'sin_respuesta', phone: '-', how: 'error', detail: error instanceof Error ? error.message : String(error) }])
-  const minute = minuteOfDay(now)
-  if (minute < SEND_FROM_MIN || minute >= SEND_TO_MIN) return [...pending, { kind: 'todas', phone: '-', how: 'omitido', detail: 'fuera del horario de envío (8:00 a 21:00)' }]
+  // Franja de silencio (9 p.m. a 8 a.m.): nada automático. Ver isQuietHours en lib/calendar.ts.
+  if (isQuietHours(now)) return [...pending, { kind: 'todas', phone: '-', how: 'omitido', detail: 'fuera del horario de envío (8:00 a 21:00)' }]
   if (!dryRun && !(await redis().set(keys.automationsLock, '1', { nx: true, ex: 300 }))) {
     return [...pending, { kind: 'todas', phone: '-', how: 'omitido', detail: 'otra corrida en curso' }]
   }

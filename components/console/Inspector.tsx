@@ -8,6 +8,7 @@ import { formatDate, formatDuration } from '@/lib/format'
 import { formatPhone } from '@/lib/phone'
 import type { ChatSummary, Stats } from '@/lib/types'
 import { windowRemainingMs } from '@/lib/window'
+import { TemplatePanel } from './TemplatePanel'
 import { AGENT_LABEL, AUTO_LABEL, capiLabel, leadSummary, OBJECTION_LABEL, paymentMethods, regionLabel } from './labels'
 import styles from './Inspector.module.css'
 
@@ -18,6 +19,7 @@ type Props = {
   onClose: () => void
   onSendPreset: (phone: string, id: string, label: string) => Promise<boolean>
   onReactivate: (phone: string) => void
+  onSendTemplate: (phone: string, name: string, label: string) => Promise<boolean>
   toast: ShowToast
 }
 
@@ -30,7 +32,7 @@ const PRESET_BUTTONS: Array<{ id: string; label: string; hint: string }> = [
   { id: 'followUpPayment', label: 'Anticipo pendiente', hint: 'Para quien tiene un horario apartado sin pagar' },
 ]
 
-export function Inspector({ stats, chat, onOpenSettings, onClose, onSendPreset, onReactivate, toast }: Props) {
+export function Inspector({ stats, chat, onOpenSettings, onClose, onSendPreset, onReactivate, onSendTemplate, toast }: Props) {
   const [sending, setSending] = useState<string | null>(null)
   const today = stats?.today
   const replies = today ? today.aiReplies + today.humanReplies : 0
@@ -115,7 +117,7 @@ export function Inspector({ stats, chat, onOpenSettings, onClose, onSendPreset, 
       {chat && (
         <section className={styles.section}>
           <div className="eyebrow"><ChatIcon /> Mensajes prediseñados</div>
-          <p className={styles.muted}>Si un mensaje automático no salió, envíalo desde aquí. Sale a nombre de Gema y no la pausa.{!remaining && ' La ventana de 24 h está cerrada: usa las plantillas de Meta que aparecen encima del cuadro de mensaje.'}</p>
+          <p className={styles.muted}>Si un mensaje automático no salió, envíalo desde aquí. Sale a nombre de Gema y no la pausa.{!remaining && ' La ventana de 24 h está cerrada: solo se le puede escribir con una plantilla de Meta.'}</p>
           <div className={styles.presets}>
             {PRESET_BUTTONS.map((preset) => (
               <button
@@ -135,6 +137,8 @@ export function Inspector({ stats, chat, onOpenSettings, onClose, onSendPreset, 
               </button>
             ))}
           </div>
+          {/* Con la ventana cerrada: plantillas de Meta, plegadas y solo para emergencias. */}
+          {!remaining && chat.lastInboundAt > 0 && <TemplatePanel chat={chat} onSend={(name, label) => onSendTemplate(chat.phone, name, label)} />}
         </section>
       )}
 

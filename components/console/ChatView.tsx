@@ -7,7 +7,6 @@ import { ChatHeader } from './ChatHeader'
 import { Composer } from './Composer'
 import { AGENT_LABEL } from './labels'
 import { MessageThread } from './MessageThread'
-import { TemplateBar } from './TemplateBar'
 import { isWindowOpen } from '@/lib/window'
 import styles from './ChatView.module.css'
 
@@ -23,14 +22,13 @@ type Props = {
   onResolveAgent: () => void
   onOpenPanel: () => void
   onResendWelcome: () => void
-  onSendTemplate: (name: string, label: string) => Promise<boolean>
   toast: ShowToast
 }
 
 /** Mismo texto con el que lib/autoreply.ts marca una bienvenida que WhatsApp rechazó. */
 const WELCOME_FAILED_PREFIX = 'WhatsApp rechazó la bienvenida'
 
-export function ChatView({ chat, messages, onBack, onToggleBot, onStageChange, onArchiveChange, onDelete, onSend, onResolveAgent, onOpenPanel, onResendWelcome, onSendTemplate }: Props) {
+export function ChatView({ chat, messages, onBack, onToggleBot, onStageChange, onArchiveChange, onDelete, onSend, onResolveAgent, onOpenPanel, onResendWelcome }: Props) {
   const payment = chat.agentKind === 'payment'
 
   return (
@@ -43,7 +41,7 @@ export function ChatView({ chat, messages, onBack, onToggleBot, onStageChange, o
           <p>
             <b>{AGENT_LABEL[chat.agentKind]}</b>
             <strong>{chat.agentReason}</strong>
-            {payment ? ' · Valida el comprobante y confirma la cita desde la agenda.' : isWindowOpen(chat) ? ' · Gema está en pausa: responde tú o devuélvele el chat.' : ' · Envíale una de las plantillas de abajo: al enviarla, Gema retoma el chat.'}
+            {payment ? ' · Valida el comprobante y confirma la cita desde la agenda.' : isWindowOpen(chat) ? ' · Gema está en pausa: responde tú o devuélvele el chat.' : ' · La plantilla de retomar le sale sola entre 8 a.m. y 9 p.m. y Gema retoma el chat. Si es urgente, está en el panel de control (Plantillas de Meta).'}
           </p>
           <div className={styles.agentActions}>
             {payment ? (
@@ -63,7 +61,6 @@ export function ChatView({ chat, messages, onBack, onToggleBot, onStageChange, o
           </div>
         </div>
       )}
-      {!isWindowOpen(chat) && chat.lastInboundAt > 0 && <TemplateBar chat={chat} onSend={onSendTemplate} />}
       <Composer chat={chat} onSend={onSend} />
     </section>
   )

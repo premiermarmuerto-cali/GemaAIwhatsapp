@@ -21,6 +21,19 @@ export function minuteOfDay(at: number = Date.now()): number {
   return toMinutes(parts)
 }
 
+/**
+ * Franja de silencio (hora de Colombia): de 9:00 p.m. a 8:00 a.m. no sale NADA automático (seguimientos,
+ * recordatorios, plantillas). Gema solo responde a quien le escribe en ese momento.
+ */
+export const QUIET_FROM_MIN = 21 * 60
+export const QUIET_TO_MIN = 8 * 60
+export function isQuietHours(now = Date.now()): boolean {
+  const minute = minuteOfDay(now)
+  return minute >= QUIET_FROM_MIN || minute < QUIET_TO_MIN
+}
+/** De noche Gema solo contesta mensajes recientes: uno que se quedó sin responder (o que Meta entregó tarde) espera a las 8 a.m. */
+export const NIGHT_REPLY_MAX_AGE_MS = 60 * 60_000
+
 export function toMinutes(hhmm: string): number {
   const [hour, minute] = hhmm.split(':')
   return Number(hour) * 60 + Number(minute)

@@ -148,7 +148,8 @@ Gema también escribe sola, sin que la clienta haya escrito. Un programador la d
 | Últimos días del 2x1 | A los 5 días de silencio de quien escribió y no agendó, y otra vez en los 4 últimos días del 2x1 (27 al 31 de octubre) | Plantilla `ultimos_dias_bono`. La fecha se arma sola desde la configuración del 2x1 |
 
 **Reglas de cortesía, ya programadas:**
-- Solo se envían entre **8:00 a.m. y 9:00 p.m.**
+- Solo se envían entre **8:00 a.m. y 9:00 p.m.** De 9 p.m. a 8 a.m. no sale nada automático: Gema solo responde a quien le escribe en ese momento, y los mensajes atrasados esperan a las 8 a.m.
+- Una plantilla por cliente hasta que responda. Desde el panel de control se puede adelantar una a mano (**Plantillas de Meta · solo emergencias**), con el mismo bloqueo.
 - Nunca a un chat que está atendiendo una persona (Gema en pausa o con alerta de asesora).
 - Cada mensaje se envía **una sola vez** y queda registrado en la ficha del chat ("Automáticos").
 - Máximo 25 envíos por corrida y una plantilla de marketing por persona cada 3 días.

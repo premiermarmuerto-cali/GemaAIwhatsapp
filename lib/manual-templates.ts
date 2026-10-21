@@ -8,7 +8,7 @@
  * la ventana cerrada, Gema no puede escribir primero).
  */
 import { bookingsOfPhone, liveBookingOf } from './booking'
-import { dayKey, fullDayLabel } from './calendar'
+import { dayKey, fullDayLabel, isQuietHours } from './calendar'
 import { markChatAuto, recordOutbound, updateChat } from './chats'
 import { LOCATION_LABEL } from './clinic'
 import { getConfig } from './config'
@@ -61,6 +61,26 @@ const INFO: Record<TemplateName, { label: string; hint: string }> = {
   recordatorio_cita: { label: 'Recordatorio de la cita', hint: 'Fecha, hora y sede de su cita confirmada, con "Confirmo mi cita".' },
 }
 
+const MARKETING_GAP_MS = 3 * 24 * 60 * 60_000
+
+/**
+ * Por qué no se le puede enviar ninguna plantilla ahora (o null). Para no hacer spam: una sola plantilla
+ * hasta que el cliente responda (manual o automática), máximo una de marketing cada 3 días, y nada
+ * entre 9 p.m. y 8 a.m.
+ */
+export function templateLock(chat: ChatSummary, now = Date.now()): string | null {
+  if (chat.optedOut) return 'dijo que no le interesa'
+  if (isQuietHours(now)) return 'entre 9 p.m. y 8 a.m. no se le escribe a nadie'
+  const sent = Object.entries(chat.autoSent)
+    .filter(([key]) => !key.endsWith(':error') && key.split(':')[0] in TEMPLATES)
+    .map(([key, at]) => ({ name: key.split(':')[0], at }))
+  const last = sent.sort((a, b) => b.at - a.at)[0]
+  if (last && last.at > chat.lastInboundAt) return `ya se le envió una plantilla el ${new Date(last.at).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}: hay que esperar a que responda`
+  const lastMarketing = sent.find((item) => item.name !== 'recordatorio_cita')
+  if (lastMarketing && now - lastMarketing.at < MARKETING_GAP_MS) return 'ya recibió una plantilla de marketing en los últimos 3 días'
+  return null
+}
+
 /** Las plantillas para este chat, con la más lógica primero. */
 export async function templateOptions(chat: ChatSummary): Promise<TemplateOption[]> {
   const names = Object.keys(TEMPLATES) as TemplateName[]
@@ -69,7 +89,7 @@ export async function templateOptions(chat: ChatSummary): Promise<TemplateOption
   // La sugerida: recordatorio si tiene cita; anticipo si se le cayó el horario; si no, retomar.
   const suggested: TemplateName = available('recordatorio_cita') ? 'recordatorio_cita' : available('anticipo_pendiente') ? 'anticipo_pendiente' : 'retomar_cita_limpieza'
   const options = checks.map(({ name, result }): TemplateOption => {
-    const blocked = 'error' in result ? result.error : chat.optedOut ? 'dijo que no le interesa: reactívalo primero en el panel' : null
+    const blocked = templateLock(chat) ?? ('error' in result ? result.error : null)
     return { name, ...INFO[name], marketing: name !== 'recordatorio_cita', unavailable: blocked, suggested: name === suggested }
   })
   return options.sort((a, b) => Number(b.suggested) - Number(a.suggested) || Number(Boolean(a.unavailable)) - Number(Boolean(b.unavailable)))
@@ -77,7 +97,8 @@ export async function templateOptions(chat: ChatSummary): Promise<TemplateOption
 
 /** Envía una plantilla a este chat y deja a Gema atendiendo para cuando el cliente responda. */
 export async function sendTemplate(chat: ChatSummary, name: TemplateName): Promise<{ error: string } | { ok: true }> {
-  if (chat.optedOut) return { error: 'Este cliente dijo que no le interesa. Reactívalo en el panel si de verdad hay que escribirle.' }
+  const lock = templateLock(chat)
+  if (lock) return { error: `No se puede enviar: ${lock}.` }
   const result = await paramsFor(name, chat)
   if ('error' in result) return { error: `Esta plantilla no aplica: ${result.error}.` }
   const { language, image } = TEMPLATES[name] as { language: string; image?: string }

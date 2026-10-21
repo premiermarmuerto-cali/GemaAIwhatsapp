@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { CloseIcon } from '@/components/icons'
 import styles from './Agenda.module.css'
 
@@ -18,6 +19,7 @@ type Props = {
 export function AdvisorManager({ advisors, busy, onClose, onRename, onRemove }: Props) {
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const [removing, setRemoving] = useState<string | null>(null)
 
   return (
     <aside className={styles.panel} aria-label="Asesores">
@@ -58,13 +60,23 @@ export function AdvisorManager({ advisors, busy, onClose, onRename, onRemove }: 
                   className="btn btn-ghost"
                   disabled={busy}
                   title="Lo saca de la lista de asesores; sus citas conservan el nombre"
-                  onClick={() => { if (window.confirm(`¿Quitar a "${name}" de la lista de asesores? Sus citas conservan el nombre.`)) onRemove(name) }}
+                  onClick={() => setRemoving(name)}
                 >Quitar</button>
               </>
             )}
           </li>
         ))}
       </ul>
+      {removing && (
+        <ConfirmDialog
+          title={`¿Quitar a "${removing}" de la lista?`}
+          body={['Deja de aparecer al elegir el asesor de una cita. Sus citas conservan el nombre.']}
+          confirmLabel="Quitar de la lista"
+          danger
+          onCancel={() => setRemoving(null)}
+          onConfirm={() => { onRemove(removing); setRemoving(null) }}
+        />
+      )}
     </aside>
   )
 }

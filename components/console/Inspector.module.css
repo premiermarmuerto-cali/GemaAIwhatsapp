@@ -42,6 +42,36 @@
 
 .section > :global(.eyebrow) { display: inline-flex; align-items: center; gap: 6px; }
 .section > :global(.eyebrow) svg { width: 12px; height: 12px; }
+/* Plantillas de Meta: plegadas, discretas, solo para emergencias. */
+.templates { margin-top: 4px; border-top: 1px solid var(--line-soft); padding-top: 8px; }
+.templates summary { cursor: pointer; color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.templates summary:hover { color: var(--text); }
+.templates[open] { display: grid; gap: 6px; }
+.templates[open] summary { margin-bottom: 2px; }
+.templateLock { margin: 0; padding: 8px 10px; border-left: 2px solid var(--primary); background: var(--primary-soft); color: var(--text); font-size: 12px; line-height: 1.45; }
+.templateOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+.templateOption > span { display: grid; gap: 2px; min-width: 0; }
+.templateOption b { font-weight: 600; }
+.templateOption em { color: var(--primary); font-style: normal; font-weight: 500; }
+.templateOption small { color: var(--faint); font-size: 10px; line-height: 1.35; }
+.templateOption svg { width: 14px; height: 14px; flex: none; color: var(--primary); }
+.templateOption[data-suggested] { border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); color: var(--text); }
+.templateOption:hover:not(:disabled) { border-color: var(--primary); color: var(--text); }
+
 .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .preset {
   display: flex;
