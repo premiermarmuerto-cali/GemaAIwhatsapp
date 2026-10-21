@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { annotateBooking, bookingsOfPhone, getBooking, moveBooking, rescheduleBooking, setBookingAdvisor, updateBookingDetails } from '@/lib/booking'
+import { annotateBooking, bookingsOfPhone, getBooking, moveBooking, rescheduleBooking, setBookingAdvisor, setBookingPayment, updateBookingDetails } from '@/lib/booking'
 import { canonicalPhone, isValidPhone } from '@/lib/phone'
 import { isClock, isDayKey } from '@/lib/calendar'
 import { isLocation } from '@/lib/clinic'
@@ -61,6 +61,7 @@ export const PATCH = route(async (request: Request, context: Params) => {
   }
   if (typeof body.contactPhone === 'string') details.contactPhone = body.contactPhone ? canonicalPhone(body.contactPhone) : ''
   if (Object.keys(details).length && !(await updateBookingDetails(id, details))) throw new HttpError(404, 'La cita no existe.')
+  if (body.payment === 'onsite' || body.payment === 'deposit' || body.payment === 'full') await setBookingPayment(config, id, body.payment)
 
   if (body.day !== undefined || body.start !== undefined) {
     const day = String(body.day ?? '')

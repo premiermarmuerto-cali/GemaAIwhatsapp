@@ -60,7 +60,7 @@ export function Inspector({ stats, chat, onOpenSettings, onClose, onSendPreset, 
 
       <div className={styles.metrics}>
         <Metric label="Bandeja" value={stats?.inbox} hint={`${stats?.archived ?? '—'} archivados`} />
-        <Metric label="Citas hoy" value={today?.booked} hint={`${today?.newChats ?? '—'} leads nuevos`} accent />
+        <Metric label="Agendados hoy" value={today?.booked} hint={`${today?.newChats ?? '—'} leads nuevos`} accent />
         <Metric label="Mensajes hoy" value={today?.inbound} hint="recibidos" />
         <Metric label="Respuestas IA" value={aiShare === null ? undefined : `${aiShare}%`} hint={`${today?.aiReplies ?? 0} de ${replies}`} />
       </div>

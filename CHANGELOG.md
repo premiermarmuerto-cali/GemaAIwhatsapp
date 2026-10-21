@@ -3,6 +3,17 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.6 · 20 de octubre de 2026
+
+**2x1 con una sola cabina**
+- Cada sede tiene una cabina: las dos personas del 2x1 se agendan una después de la otra (la segunda empieza al terminar la primera). La cita ocupa la cabina el tiempo de las dos sesiones y se paga como una sola (2x1). Gema lo explica así y nunca dice que no se puede venir en pareja; la bienvenida vuelve a mostrar horarios para venir con acompañante.
+
+**Pagos en la agenda**
+- Las citas creadas a mano mostraban un anticipo de $50.000 que venía por defecto y nadie había cobrado. Ahora el asesor elige al crearla (y al editarla): "paga todo en la sede", "ya pagó el anticipo" o "ya pagó la sesión completa". La ficha y la grilla muestran cuánto falta cobrar. Las 13 citas manuales existentes quedaron como "paga en la sede": si alguna sí pagó anticipo, se corrige con "Editar cita".
+
+**Métricas**
+- "Citas hoy" pasa a llamarse "Agendados hoy" (chats que se agendaron hoy). El 42 venía de las pruebas del 20 de octubre corridas sobre la base real antes de que existiera el prefijo de pruebas; se recalculó con los chats reales.
+
 ## 1.5 · 20 de octubre de 2026
 
 **Clientes con número oculto**

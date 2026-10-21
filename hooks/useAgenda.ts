@@ -28,6 +28,8 @@ export type NewAppointment = {
   people?: number
   /** Quién agenda la cita y a quién le corresponde. */
   advisor?: string
+  /** Cómo paga: todo en la sede, ya pagó el anticipo o ya pagó completo. */
+  payment?: 'onsite' | 'deposit' | 'full'
 }
 
 /** Semana (grilla por horas) o mes (seis semanas, citas en lista por día). */

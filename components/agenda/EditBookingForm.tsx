@@ -35,6 +35,10 @@ export function EditBookingForm({ booking, services, busy, onCancel, onSave }: P
   const [day, setDay] = useState(booking.day)
   const [start, setStart] = useState(booking.start)
   const [slots, setSlots] = useState<Slots | null>(null)
+  // Cómo paga. Una cita de Gema esperando el anticipo se valida con "Confirmar anticipo", no aquí.
+  const initialPayment = booking.paymentPlan === 'cash' ? 'onsite' : booking.paymentPlan === 'full' ? 'full' : 'deposit'
+  const [payment, setPayment] = useState<'onsite' | 'deposit' | 'full'>(initialPayment)
+  const awaitingPayment = booking.status !== 'confirmed'
 
   useEffect(() => {
     let active = true
@@ -55,6 +59,7 @@ export function EditBookingForm({ booking, services, busy, onCancel, onSave }: P
     if (!hidden && phone.replace(/\D/g, '') !== booking.phone) changes.phone = phone
     if (hidden && contactPhone.replace(/\D/g, '') !== booking.contactPhone) changes.contactPhone = contactPhone
     if (moved) Object.assign(changes, { day, start, location, serviceId })
+    if (!awaitingPayment && payment !== initialPayment) changes.payment = payment
     if (!Object.keys(changes).length) return onCancel()
     await onSave(changes)
   }
@@ -82,6 +87,16 @@ export function EditBookingForm({ booking, services, busy, onCancel, onSave }: P
           <span className="eyebrow">WhatsApp</span>
           <input value={phone} inputMode="tel" placeholder="+57 300 123 4567" onChange={(event) => setPhone(event.target.value)} />
           <small className={styles.dim}>Con indicativo. Un celular colombiano de 10 dígitos se completa con +57.</small>
+        </label>
+      )}
+      {!awaitingPayment && (
+        <label>
+          <span className="eyebrow">Pago</span>
+          <select value={payment} onChange={(event) => setPayment(event.target.value as typeof payment)}>
+            <option value="onsite">No ha pagado: paga todo en la sede</option>
+            <option value="deposit">Ya pagó el anticipo</option>
+            <option value="full">Ya pagó la sesión completa</option>
+          </select>
         </label>
       )}
       <label>

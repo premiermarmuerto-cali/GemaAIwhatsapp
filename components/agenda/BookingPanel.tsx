@@ -9,7 +9,7 @@ import { formatPhone, isWhatsAppUserId } from '@/lib/phone'
 import { LIVE_STATUSES, type AgendaWeek, type Booking, type BookingStatus } from '@/lib/types'
 import { AdvisorSelect } from './AdvisorSelect'
 import { EditBookingForm } from './EditBookingForm'
-import { ACTION_LABEL, holdCountdown, NEXT_STATUSES, PAYMENT_METHOD_LABEL, STATUS_LABEL } from './labels'
+import { ACTION_LABEL, holdCountdown, NEXT_STATUSES, PAYMENT_METHOD_LABEL, paymentState, paymentSummary, STATUS_LABEL } from './labels'
 import styles from './Agenda.module.css'
 
 type Props = {
@@ -78,11 +78,14 @@ export function BookingPanel({ booking, busy, onClose, onStatus, onAnnotate, onA
         )}
         <div><dt>Cuándo</dt><dd>{dayLabel(booking.day)} · {booking.start}–{ends} <span className={styles.dim}>({booking.durationMin} min)</span></dd></div>
         <div><dt>Sede</dt><dd><PinIcon /> {LOCATION_LABEL[booking.location]}{booking.people > 1
-          ? ` · cabinas ${booking.cabin}–${booking.cabin + booking.people - 1}`
+          ? booking.sequential
+            ? ` · ${booking.people} sesiones seguidas en la misma cabina`
+            : ` · cabinas ${booking.cabin}–${booking.cabin + booking.people - 1}`
           : (booking.cabin > 1) && ` · cabina ${booking.cabin}`}</dd></div>
-        {booking.price && <div><dt>Valor</dt><dd>{booking.price}{booking.paymentPlan === 'cash'
-                ? <span className={styles.dim}> · paga todo en la sede (efectivo)</span>
-                : booking.deposit && <span className={styles.dim}> · {booking.paymentPlan === 'full' ? 'pago completo' : 'anticipo'} {booking.deposit}</span>}</dd></div>}
+        {booking.price && <div><dt>Valor</dt><dd>{booking.price}</dd></div>}
+        {booking.price && booking.kind !== 'block' && (
+          <div><dt>Pago</dt><dd className={styles.payState} data-state={paymentState(booking)}>{paymentSummary(booking).long}</dd></div>
+        )}
         {booking.phone && (
           <div>
             <dt>Cliente</dt>

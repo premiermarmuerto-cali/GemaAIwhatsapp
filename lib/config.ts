@@ -1,4 +1,5 @@
 import { DEFAULT_ADDRESSES, DEFAULT_CABINS, DEFAULT_HOURS, DEFAULT_SERVICES, LOCATIONS } from './clinic'
+import { amountOf, pesos } from './money'
 import { DEFAULT_PRESETS, PRESET_VARIABLES } from './preset-defaults'
 import { keys, redis } from './redis'
 import type { AppConfig, Location, PresetMessages, Region, Service } from './types'
@@ -75,8 +76,9 @@ export const DEFAULT_DEPOSIT_PERK = 'una exfoliación de manos con la sal del Ma
  * acordados con Premier, una sola vez (al guardar desde el panel ya queda en la versión actual):
  *   2 (v1.4, 20 oct 2026): prompt y conocimiento nuevos, anticipo fijo de $25.000, agendar en
  *     efectivo a quien lo pide, cortesía por anticipo y mensajes prediseñados editables.
+ *   3 (v1.6): con una sola cabina el 2x1 va en sesiones seguidas: la bienvenida ya no dice "a la misma hora".
  */
-export const CONFIG_REVISION = 2
+export const CONFIG_REVISION = 3
 
 export const DEFAULT_CONFIG: AppConfig = {
   revision: CONFIG_REVISION,
@@ -118,6 +120,9 @@ function migrate(config: AppConfig, from: number): AppConfig {
       depositPerk: DEFAULT_DEPOSIT_PERK,
       messages: DEFAULT_PRESETS,
     }
+  }
+  if (from < 3) {
+    next = { ...next, messages: { ...next.messages, welcomeClose: next.messages.welcomeClose.replace('con tu acompañante a la misma hora tengo libre', 'con tu acompañante tengo libre') } }
   }
   return { ...next, revision: CONFIG_REVISION }
 }
@@ -448,15 +453,7 @@ export function paymentFor(config: AppConfig, region: Region) {
   }
 }
 
-/** Número a partir de un precio escrito ("$130.000", "130000"). 0 si no tiene un número legible. */
-export function amountOf(price: string): number {
-  const digits = price.replace(/[^\d]/g, '')
-  return digits ? Number(digits) : 0
-}
-
-export function pesos(amount: number): string {
-  return `$${amount.toLocaleString('es-CO')}`
-}
+export { amountOf, pesos }
 
 /**
  * Anticipo como número a partir del precio de la cita (una sesión o la pareja). 0 si el precio no

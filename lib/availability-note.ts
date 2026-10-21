@@ -113,19 +113,22 @@ export async function availabilityNote(config: AppConfig, history: Message[], le
     const all = freeStarts(config, location, day, duration, occupancy, { now })
     const single = all.filter(inPart(part))
     const twoCabins = (config.cabins[location] ?? 1) >= 2
-    const pairs = twoCabins ? freeStarts(config, location, day, duration, occupancy, { now, people: 2 }).filter(inPart(part)) : []
+    // Con una sola cabina, la pareja va seguida: son horas en que caben las dos sesiones una tras otra.
+    const pairs = freeStarts(config, location, day, duration, occupancy, { now, people: 2 }).filter(inPart(part))
     if (!single.length) {
       lines.push(`- ${name}: SIN espacio${part ? ` en la ${part}` : ''}${part && all.length ? `; ese día sí hay a otras horas: ${rangesText(all, config.slotMinutes)}` : ''}`)
       continue
     }
-    const pairText = !twoCabins ? 'esta sede tiene una sola cabina, así que dos personas a la misma hora no se agendan aquí' : pairs.length ? rangesText(pairs, config.slotMinutes) : 'no hay'
-    lines.push(`- ${name}: SÍ hay espacio. Horas de inicio libres para una persona: ${rangesText(single, config.slotMinutes)} · Para dos personas a la misma hora: ${pairText}`)
+    const pairText = pairs.length
+      ? `${rangesText(pairs, config.slotMinutes)}${twoCabins ? ' (a la misma hora, cada una en su cabina)' : ` (una sola cabina: la primera a esa hora y la segunda al terminar, ${duration} min después)`}`
+      : 'no hay ese día'
+    lines.push(`- ${name}: SÍ hay espacio. Horas de inicio libres para una persona: ${rangesText(single, config.slotMinutes)} · Para dos personas (2x1): ${pairText}`)
   }
   const outside = day > addDays(today, config.horizonDays - 1)
   return [
     `Nota del sistema: agenda verificada AHORA para lo que pregunta el cliente (${label}${service ? `, ${service.label}` : ''}):`,
     ...lines,
     outside ? `- Ojo: esa fecha está más allá de los ${config.horizonDays} días en que se puede agendar.` : '',
-    'Responde con ESTOS datos, que son los reales (mandan sobre la lista de disponibilidad del prompt). Si la sede que pidió tiene horas libres, la respuesta es SÍ: ofrécele dos o tres horas concretas de esa sede en esa parte del día. Solo di que no hay espacio si aquí dice "SIN espacio", y entonces ofrece la otra sede u otra hora. Si viene sola, usa las horas para una persona; las de dos personas son solo para el 2x1 juntas.',
+    'Responde con ESTOS datos, que son los reales (mandan sobre la lista de disponibilidad del prompt). Si la sede que pidió tiene horas libres, la respuesta es SÍ: ofrécele dos o tres horas concretas de esa sede en esa parte del día. Solo di que no hay espacio si aquí dice "SIN espacio", y entonces ofrece la otra sede u otra hora. Si viene sola, usa las horas para una persona; si vienen dos (2x1), las de dos personas.',
   ].filter(Boolean).join('\n')
 }

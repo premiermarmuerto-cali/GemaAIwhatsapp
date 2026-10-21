@@ -99,13 +99,12 @@ function promoBlock(config: AppConfig, today: string): string {
       '- El 2x1 es para dos personas cualquiera que vengan juntas: pareja, amiga, mamá, hijo, hermana, compañera. Aquí "pareja" solo quiere decir "dos personas". Nunca digas que es solo para parejas, amigas o mujeres.',
     ].filter(Boolean).join('\n')
     : ''
-  // Venir acompañado a la misma hora exige dos cabinas: se dice aquí, donde el modelo mira la promo,
-  // porque la nota de la agenda sola no bastó (en una prueba ofreció pareja en la sede de 1 cabina).
-  const pairSedes = LOCATIONS.filter((location) => (config.cabins[location] ?? 1) >= 2)
-  const singleSedes = LOCATIONS.filter((location) => !pairSedes.includes(location))
-  const pairLine = !pairSedes.length
-    ? '- Hoy ninguna sede puede atender a dos personas a la misma hora (una sola cabina): si quieren venir juntas, no les ofrezcas horario; dile que una asesora les coordina la cita y usa [[ASESOR]].'
-    : `- Dos personas a la misma hora solo se pueden agendar en ${pairSedes.map((location) => LOCATION_LABEL[location]).join(' y ')}${singleSedes.length ? `; en ${singleSedes.map((location) => LOCATION_LABEL[location]).join(' y ')} hay una sola cabina, así que si piden ir juntas allá, ofréceles ${pairSedes.map((location) => LOCATION_LABEL[location]).join(' o ')}` : ''}.`
+  // Cómo se atiende una pareja en cada sede: con dos cabinas, a la misma hora; con una, seguidas.
+  // Se dice aquí, donde el modelo mira la promo (la nota de la agenda sola no bastó en las pruebas).
+  const singleSedes = LOCATIONS.filter((location) => (config.cabins[location] ?? 1) < 2)
+  const pairLine = singleSedes.length
+    ? `- En ${singleSedes.map((location) => LOCATION_LABEL[location]).join(' y ')} hay una sola cabina: las dos personas del 2x1 se atienden una después de la otra, el mismo día (la segunda empieza al terminar la primera). Ofrece las horas de "parejas" de la agenda (son la hora de la primera sesión) y cuéntale en una frase que van seguidas. Es lo normal en Premier: nunca digas que no se puede venir en pareja.`
+    : '- Dos personas del 2x1 se atienden a la misma hora, cada una en su cabina.'
   return [
     config.promo.trim(),
     '',
@@ -259,19 +258,19 @@ async function computeAgendaBlock(config: AppConfig, now: number): Promise<strin
   const ranges = (windows: Array<{ from: string; to: string }>) => windows.map((window) => (window.from === window.to ? window.from : `${window.from}–${window.to}`)).join(', ')
 
   return LOCATIONS.map((location, locationIndex) => {
-    // Pareja = dos cabinas libres a la vez. Con una sola cabina en la sede no hay huecos de pareja.
-    const pairs = (config.cabins[location] ?? 1) >= 2
+    // Pareja: con dos cabinas, las dos libres a la vez; con una, dos sesiones seguidas libres (cabinPlan).
+    const single = (config.cabins[location] ?? 1) < 2
     const rows = days.map((day, dayIndex) => {
       const closed = closedFlags[dayIndex]
       if (closed) return `  - ${dayLabel(day, { short: true })}: cerrado (${closed})`
       const occupancy = occupancies[locationIndex][dayIndex]
       const windows = startWindows(config, location, day, occupancy, { now })
       const free = windows.length ? ranges(windows) : 'sin horarios libres'
-      const pairWindows = pairs ? startWindows(config, location, day, occupancy, { now, people: 2 }) : []
-      const pairText = pairs && windows.length ? ` · parejas: ${pairWindows.length ? ranges(pairWindows) : 'sin horarios'}` : ''
+      const pairWindows = startWindows(config, location, day, occupancy, { now, people: 2 })
+      const pairText = windows.length ? ` · parejas: ${pairWindows.length ? ranges(pairWindows) : 'sin horarios'}` : ''
       return `  - ${dayLabel(day, { short: true })}${day === today ? ' (hoy)' : ''}: ${free}${pairText}`
     })
-    const header = `- ${LOCATION_LABEL[location]} (\`${location}\`)${pairs ? '' : ' — una sola cabina: aquí NO se agendan parejas'}:`
+    const header = `- ${LOCATION_LABEL[location]} (\`${location}\`)${single ? ' — una sola cabina: las parejas van una después de la otra; la hora de "parejas" es la de la primera sesión' : ''}:`
     return `${header}\n${rows.join('\n')}`
   }).join('\n')
 }
@@ -351,10 +350,10 @@ aunque la sesión termine después: si el rango es "10:00–18:30" y piden las 6
 se puede agendar; no la niegues ni ofrezcas otra. No ofrezcas nada fuera de estos rangos, ni
 "cualquier hora de la mañana": siempre dos o tres horas concretas. Se agenda con al menos
 ${config.leadTimeHours} h de antelación y hasta ${config.horizonDays} días adelante.
-Si vienen dos personas juntas (pareja), cada una va en su cabina a la misma hora: ofrece SOLO
-horas de los rangos de "parejas" de esa sede. Una sede marcada "aquí NO se agendan parejas" no
-tiene horarios para dos personas: ofrécele la otra sede; si ninguna sede tiene rangos de
-"parejas", dile que una asesora le coordina la cita y usa [[ASESOR]].
+Si vienen dos personas juntas (pareja), ofrece SOLO horas de los rangos de "parejas" de esa sede.
+En una sede de una sola cabina las dos sesiones van seguidas: la hora que ofreces es la de la
+primera y la segunda empieza al terminar ella; díselo así. Si una sede no tiene rangos de "parejas"
+ese día, ofrece otro día u otra sede; nunca digas que no se puede venir en pareja.
 Si el cliente pide un día y una hora concretos y esa hora está dentro de un rango de ese día (para
 dos personas, de "parejas"), la respuesta es SÍ: díselo y sigue con la reserva (nombre y forma de
 pago). El sistema vuelve a comprobar el cupo al reservar y, si se ocupó, ofrece otras horas solo.

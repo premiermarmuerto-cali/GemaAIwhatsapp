@@ -126,11 +126,11 @@ const RESOLVERS: Record<string, Resolver> = {
   cortesia_frase: (config) => (config.depositPerk.trim() ? `Y con tu anticipo te llevas de cortesía ${config.depositPerk.trim()} 🎁` : ''),
   sedes: (config) => LOCATIONS.filter((location) => config.addresses[location]).map((location) => `${LOCATION_LABEL[location]} (${config.addresses[location]})`).join(' o '),
   horarios: async (config, { now }) => {
-    // Horas libres para DOS personas a la vez (el gancho es el 2x1), dos por sede.
+    // Horas libres para DOS personas (el gancho es el 2x1), dos por sede. Con una sola cabina, son
+    // horas en que caben las dos sesiones seguidas.
     const today = dayKey(now)
     const lines: string[] = []
     for (const location of LOCATIONS) {
-      if ((config.cabins[location] ?? 1) < 2) continue
       const options = await suggestStarts(config, location, { now, people: 2 })
       if (options.length) lines.push(`▪️ ${LOCATION_LABEL[location]}: ${whenList(today, options)}`)
     }
@@ -138,7 +138,7 @@ const RESOLVERS: Record<string, Resolver> = {
   },
   pregunta_cierre: async (config, context) => ((await RESOLVERS.horarios(config, context)) ? 'Cuál te separo?' : 'En qué sede te queda mejor, Unicentro o Chipichape?'),
   hora_sugerida: async (config, { chat, now }) => {
-    const location: Location = chat?.lead.location || LOCATIONS.find((sede) => (config.cabins[sede] ?? 1) >= 2) || LOCATIONS[0]
+    const location: Location = chat?.lead.location || LOCATIONS[0]
     const [first] = await suggestStarts(config, location, { now, count: 1 })
     return first ? `${whenText(now, first)} en ${LOCATION_LABEL[location]}` : ''
   },

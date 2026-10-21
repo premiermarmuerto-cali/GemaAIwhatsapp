@@ -156,6 +156,18 @@ export function slotsOf(config: AppConfig, startMin: number, durationMin: number
 export type Occupancy = Record<string, string>
 
 /**
+ * Cómo ocupa la sede una cita de `people` personas. Con cabinas suficientes, cada persona en su
+ * cabina a la misma hora (`lanes` = personas). Con menos cabinas que personas (Premier tiene UNA por
+ * sede, oct 2026), las sesiones van una después de la otra en la misma cabina: un solo carril durante
+ * la duración de todas las sesiones seguidas. La hora de la cita es la de la primera sesión.
+ */
+export function cabinPlan(cabins: number, people: number, sessionMin: number): { lanes: number; minutes: number; sequential: boolean } {
+  const persons = Math.max(1, people)
+  if (persons <= Math.max(1, cabins)) return { lanes: persons, minutes: sessionMin, sequential: false }
+  return { lanes: 1, minutes: sessionMin * persons, sequential: true }
+}
+
+/**
  * Inicios en los que el servicio cabe completo en UNA cabina libre (o en `people` cabinas seguidas,
  * para una pareja). Es la verdad exacta: el panel pinta esto y la reserva lo vuelve a comprobar
  * de forma atómica, con el mismo criterio de cabinas seguidas.
@@ -171,14 +183,16 @@ export function freeStarts(
   const cabins = config.cabins[location] ?? 1
   const earliest = now + config.leadTimeHours * 3_600_000
   const out: string[] = []
+  // `durationMin` es la de UNA sesión; con una sola cabina, una pareja ocupa las dos seguidas.
+  const plan = cabinPlan(cabins, people, durationMin)
 
   // gridStarts ya respeta la primera y la última hora de inicio; la sesión puede terminar después.
   for (const startMin of gridStarts(config, day)) {
     if (timestampOf(day, toClock(startMin)) < earliest) continue
-    const needed = slotsOf(config, startMin, durationMin)
+    const needed = slotsOf(config, startMin, plan.minutes)
     const freeCabin = (cabin: number) => needed.every((clock) => !occupancy[`${clock}#${cabin}`])
-    const fits = Array.from({ length: Math.max(0, cabins - people + 1) }, (_, index) => index + 1)
-      .some((first) => Array.from({ length: people }, (_, offset) => first + offset).every(freeCabin))
+    const fits = Array.from({ length: Math.max(0, cabins - plan.lanes + 1) }, (_, index) => index + 1)
+      .some((first) => Array.from({ length: plan.lanes }, (_, offset) => first + offset).every(freeCabin))
     if (fits) out.push(toClock(startMin))
   }
   return out
@@ -197,7 +211,6 @@ export function startWindows(
   occupancy: Occupancy,
   { now = Date.now(), people = 1, durationMin = longestService(config) } = {},
 ): FreeWindow[] {
-  if (people > (config.cabins[location] ?? 1)) return []
   const starts = freeStarts(config, location, day, durationMin, occupancy, { now, people }).map(toMinutes)
   const windows: FreeWindow[] = []
   for (const start of starts) {

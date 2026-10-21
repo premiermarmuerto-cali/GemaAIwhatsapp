@@ -69,6 +69,10 @@ export const POST = route(async (request: Request) => {
     kind,
     // Lo que agenda el operador no espera anticipo: ya habló con el cliente.
     status: 'confirmed',
+    // Cómo paga: todo en la sede (por defecto), ya pagó el anticipo o ya pagó completo.
+    cash: kind === 'appointment' && body.payment !== 'deposit' && body.payment !== 'full',
+    payFull: body.payment === 'full',
+    paid: body.payment === 'deposit' || body.payment === 'full',
     people: body.people === 2 ? 2 : 1,
   })
 

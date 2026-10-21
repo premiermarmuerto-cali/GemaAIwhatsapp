@@ -40,6 +40,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
   const fullPhone = dialCode && national ? `${dialCode}${national}` : ''
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
+  const [payment, setPayment] = useState<'onsite' | 'deposit' | 'full'>('onsite')
   // Quién agenda: se recuerda el último en este navegador para no escribirlo en cada cita.
   const [advisor, setAdvisor] = useState('')
   useEffect(() => { setAdvisor(lastAdvisor()) }, [])
@@ -49,7 +50,9 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
   const [slots, setSlots] = useState<Slots | null>(null)
   const [pair, setPair] = useState(false)
   // Pareja = dos cabinas a la vez: solo se ofrece en sedes con al menos dos.
-  const canPair = kind === 'appointment' && (week.cabins[location] ?? 1) >= 2
+  // Pareja del 2x1: con dos cabinas a la misma hora; con una, las dos sesiones seguidas.
+  const canPair = kind === 'appointment'
+  const sequentialPair = (week.cabins[location] ?? 1) < 2
   const people = canPair && pair ? 2 : 1
 
   useEffect(() => {
@@ -113,7 +116,7 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
             <span className="eyebrow">Personas</span>
             <select value={people} onChange={(event) => setPair(event.target.value === '2')}>
               <option value={1}>1 persona</option>
-              <option value={2}>2 personas a la vez (pareja 2x1)</option>
+              <option value={2}>{sequentialPair ? '2 personas, una después de la otra (2x1)' : '2 personas a la vez (2x1)'}</option>
             </select>
           </label>
         )}
@@ -165,6 +168,14 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
               <span className="eyebrow">Asesor</span>
               <AdvisorSelect value={advisor} onChange={setAdvisor} options={week.advisors ?? []} />
             </label>
+            <label>
+              <span className="eyebrow">Pago</span>
+              <select value={payment} onChange={(event) => setPayment(event.target.value as typeof payment)}>
+                <option value="onsite">No ha pagado: paga todo en la sede</option>
+                <option value="deposit">Ya pagó el anticipo</option>
+                <option value="full">Ya pagó la sesión completa</option>
+              </select>
+            </label>
           </>
         )}
 
@@ -178,12 +189,12 @@ export function NewBookingForm({ week, seed, busy, onClose, onSubmit }: Props) {
           disabled={busy || !canSubmit}
           onClick={() => {
             if (kind === 'appointment') rememberAdvisor(advisor)
-            onSubmit({ kind, location, day, start, serviceId, phone: fullPhone, name: name.trim(), notes, people, advisor: advisor.trim() })
+            onSubmit({ kind, location, day, start, serviceId, phone: fullPhone, name: name.trim(), notes, people, advisor: advisor.trim(), payment })
           }}
         >
           {kind === 'block' ? 'Bloquear' : 'Crear cita confirmada'}
         </button>
-        {kind === 'appointment' && <p className={styles.dim}>Lo que agendas a mano queda confirmado: no espera anticipo.</p>}
+        {kind === 'appointment' && <p className={styles.dim}>Lo que agendas a mano queda confirmado. Recibe recordatorio por WhatsApp un día antes y 2 h antes.</p>}
       </div>
     </aside>
   )

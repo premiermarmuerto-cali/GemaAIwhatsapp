@@ -4,7 +4,7 @@
  * esos campos solo si ninguno existe, y eso se hace con un script Lua para que sea atómico:
  * dos clientes que aceptan el mismo horario a la vez no pueden quedar los dos.
  */
-import { addDays, dayKey, freeStarts, longestService, slotsOf, timestampOf, toMinutes, type Occupancy } from './calendar'
+import { addDays, cabinPlan, dayKey, freeStarts, longestService, slotsOf, timestampOf, toMinutes, type Occupancy } from './calendar'
 import { amountOf, bookingPrice, depositOf, pesos, serviceById } from './config'
 import { keys, redis, toHash } from './redis'
 import { bumpRev, queueRev } from './revision'
@@ -66,6 +66,7 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     location: (raw.location as Location) ?? 'unicentro',
     cabin: Number(raw.cabin ?? 1),
     people: Number(raw.people ?? 1) || 1,
+    sequential: raw.sequential === 'true',
     paymentPlan: raw.paymentPlan === 'full' || raw.paymentPlan === 'cash' ? raw.paymentPlan : 'deposit',
     serviceId: raw.serviceId ?? '',
     serviceLabel: raw.serviceLabel ?? '',
@@ -261,6 +262,8 @@ export type NewBooking = {
   cash?: boolean
   /** Quién la agenda: "Gema" o el nombre del asesor que la creó en el panel. */
   advisor?: string
+  /** Ya pagó lo que dice `paymentPlan` (cita creada a mano por un asesor que recibió el anticipo o el total). */
+  paid?: boolean
 }
 
 export type BookingResult =
@@ -274,14 +277,16 @@ export type BookingResult =
 export async function createBooking(config: AppConfig, input: NewBooking): Promise<BookingResult> {
   const db = redis()
   const service = serviceById(config, input.serviceId)
-  const durationMin = service?.durationMin ?? (input.kind === 'block' ? config.slotMinutes : 0)
-  if (!durationMin) return { ok: false, reason: 'service', alternatives: [] }
+  const sessionMin = service?.durationMin ?? (input.kind === 'block' ? config.slotMinutes : 0)
+  if (!sessionMin) return { ok: false, reason: 'service', alternatives: [] }
   const people = input.kind === 'block' ? 1 : Math.max(1, Math.floor(input.people ?? 1))
   const cabins = config.cabins[input.location] ?? 1
-  if (people > cabins) return { ok: false, reason: 'cabins', alternatives: [] }
+  // Con una sola cabina, una pareja ocupa las dos sesiones seguidas (ver cabinPlan).
+  const plan = cabinPlan(cabins, people, sessionMin)
+  const durationMin = plan.minutes
 
   const occupancy = await occupancyOf(input.location, input.day, { force: true })
-  const free = freeStarts(config, input.location, input.day, durationMin, occupancy, { people })
+  const free = freeStarts(config, input.location, input.day, sessionMin, occupancy, { people })
 
   if (input.kind !== 'block') {
     if (await isClosed(input.day)) return { ok: false, reason: 'closed', alternatives: [] }
@@ -291,9 +296,9 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
   const id = crypto.randomUUID().slice(0, 8)
   const startMin = toMinutes(input.start)
   const slots = slotsOf(config, startMin, durationMin)
-  const cabin = Number(await db.eval(CLAIM, [keys.slots(input.location, input.day)], [id, String(cabins), String(people), ...slots]))
+  const cabin = Number(await db.eval(CLAIM, [keys.slots(input.location, input.day)], [id, String(cabins), String(plan.lanes), ...slots]))
   // La carrera real se pierde aquí, no en la comprobación de arriba.
-  if (!cabin) return { ok: false, reason: 'taken', alternatives: freeStarts(config, input.location, input.day, durationMin, await occupancyOf(input.location, input.day), { people }) }
+  if (!cabin) return { ok: false, reason: 'taken', alternatives: freeStarts(config, input.location, input.day, sessionMin, await occupancyOf(input.location, input.day), { people }) }
 
   const now = Date.now()
   // Efectivo: confirmada desde ya, sin apartado que venza (no hay pago que esperar).
@@ -309,6 +314,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     location: input.location,
     cabin,
     people,
+    sequential: plan.sequential,
     serviceId: input.serviceId,
     serviceLabel: service?.label ?? 'Bloqueo',
     durationMin,
@@ -326,7 +332,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     advisor: (input.advisor ?? (input.source === 'operator' ? '' : 'Gema')).trim().slice(0, 60),
     createdAt: now,
     holdUntil: HOLD_STATUSES.includes(status) ? now + config.holdMinutes * 60_000 : 0,
-    paidAt: 0,
+    paidAt: input.paid && paymentPlan !== 'cash' ? now : 0,
     confirmedAt: status === 'confirmed' ? now : 0,
     paymentMethod: '',
     paymentRef: '',
@@ -424,42 +430,48 @@ export async function rescheduleBooking(config: AppConfig, id: string, day: stri
   const service = serviceId && serviceId !== current.serviceId ? serviceById(config, serviceId) : undefined
   if (serviceId && serviceId !== current.serviceId && !service) return { ok: false, reason: 'service', alternatives: [] }
   const booking = current
-  const durationMin = service?.durationMin ?? booking.durationMin
+  // Duración de UNA sesión: la del catálogo; si el servicio ya no existe, la guardada (por persona si iban seguidas).
+  const sessionMin = service?.durationMin ?? serviceById(config, booking.serviceId)?.durationMin
+    ?? (booking.sequential ? Math.round(booking.durationMin / booking.people) : booking.durationMin)
   if (!LIVE_STATUSES.includes(booking.status)) return { ok: false, reason: 'taken', alternatives: [] }
   const target = location ?? booking.location
   const cabins = config.cabins[target] ?? 1
-  if (booking.people > cabins) return { ok: false, reason: 'cabins', alternatives: [] }
+  const plan = cabinPlan(cabins, booking.people, sessionMin)
+  const durationMin = plan.minutes
   if (booking.kind !== 'block' && await isClosed(day)) return { ok: false, reason: 'closed', alternatives: [] }
 
   const oldSlots = slotsOf(config, booking.startMin, booking.durationMin)
   const reclaimOld = async () => {
-    const cabin = Number(await db.eval(CLAIM, [keys.slots(booking.location, booking.day)], [id, String(config.cabins[booking.location] ?? 1), String(booking.people), ...oldSlots]))
+    const cabin = Number(await db.eval(CLAIM, [keys.slots(booking.location, booking.day)], [id, String(config.cabins[booking.location] ?? 1), String(booking.sequential ? 1 : booking.people), ...oldSlots]))
     if (!cabin) console.error(`[booking] no se pudo volver a apartar el horario original de ${id} (${booking.day} ${booking.start}) tras una reprogramación fallida`)
   }
 
   // Se suelta primero el horario viejo: así una cita puede moverse 15 minutos sin chocar consigo misma.
   await releaseSlots(booking)
   const occupancy = await occupancyOf(target, day, { force: true })
-  const free = freeStarts(config, target, day, durationMin, occupancy, { people: booking.people })
+  const free = freeStarts(config, target, day, sessionMin, occupancy, { people: booking.people })
   if (booking.kind !== 'block' && !free.includes(start)) {
     await reclaimOld()
     return { ok: false, reason: 'taken', alternatives: free }
   }
   const startMin = toMinutes(start)
-  const cabin = Number(await db.eval(CLAIM, [keys.slots(target, day)], [id, String(cabins), String(booking.people), ...slotsOf(config, startMin, durationMin)]))
+  const cabin = Number(await db.eval(CLAIM, [keys.slots(target, day)], [id, String(cabins), String(plan.lanes), ...slotsOf(config, startMin, durationMin)]))
   if (!cabin) {
     await reclaimOld()
-    return { ok: false, reason: 'taken', alternatives: freeStarts(config, target, day, durationMin, await occupancyOf(target, day), { people: booking.people }) }
+    return { ok: false, reason: 'taken', alternatives: freeStarts(config, target, day, sessionMin, await occupancyOf(target, day), { people: booking.people }) }
   }
   const unpaid = !booking.paidAt && booking.status !== 'confirmed'
   const price = service ? bookingPrice(config, service, booking.people, day) : booking.price
-  const serviceFields = service ? {
+  const serviceFields = {
+    durationMin,
+    sequential: plan.sequential,
+    ...(service ? {
     serviceId: service.id,
     serviceLabel: service.label,
-    durationMin,
     price,
     ...(booking.paymentPlan === 'cash' || !unpaid ? {} : { deposit: booking.paymentPlan === 'full' ? pesos(amountOf(price)) : depositOf(config, price) }),
-  } : {}
+    } : {}),
+  }
 
   const startTs = timestampOf(day, start)
   // Recordatorios ya enviados eran para la fecha vieja: se olvidan, y la asistencia se vuelve a confirmar.
@@ -496,6 +508,26 @@ export async function updateBookingDetails(id: string, patch: { name?: string; c
   queueRev(tx, 'agenda')
   await tx.exec()
   return { ...booking, ...fields } as Booking
+}
+
+/** Cómo paga una cita creada o editada en el panel. */
+export type ManualPayment = 'onsite' | 'deposit' | 'full'
+
+/**
+ * El asesor registra cómo paga la cita: todo en la sede, ya pagó el anticipo o ya pagó completo.
+ * Antes las citas manuales mostraban el anticipo por defecto como si se hubiera cobrado.
+ */
+export async function setBookingPayment(config: AppConfig, id: string, payment: ManualPayment): Promise<Booking | null> {
+  const booking = await getBooking(id)
+  if (!booking) return null
+  const now = Date.now()
+  const fields = payment === 'onsite'
+    ? { paymentPlan: 'cash', deposit: '', paidAt: '0' }
+    : payment === 'full'
+      ? { paymentPlan: 'full', deposit: pesos(amountOf(booking.price)), paidAt: String(booking.paidAt || now) }
+      : { paymentPlan: 'deposit', deposit: booking.paymentPlan === 'deposit' && booking.deposit ? booking.deposit : depositOf(config, booking.price), paidAt: String(booking.paidAt || now) }
+  await redis().multi().hset(keys.booking(id), fields).incr(keys.rev('agenda')).exec()
+  return getBooking(id)
 }
 
 /** El cliente confirmó que asiste (botón de la plantilla de recordatorio o mensaje). */

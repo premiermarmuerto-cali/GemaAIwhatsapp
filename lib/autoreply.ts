@@ -1,6 +1,6 @@
 import { extractReserva, generateReply, type ExtractedReserva } from './ai'
 import { bookingsOfPhone, chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
-import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow } from './calendar'
+import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow, toClock, toMinutes } from './calendar'
 import { isLocation, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
 import { attachBooking, getHistory, getSummary, markChatAuto, recordOutbound, requestAgent, saveContactPhone, saveLead, setObjection, updateChat } from './chats'
 import { trackConversion } from './conversions'
@@ -521,12 +521,20 @@ function cashBookedText(config: AppConfig, booking: Booking): string {
   const firstName = booking.name.split(' ')[0]
   const address = config.addresses[booking.location]
   const total = amountOf(booking.price)
-  return `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${serviceText(booking)}* queda agendada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}${address ? ` (${address})` : ''}.\n\nEl pago${total ? ` de ${pesos(total)}` : ''} lo haces en la sede el día de tu cita, en efectivo o como prefieras. Te escribo por aquí antes de la cita para recordártela`
+  return `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${serviceText(booking)}* queda agendada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)}${pairTimes(booking)} en ${LOCATION_LABEL[booking.location]}${address ? ` (${address})` : ''}.\n\nEl pago${total ? ` de ${pesos(total)}` : ''} lo haces en la sede el día de tu cita, en efectivo o como prefieras. Te escribo por aquí antes de la cita para recordártela`
 }
 
 function bookedLine(booking: Booking): string {
   const firstName = booking.name.split(' ')[0]
-  return `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${serviceText(booking)}* queda apartada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}.`
+  return `Listo${firstName ? `, ${firstName}` : ''}: tu cita de *${serviceText(booking)}* queda apartada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)}${pairTimes(booking)} en ${LOCATION_LABEL[booking.location]}.`
+}
+
+/** Pareja en una sede de una sola cabina: " (una después de la otra: 3:00 p.m. y 4:00 p.m.)". */
+export function pairTimes(booking: Pick<Booking, 'sequential' | 'people' | 'start' | 'durationMin'>): string {
+  if (!booking.sequential || booking.people < 2) return ''
+  const session = Math.round(booking.durationMin / booking.people)
+  const times = Array.from({ length: booking.people }, (_, index) => clock12(toClock(toMinutes(booking.start) + index * session)))
+  return ` (una después de la otra: ${times.slice(0, -1).join(', ')} y ${times.at(-1)})`
 }
 
 /** Nota de la cita con la cortesía por anticipo (la ve la cabina en la agenda). */

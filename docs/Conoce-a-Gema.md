@@ -99,7 +99,7 @@ Este manual tiene cuatro partes: **1)** cuánto cuesta mantenerla, **2)** cómo 
    - **Transferencia directa** a Nequi 3114644721, Daviplata 3214040436 o la cuenta de ahorros Bancolombia 91232333868: el cliente manda la captura del comprobante y el chat pasa a una asesora para validarlo.
 
    Si el cliente ya dijo cómo quiere pagar ("por Nequi", "con tarjeta"), Gema le manda ese medio directamente. El link de Bold solo se crea cuando el cliente lo elige, así no quedan links abiertos que nadie usa.
-5. **Parejas (2x1):** agenda dos personas a la misma hora, cada una en su cabina, con el mismo servicio.
+5. **Parejas (2x1):** agenda a las dos personas con el mismo servicio, una después de la otra en la misma cabina (con dos cabinas, a la misma hora).
 6. **Entiende** notas de voz (las transcribe), fotos y capturas (las lee), y contesta en el idioma del cliente.
 7. **Escribe como una persona, no como un bot:** mensajes cortos, informales, a veces en 2 o 3 mensajes seguidos con una pausa de un segundo entre uno y otro, sin signos de apertura (¿ ¡), sin frases de call center ("con gusto te ayudo", "quedo atenta") y sin emojis. Si le preguntan si es un bot, responde que es la asistente virtual de Premier y ofrece pasar con una asesora. El link de pago y las cuentas siempre van completos en un solo mensaje. Estas reglas están en el prompt y además el servidor las refuerza, porque el modelo a veces se desvía.
 7. **Pasa a una persona** cuando corresponde (ver 2.6).
@@ -109,7 +109,7 @@ Este manual tiene cuatro partes: **1)** cuánto cuesta mantenerla, **2)** cómo 
 
 | Tema | Regla |
 |---|---|
-| Sedes | Unicentro y Chipichape, **2 cabinas cada una** |
+| Sedes | Unicentro y Chipichape, **1 cabina cada una**. Las parejas del 2x1 se atienden una después de la otra |
 | Horario de citas | Lunes–jueves: primera cita 10:00 a.m., **última 6:30 p.m.** · Viernes y sábado: 10:00 a.m. a **8:00 p.m.** · Domingo: 10:00 a.m. a **5:00 p.m.** *(son horas de inicio; la sesión puede terminar después)* |
 | Horario de asesoras | Lunes a sábado 10:00 a.m.–6:00 p.m. · Domingo no hay atención humana |
 | Anticipo | **$25.000 fijos por cita** (se descuentan del valor), o el pago completo si el cliente lo pide. Con anticipo: cortesía de exfoliación de manos con sal del Mar Muerto. **Efectivo:** quien lo pide se agenda sin anticipo y recibe recordatorio un día antes y 2 h antes |

@@ -2,7 +2,7 @@
 
 import { dayKey, dayLabel, minuteOfDay, openRanges, toClock } from '@/lib/calendar'
 import type { AgendaWeek, Booking, Location } from '@/lib/types'
-import { holdCountdown, STATUS_LABEL } from './labels'
+import { holdCountdown, paymentState, paymentSummary, STATUS_LABEL } from './labels'
 import styles from './Agenda.module.css'
 
 /** Altura de un minuto en píxeles: 60 min = 66 px, suficiente para leer el nombre dentro del bloque. */
@@ -119,6 +119,9 @@ export function WeekGrid({ week, location, activeId, onSelect, onPick }: Props) 
                     <span className={styles.eventTime}>{booking.start}</span>
                     <span className={styles.eventName}>{booking.kind === 'block' ? (booking.notes || 'Bloqueado') : (booking.name || booking.phone)}</span>
                     <span className={styles.eventService}>{booking.serviceLabel}{booking.people > 1 && ` · ${booking.people} personas`}</span>
+                    {booking.kind !== 'block' && booking.status === 'confirmed' && (
+                      <span className={styles.eventPay} data-state={paymentState(booking)}>{paymentSummary(booking).short}</span>
+                    )}
                     {booking.advisor && <span className={styles.eventAdvisor}>Asesor: {booking.advisor}</span>}
                     {booking.status === 'pending_payment' && (
                       <span className={styles.eventHold}>{STATUS_LABEL.pending_payment} · {holdCountdown(booking.holdUntil)}</span>

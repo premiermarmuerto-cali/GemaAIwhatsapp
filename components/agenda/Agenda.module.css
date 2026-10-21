@@ -291,6 +291,13 @@
 .advisorRemove { justify-self: start; padding: 0; border: 0; background: transparent; color: var(--faint); font-size: 11px; text-decoration: underline; }
 .advisorRemove:hover { color: var(--danger); }
 
+/* Estado del pago: verde si ya se cobró algo, tan si falta cobrar todo en la sede. */
+.eventPay { font: 600 10px/1.2 var(--font-sans); color: var(--primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.eventPay[data-state='deposit-paid'], .eventPay[data-state='full-paid'] { color: var(--secondary-text); }
+.payState { font-weight: 600; }
+.payState[data-state='onsite'], .payState[data-state='deposit-pending'], .payState[data-state='full-pending'] { color: var(--primary); }
+.payState[data-state='deposit-paid'], .payState[data-state='full-paid'] { color: var(--secondary-text); }
+
 /* Panel de asesores. */
 .advisorList { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .advisorList li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }

@@ -146,8 +146,13 @@ export type Booking = {
   location: Location
   /** Cabina asignada, desde 1. Con `people` > 1 ocupa también las siguientes (cabin … cabin + people - 1). */
   cabin: number
-  /** Personas atendidas a la vez: 2 en el 2x1 de pareja, cada una en su cabina. */
+  /** Personas de la cita: 2 en el 2x1 de pareja. */
   people: number
+  /**
+   * Pareja en una sede de una sola cabina: las dos sesiones van una después de la otra (la segunda
+   * empieza al terminar la primera). Entonces `durationMin` es el tiempo total de cabina.
+   */
+  sequential: boolean
   /** Qué pagó o debe pagar para reservar: el anticipo o la sesión completa. `deposit` es ese monto. */
   /** cash: agendada sin anticipo, paga todo en la sede (config.cashBooking). Confirmada pero NO pagada. */
   paymentPlan: 'deposit' | 'full' | 'cash'
