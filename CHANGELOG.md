@@ -3,12 +3,12 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
-## 1.7.3 · 23 de octubre de 2026
+## 1.8 · 23 de octubre de 2026
+
+Reúne lo publicado como 1.7.1, 1.7.2 y 1.7.3.
 
 **Reprogramar citas del equipo, a prueba de olvidos del modelo**
 - En pruebas con el código real, Gema ofrecía horas al cliente de una cita del equipo pero, cuando elegía una, le pedía el nombre completo como a un cliente nuevo o decía que no había espacio (con la agenda libre), sin reprogramar. Ahora recibe una nota justo antes de responder (es la cita de su asesor, ya tiene su nombre, se reprograma sin pedir nada) y, si aun así no reprograma, el servidor lee la hora que eligió el cliente y reprograma él mismo.
-
-## 1.7.2 · 22 de octubre de 2026
 
 **Gema retoma la conversación cuando el cliente vuelve**
 - Si el cliente escribe 6 horas o más después de la última conversación (lo normal en el 2x1: queda en confirmar el día con su acompañante), Gema sabe cuánto pasó y retoma donde quedaron: no lo saluda como a un cliente nuevo ni le repite la promoción, y no da por buenos el "hoy" ni las horas que ofreció antes (ofrece de la agenda de ahora).
@@ -17,8 +17,6 @@ Para publicar una actualización: sube la versión en `package.json` (y `package
 
 **Aviso al asesor cuando su cliente reprograma**
 - Si un cliente reprograma por WhatsApp una cita que agendó un asesor, el panel muestra un aviso emergente ("Shereek reprogramó su cita con Alejandro: jueves 22 oct 3:30 p.m. → sábado 25 oct 10:00 a.m.") con botón para abrir el chat, queda en la ficha como "Aviso al equipo" y en las notas de la cita. Gema no se pausa.
-
-## 1.7.1 · 22 de octubre de 2026
 
 **Citas agendadas por el equipo: Gema no cobra**
 - Si la cita la agendó un asesor en el panel, Gema nunca le habla al cliente de anticipo, link, transferencia ni comprobante, aunque la cita no tenga pago registrado: a esos clientes los atiende el equipo por fuera. Si el cliente pregunta por el pago, Gema le dice que eso lo ve con su asesor y pasa el chat a una persona.
