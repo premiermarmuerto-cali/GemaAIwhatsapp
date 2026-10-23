@@ -3,6 +3,13 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.7.2 · 22 de octubre de 2026
+
+**Gema retoma la conversación cuando el cliente vuelve**
+- Si el cliente escribe 6 horas o más después de la última conversación (lo normal en el 2x1: queda en confirmar el día con su acompañante), Gema sabe cuánto pasó y retoma donde quedaron: no lo saluda como a un cliente nuevo ni le repite la promoción, y no da por buenos el "hoy" ni las horas que ofreció antes (ofrece de la agenda de ahora).
+- Si quedó en confirmar algo ("le pregunto a mi amiga y te confirmo"), Gema le pregunta primero si ya lo pudo confirmar; si viene con acompañante, ofrece horas para parejas y pide el nombre de la otra persona si falta.
+- Al volver, lee los últimos 50 mensajes en vez de 30.
+
 ## 1.7.1 · 22 de octubre de 2026
 
 **Citas agendadas por el equipo: Gema no cobra**

@@ -325,6 +325,43 @@ export function lateNote(history: Message[], now = Date.now()): string | undefin
   return `Nota del sistema: el mensaje del cliente nos llegó con retraso (lo escribió hace ${hours >= 1 ? `unas ${hours} horas` : 'un buen rato'}). Empieza con una disculpa corta y humana por la demora ("perdona la demora en responderte") y sigue normal.`
 }
 
+/** Horas sin conversar a partir de las que el cliente "vuelve": Gema retoma, no empieza de cero. */
+const RETURN_GAP_MS = 6 * 3_600_000
+/** Al volver, Gema lee más mensajes de la conversación anterior. */
+const HISTORY_ON_RETURN = 50
+// Quedó en confirmar algo: "te confirmo", "le pregunto a mi amiga", "tengo que cuadrar con mi hermana".
+const SAYS_WILL_CONFIRM = /\b(te\s+(confirmo|aviso|escribo|cuento|digo)|le\s+(pregunto|consulto|confirmo|digo|aviso)|(confirmo|cuadro|hablo|pregunto|consulto|miro)\s+con\b|(voy a|tengo que|debo|necesito)\s+(confirmar|preguntar|cuadrar|consultar|mirar|revisar))/i
+
+/**
+ * El cliente vuelve a escribir horas o días después (lo normal en el 2x1: queda en confirmar el día con
+ * su acompañante). El modelo no ve fechas en el historial: sin esto saludaba como a un cliente nuevo,
+ * repetía la promoción o daba por buenos el "hoy" y las horas que ofreció el día anterior.
+ */
+export function returnNote(history: Message[], now = Date.now()): string | undefined {
+  // Los mensajes que el cliente acaba de mandar (pueden ser varios seguidos).
+  let start = history.length
+  while (start > 0 && history[start - 1].sender === 'user') start--
+  if (start === history.length) return undefined
+  const before = history.slice(0, start)
+  // La última vez que de verdad conversaron: los seguimientos y plantillas automáticos no cuentan.
+  const lastTalk = [...before].reverse().find((message) => !message.auto)
+  const gap = lastTalk ? history[start].at - lastTalk.at : 0
+  // Si nadie le había respondido todavía, no hay conversación que retomar.
+  if (!lastTalk || gap < RETURN_GAP_MS || !before.some((message) => message.sender !== 'user' && !message.auto)) return undefined
+  const hours = Math.round(gap / 3_600_000)
+  const lastDay = dayKey(lastTalk.at)
+  const when = lastDay === addDays(dayKey(now), -1) ? 'ayer' : `el ${dayLabel(lastDay)}`
+  const clientTexts = before.filter((message) => message.sender === 'user').map((message) => message.text)
+  const pair = latestOf(clientTexts.slice(-10), [[SAYS_PAIR, 'pair'], [SAYS_ALONE, 'alone']] as Array<[RegExp, 'pair' | 'alone']>) === 'pair'
+  const pending = clientTexts.slice(-4).some((text) => SAYS_WILL_CONFIRM.test(text))
+  return [
+    `Nota del sistema: el cliente vuelve a escribir después de ${hours < 48 ? `unas ${hours} horas` : `${Math.round(hours / 24)} días`}; la última conversación fue ${when}. Retómala donde quedó, como alguien que se acuerda de él: no lo saludes como a un cliente nuevo ni le repitas lo que ya le explicaste (promoción, ritual, precios).`,
+    'Lo que en los mensajes anteriores era "hoy" o "mañana" se refiere a ese día, no a hoy, y las horas que le ofreciste pueden ya no estar: ofrece solo de la disponibilidad de ahora.',
+    pending ? `Quedó en confirmar algo${pair ? ' con su acompañante' : ''}: si su mensaje no lo dice, pregúntale primero si ya lo pudo confirmar.` : '',
+    pair ? 'Viene con acompañante (2x1): ofrécele horas de los rangos de "parejas" y, si aún no lo tienes, pídele el nombre de la otra persona.' : '',
+  ].filter(Boolean).join(' ')
+}
+
 /**
  * La bienvenida ofrece dos servicios y el cliente elige horario sin decir cuál limpieza: el modelo
  * suponía uno (en una prueba cotizó Líneas a quien no la había pedido). Mientras ningún mensaje
@@ -1028,7 +1065,10 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     }
   }
   // Lo que el cliente ya dijo (sede, día, franja; también en notas de voz) queda registrado y viaja al prompt.
-  const preferences = preferencesFrom(await getHistory(phone, 60), config.horizonDays)
+  const recent = await getHistory(phone, 60)
+  const preferences = preferencesFrom(recent, config.horizonDays)
+  // Vuelve después de horas o días: Gema retoma la conversación anterior (y la lee más completa).
+  const returning = welcome === 'none' ? returnNote(recent) : undefined
   const lead = { ...chat.lead, ...Object.fromEntries(Object.entries(preferences).filter(([, value]) => value)) }
   if (preferences.location !== chat.lead.location || preferences.day !== (chat.lead.day ?? '') || preferences.part !== (chat.lead.part ?? '')) {
     await saveLead(phone, preferences)
@@ -1043,7 +1083,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   let answeredUpTo = chat.lastInboundAt
   let history: Message[] = []
   for (let draft = 0; draft < 2; draft++) {
-    history = await getHistory(phone, HISTORY_FOR_MODEL)
+    history = await getHistory(phone, returning ? HISTORY_ON_RETURN : HISTORY_FOR_MODEL)
     // La bienvenida salió después del primer mensaje: para el modelo va antes, así la pregunta del
     // cliente queda al final y Gema la contesta (si no, ve su propio mensaje como el último y calla).
     if (welcome === 'answer') history = [...history.filter((message) => message.auto === WELCOME_KIND), ...history.filter((message) => message.auto !== WELCOME_KIND)]
@@ -1052,6 +1092,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     const hint = (optOut ?? [
       welcome === 'answer' ? 'Nota del sistema: acabas de enviar la bienvenida automática (las promociones 2x1, precios, el ritual de 5 pasos, el anticipo, la cortesía y horarios libres). No repitas nada de eso: responde solo lo que preguntó y no está ahí, en una o dos frases, y termina preguntando cuál de esos horarios le separas.' : '',
       welcome === 'none' ? lateNote(history) : '',
+      returning ?? '',
       hidden && !contactPhone ? HIDDEN_NUMBER_NOTE : '',
       serviceHint(config, history),
       serviceChoiceNote(config, history),
