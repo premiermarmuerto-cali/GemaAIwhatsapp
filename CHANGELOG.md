@@ -3,6 +3,11 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.7.3 · 23 de octubre de 2026
+
+**Reprogramar citas del equipo, a prueba de olvidos del modelo**
+- En pruebas con el código real, Gema ofrecía horas al cliente de una cita del equipo pero, cuando elegía una, le pedía el nombre completo como a un cliente nuevo o decía que no había espacio (con la agenda libre), sin reprogramar. Ahora recibe una nota justo antes de responder (es la cita de su asesor, ya tiene su nombre, se reprograma sin pedir nada) y, si aun así no reprograma, el servidor lee la hora que eligió el cliente y reprograma él mismo.
+
 ## 1.7.2 · 22 de octubre de 2026
 
 **Gema retoma la conversación cuando el cliente vuelve**

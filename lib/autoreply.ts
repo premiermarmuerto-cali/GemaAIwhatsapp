@@ -77,6 +77,9 @@ export const saysCash = (text: string) => SAYS_CASH.test(text) && !CASH_REMAINDE
 /** Gema habla de cobrar: en una cita que agendó un asesor, eso no le toca (ver teamBookingOf). */
 const TALKS_PAYMENT = /\b(anticipo|abono|link (de|para) pag\w*|pagar|pago|transferencia|transferir|nequi|bancolombia|daviplata|comprobante)\b/i
 
+/** El cliente nombra una hora ("a las 11", "2 pm", "11:30") o elige una de las ofrecidas ("esa", "la primera"). */
+const PICKS_TIME = /\b\d{1,2}(:\d{2})?\s*(a\.?\s?m\.?|p\.?\s?m\.?|am|pm|h)?\b|\b(esa|ese horario|la primera|la segunda|la [uú]ltima|mediod[ií]a)\b/i
+
 export const CASH_REASON ='Pago en efectivo: quiere pagar todo en la sede, sin anticipo'
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
@@ -360,6 +363,18 @@ export function returnNote(history: Message[], now = Date.now()): string | undef
     pending ? `Quedó en confirmar algo${pair ? ' con su acompañante' : ''}: si su mensaje no lo dice, pregúntale primero si ya lo pudo confirmar.` : '',
     pair ? 'Viene con acompañante (2x1): ofrécele horas de los rangos de "parejas" y, si aún no lo tienes, pídele el nombre de la otra persona.' : '',
   ].filter(Boolean).join(' ')
+}
+
+/**
+ * Cliente con una cita del equipo (ver teamBookingOf). Con solo la regla del prompt, a "a las 11 está
+ * bien" el modelo le pedía el nombre completo como a un cliente nuevo en vez de reprogramar (prueba del 23 oct).
+ */
+export function teamNote(booking: Booking, now = Date.now()): string {
+  const missed = booking.status === 'no_show' || booking.startTs <= now
+  return [
+    `Nota del sistema: este cliente tiene la cita que le agendó ${booking.advisor || 'un asesor del equipo'} (${serviceText(booking)}, ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]})${missed ? ', y no alcanzó a venir' : ''}.`,
+    `Si quiere otra fecha, cuando acepte una hora concreta usa YA [[REPROGRAMAR: sede · YYYY-MM-DD · HH:MM]]: es la misma cita, ya tienes su nombre (${booking.name || 'está en la cita'}) y no se le pide nada más, ni pago ni anticipo.`,
+  ].join(' ')
 }
 
 /**
@@ -1100,6 +1115,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
       welcome === 'answer' ? 'Nota del sistema: acabas de enviar la bienvenida automática (las promociones 2x1, precios, el ritual de 5 pasos, el anticipo, la cortesía y horarios libres). No repitas nada de eso: responde solo lo que preguntó y no está ahí, en una o dos frases, y termina preguntando cuál de esos horarios le separas.' : '',
       welcome === 'none' ? lateNote(history) : '',
       returning ?? '',
+      teamBooking ? teamNote(teamBooking) : '',
       hidden && !contactPhone ? HIDDEN_NUMBER_NOTE : '',
       serviceHint(config, history),
       serviceChoiceNote(config, history),
@@ -1137,15 +1153,29 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   // reserva y actúa la red de abajo (mensaje honesto + asesora).
   // La cita VIVA del cliente (chat.bookingId queda apuntando a la última aunque se cancele o venza).
   const liveAtStart = await liveBookingOf(phone)
-  if (forgotReserva(reply, liveAtStart?.id, config.cashBooking)) {
-    const today = dayKey()
-    const extracted = await extractReserva([...history, { id: 'draft', sender: 'gem', text: reply.replace(MARKERS, ''), at: Date.now() }], {
-      services: config.services.map(({ id, label }) => ({ id, label })),
-      locations: LOCATIONS.map((location) => ({ id: location, label: LOCATION_LABEL[location] })),
-      today,
-      todayLabel: dayLabel(today),
-      calendar: Array.from({ length: config.horizonDays }, (_, index) => addDays(today, index)).map((day) => `${day} = ${dayLabel(day)}`),
-    }).catch((error) => {
+  const today = dayKey()
+  const extractOptions = {
+    services: config.services.map(({ id, label }) => ({ id, label })),
+    locations: LOCATIONS.map((location) => ({ id: location, label: LOCATION_LABEL[location] })),
+    today,
+    todayLabel: dayLabel(today),
+    calendar: Array.from({ length: config.horizonDays }, (_, index) => addDays(today, index)).map((day) => `${day} = ${dayLabel(day)}`),
+  }
+  // Cita del equipo: el cliente ya eligió día y hora y el modelo no reprogramó (le pedía el nombre como a
+  // un cliente nuevo, o decía que no había espacio con la agenda libre; pruebas del 23 oct). La misma
+  // lectura estructurada saca la hora elegida y el servidor reprograma: la respuesta la compone él.
+  const lastClient = [...history].reverse().find((message) => message.sender === 'user')?.text ?? ''
+  if (teamBooking && !/\[\[\s*(REPROGRAMAR|CANCELAR|ASESOR|PAGO)\b/i.test(reply) && PICKS_TIME.test(lastClient)) {
+    // Sin el borrador del modelo (que pudo negar la hora) y con lo que ya se sabe de la cita.
+    const known: Message = { id: 'cita', sender: 'user', text: `Soy ${teamBooking.name || 'el cliente'}, es para mi cita de ${teamBooking.serviceLabel} en ${LOCATION_LABEL[teamBooking.location]}`, at: 0 }
+    const picked = await extractReserva([known, ...history], extractOptions).catch(() => null)
+    if (picked && isLocation(picked.sede) && isDayKey(picked.fecha) && isClock(picked.hora) && history.some((message) => message.sender === 'user' && message.text.includes(String(Number(picked.hora.slice(0, 2)) % 12 || 12)))) {
+      console.warn(`[autoreply] ${phone}: cita del equipo ${teamBooking.id}: el cliente eligió ${picked.fecha} ${picked.hora} y el modelo no reprogramó; se reprograma`)
+      reply = `${reply}\n[[REPROGRAMAR: ${picked.sede} · ${picked.fecha} · ${picked.hora}]]`
+    }
+  }
+  if (!teamBooking && forgotReserva(reply, liveAtStart?.id, config.cashBooking)) {
+    const extracted = await extractReserva([...history, { id: 'draft', sender: 'gem', text: reply.replace(MARKERS, ''), at: Date.now() }], extractOptions).catch((error) => {
       console.warn(`[autoreply] ${phone}: no se pudo leer la reserva de la conversación:`, error instanceof Error ? error.message : error)
       return null
     })
