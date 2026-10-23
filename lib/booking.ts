@@ -254,16 +254,37 @@ export function reservationDeadline(lastInboundAt: number): number {
 export async function renewReservation(phone: string, at: number): Promise<void> {
   for (const booking of await bookingsOfPhone(phone, 3)) {
     if (!HOLD_STATUSES.includes(booking.status) || booking.source !== 'bot' || booking.paidAt || booking.holdUntil <= at) continue
-    const next = beforeQuiet(Math.min(at + RENEWAL_MS, booking.createdAt + RESERVATION_MAX_MS))
-    if (next <= booking.holdUntil) continue
-    const softFrom = booking.holdSoftFrom || booking.holdUntil
-    await redis().multi()
-      .hset(keys.booking(booking.id), { holdUntil: String(next), holdSoftFrom: String(softFrom) })
-      .zadd(keys.holds, { score: next, member: booking.id })
-      .zadd(keys.softHolds, { score: softFrom, member: booking.id })
-      .incr(keys.rev('agenda'))
-      .exec()
+    await applyReservationTerms(booking, at)
   }
+}
+
+/**
+ * Plazo de una reserva sin anticipo hecha en `createdAt`, si el último mensaje del cliente fue en
+ * `lastMessageAt`: la ventana de 24 h desde que reservó o, si escribió después, 12 h desde ese mensaje
+ * (hasta 32 h en total), lo que sea MÁS TARDE. La renovación nunca acorta: el 23 oct, una renovación de
+ * 12 h que caía de madrugada (adelantada a las 8:45 p.m.) dejó a Marie con menos plazo que su ventana
+ * inicial, y su horario ya se ofrecía a otros. `softFrom` > 0 solo si la renovación alarga la ventana:
+ * desde ahí otro cliente puede tomar el horario.
+ */
+export function reservationTerms(createdAt: number, lastMessageAt: number): { holdUntil: number; softFrom: number } {
+  const initial = reservationDeadline(createdAt)
+  const renewed = lastMessageAt > createdAt ? beforeQuiet(Math.min(lastMessageAt + RENEWAL_MS, createdAt + RESERVATION_MAX_MS)) : 0
+  return renewed > initial ? { holdUntil: renewed, softFrom: initial } : { holdUntil: initial, softFrom: 0 }
+}
+
+/** Aplica a una reserva el plazo que le corresponde (ver reservationTerms). Nunca la acorta. */
+export async function applyReservationTerms(booking: Booking, lastMessageAt: number): Promise<{ holdUntil: number; softFrom: number } | null> {
+  const terms = reservationTerms(booking.createdAt, lastMessageAt)
+  const holdUntil = Math.max(booking.holdUntil, terms.holdUntil)
+  const softFrom = terms.softFrom ? booking.holdSoftFrom || terms.softFrom : 0
+  if (holdUntil === booking.holdUntil && softFrom === booking.holdSoftFrom) return null
+  const tx = redis().multi()
+    .hset(keys.booking(booking.id), { holdUntil: String(holdUntil), holdSoftFrom: String(softFrom) })
+    .zadd(keys.holds, { score: holdUntil, member: booking.id })
+  if (softFrom) tx.zadd(keys.softHolds, { score: softFrom, member: booking.id })
+  else tx.zrem(keys.softHolds, booking.id)
+  await tx.incr(keys.rev('agenda')).exec()
+  return { holdUntil, softFrom }
 }
 
 /**

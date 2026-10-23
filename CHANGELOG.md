@@ -3,6 +3,15 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 2.0 · 23 de octubre de 2026
+
+Versión 2: las reservas sin anticipo (1.10) y su estado en el chat (1.10.1), ya corregidas.
+
+**La renovación de una reserva nunca la acorta**
+- Caso real (Marie Sánchez, 23 oct): reservó a la 1:20 p.m. con la regla anterior (120 min) y escribió de nuevo a la 1:47 p.m. La renovación de 12 h caía de madrugada, se adelantó a las 8:45 p.m. y su horario quedó ofreciéndose a otros clientes desde las 3:20 p.m., cuando todavía tenía su ventana de 24 h.
+- Ahora el plazo es lo que sea más tarde entre la ventana de 24 h desde que reservó y la renovación de 12 h desde su último mensaje (hasta 32 h en total). El horario solo se ofrece a otros cuando la renovación de verdad alarga la ventana, y desde donde terminaba la ventana.
+- Se corrigieron las reservas vivas: Marie tiene plazo hasta el 24 oct a la 1:15 p.m. y su horario ya no se ofrece a otros.
+
 ## 1.10.1 · 23 de octubre de 2026
 
 **El chat dice lo mismo que la agenda**
