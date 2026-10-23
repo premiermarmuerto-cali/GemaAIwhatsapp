@@ -107,6 +107,7 @@ export function WeekGrid({ week, location, activeId, onSelect, onPick }: Props) 
                     className={styles.event}
                     data-status={booking.status}
                     data-kind={booking.kind}
+                    data-source={booking.source}
                     data-active={booking.id === activeId || undefined}
                     style={{
                       top: `${(booking.startMin - from) * PX_PER_MIN}px`,

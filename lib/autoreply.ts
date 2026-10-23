@@ -18,6 +18,7 @@ import { buildWelcome, needsAnswerAfterWelcome, WELCOME_KIND, type Welcome } fro
 import { availabilityNote } from './availability-note'
 import { isOptOut } from './optout'
 import { preferencesFrom } from './preferences'
+import { renderPreset } from './presets'
 import { bumpRev } from './revision'
 import { HOLD_STATUSES, type AppConfig, type Booking, type ChatSummary, type Location, type Message } from './types'
 
@@ -889,7 +890,8 @@ export async function applyReserva(
   await trackConversion({ name: 'LeadSubmitted', phone, eventId: `cita_${phone}_${booking.id}` })
 
   // Efectivo: no hay cobro previo ni link; los recordatorios los envía lib/automations.ts.
-  if (booking.paymentPlan === 'cash') return { append: '', replaceText: cashBookedText(config, booking) }
+  // El mensaje "Cita agendada" del panel; si no se puede completar, el texto de siempre.
+  if (booking.paymentPlan === 'cash') return { append: '', replaceText: (await renderPreset(config, 'bookingConfirmed', { booking })) ?? cashBookedText(config, booking) }
 
   // El cobro lo escribe el servidor, nunca el modelo: los datos salen de la config,
   // según el país del número (misma lógica por región que la consola original).

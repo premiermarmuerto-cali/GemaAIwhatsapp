@@ -33,6 +33,7 @@
   --secondary-soft: rgba(125, 143, 62, .14);
   --secondary-dot: #7d8f3e;
   --secondary-ink: #1b2008;
+  --team: #2f6fb3;      /* azul: citas que agendó el equipo */
   --danger: #cc0000;      /* rojo oficial */
   --danger-soft: rgba(204, 0, 0, .08);
 
@@ -84,6 +85,7 @@
   --secondary-soft: rgba(163, 184, 92, .14);
   --secondary-dot: #a3b85c;
   --secondary-ink: #1b2008;
+  --team: #6ea8e6;
   --danger: #e8766b;
   --danger-soft: rgba(232, 118, 107, .12);
 

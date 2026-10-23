@@ -272,15 +272,25 @@
 .monthEvent[data-status='hold'] { border-style: dashed; border-color: var(--faint); }
 .monthEvent[data-status='done'] { opacity: .7; }
 .monthEvent[data-status='no_show'] { border-color: var(--danger); background: var(--danger-soft); }
+.monthEvent[data-source='operator'][data-status='confirmed'] { border-color: var(--team); background: color-mix(in srgb, var(--team) 12%, var(--surface)); }
+
+/* Leyenda de colores de la barra de la agenda. */
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend span::before { content: ''; width: 10px; height: 10px; border: 1px solid var(--secondary); background: color-mix(in srgb, var(--secondary) 12%, var(--surface)); }
+.legend span[data-source='operator']::before { border-color: var(--team); background: color-mix(in srgb, var(--team) 12%, var(--surface)); }
+.legend span[data-status='pending_payment']::before { border-color: var(--primary); background: color-mix(in srgb, var(--primary-bright) 16%, var(--surface)); }
 .monthEvent[data-kind='block'] { background: repeating-linear-gradient(135deg, var(--surface-2) 0 6px, var(--surface-3) 6px 12px); }
 .monthMore { padding: 2px 5px; border: 0; background: transparent; color: var(--primary); font: 600 10px var(--font-sans); text-align: left; }
 .monthMore:hover { text-decoration: underline; }
 
 /* Teléfono con indicativo: selector de país + número. */
 .phoneRow { display: flex; gap: 6px; }
-.phoneRow select { flex: none; width: auto; }
-.phoneRow input { flex: 1; min-width: 0; }
-.phoneRow .dialInput { flex: none; width: 64px; }
+/* Más específicas que `.form select` / `.form input` (width: 100%), que van después y las pisaban:
+   el indicativo ocupaba casi todo el ancho y el número quedaba diminuto. */
+.form .phoneRow select { flex: 0 0 96px; width: 96px; padding-right: 4px; }
+.form .phoneRow input { flex: 1 1 auto; width: auto; min-width: 0; }
+.form .phoneRow .dialInput { flex: 0 0 64px; width: 64px; }
 
 /* Selector de asesor: lista guardada + "Nuevo asesor…". */
 .advisorSelect { display: grid; flex: 1; gap: 6px; min-width: 160px; }
@@ -338,6 +348,8 @@
 .event[data-status='hold'] { border-color: var(--faint); border-style: dashed; }
 .event[data-status='done'] { border-color: var(--line); opacity: .7; }
 .event[data-status='no_show'] { border-color: var(--danger); background: var(--danger-soft); }
+/* Azul = la agendó una persona del equipo en el panel (las de Gema conservan el musgo). */
+.event[data-source='operator'][data-status='confirmed'] { border-color: var(--team); background: color-mix(in srgb, var(--team) 12%, var(--surface)); }
 .event[data-kind='block'] {
   border-color: var(--line);
   background: repeating-linear-gradient(135deg, var(--surface-2) 0 6px, var(--surface-3) 6px 12px);

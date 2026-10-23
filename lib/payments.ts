@@ -10,8 +10,11 @@ import { clock12, dayLabel } from './calendar'
 import { LOCATION_LABEL } from './clinic'
 import { getSummary, notePayment, recordOutbound, requestAgent } from './chats'
 import { trackConversion } from './conversions'
+import { getConfig } from './config'
+import { renderPreset } from './presets'
+import { toMessages } from './reply-style'
 import { sendWhatsAppText } from './whatsapp'
-import { HOLD_STATUSES } from './types'
+import { HOLD_STATUSES, type Booking } from './types'
 
 export type BoldPayment = { type: string; reference: string; paymentId: string; amount: number | null; paymentMethod: string }
 
@@ -66,11 +69,14 @@ export async function handleBoldPayment(event: BoldPayment): Promise<string> {
   // A Meta: qué anuncio generó este pago (solo si la conversación vino de un anuncio).
   await trackConversion({ name: 'Purchase', phone: booking.phone, eventId: `pago_${booking.phone}_${booking.id}`, value: paid })
 
-  const what = booking.paymentPlan === 'full' ? 'el pago completo de tu sesión' : 'tu anticipo'
-  const text = `Listo, ya recibimos ${what} (${pesos(paid)}). Tu cita de *${serviceText(booking)}* quedó confirmada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}. Te esperamos.`
   try {
-    const waId = await sendWhatsAppText(booking.phone, text)
-    await recordOutbound(booking.phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now() })
+    // El mensaje "Cita agendada" del panel (gracias, datos de la cita, lo pagado y las indicaciones).
+    if (await notifyBookingConfirmed(confirmed) === 'omitido') {
+      const what = booking.paymentPlan === 'full' ? 'el pago completo de tu sesión' : 'tu anticipo'
+      const text = `Listo, ya recibimos ${what} (${pesos(paid)}). Tu cita de *${serviceText(booking)}* quedó confirmada para el ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}. Te esperamos.`
+      const waId = await sendWhatsAppText(booking.phone, text)
+      await recordOutbound(booking.phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text, at: Date.now() })
+    }
   } catch (error) {
     // La cita ya quedó confirmada; lo que falló es avisarle (p. ej. pasaron más de 24 h).
     const detail = error instanceof Error ? error.message : String(error)
@@ -79,3 +85,22 @@ export async function handleBoldPayment(event: BoldPayment): Promise<string> {
   }
   return 'confirmada y avisada'
 }
+
+/**
+ * Mensaje prediseñado "Cita agendada" (editable en el panel) a quien agendó con Gema, cuando su cita
+ * queda confirmada: pago por Bold o anticipo validado en el panel. Las citas que agenda el equipo no lo
+ * reciben (al cliente lo atiende su asesor). Lanza si WhatsApp rechaza el envío.
+ */
+export async function notifyBookingConfirmed(booking: Booking): Promise<'enviado' | 'omitido'> {
+  if (!booking.phone || booking.source !== 'bot' || booking.kind === 'block') return 'omitido'
+  const body = await renderPreset(await getConfig(), 'bookingConfirmed', { booking })
+  if (!body) return 'omitido'
+  for (const [index, message] of toMessages(body).entries()) {
+    if (index) await new Promise((resolve) => setTimeout(resolve, MESSAGE_GAP_MS))
+    const waId = await sendWhatsAppText(booking.phone, message)
+    await recordOutbound(booking.phone, { id: waId ?? crypto.randomUUID(), sender: 'gem', text: message, at: Date.now(), auto: 'cita_agendada' })
+  }
+  return 'enviado'
+}
+
+const MESSAGE_GAP_MS = 1_200

@@ -3,6 +3,16 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.9 · 23 de octubre de 2026
+
+**Mensaje "Cita agendada"**
+- Nuevo mensaje prediseñado, editable en Configuración → Mensajes prediseñados: agradece la confianza en Premier y confirma día, hora (con las dos horas en el 2x1 seguido), limpieza, sede con dirección y lo pagado o lo que falta, más indicaciones para la sesión (llegar 10 minutos antes, venir sin maquillaje, evitar exfoliantes, ácidos o retinol los 2 días antes). Las indicaciones son un punto de partida: el equipo las ajusta en el panel.
+- Sale a los clientes de Gema cuando su cita queda confirmada: pago por Bold, anticipo validado en el panel o cita en efectivo. No sale en las citas que agenda el equipo.
+
+**Agenda**
+- Las citas que agenda el equipo se ven en azul; las de Gema conservan el verde. Leyenda de colores en la barra de la agenda.
+- Nueva cita: el indicativo (+57) ocupa lo justo y el número tiene el resto del ancho.
+
 ## 1.8.1 · 23 de octubre de 2026
 
 **Citas del equipo ya pasadas: no se pierde la sesión que sí se hizo**

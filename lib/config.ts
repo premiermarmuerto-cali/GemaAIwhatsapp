@@ -292,6 +292,7 @@ const PRESET_LIMITS: Record<keyof PresetMessages, number> = {
   followUp45: 1000,
   followUp3h: 1000,
   followUp22h: 1000,
+  bookingConfirmed: 1500,
 }
 
 function parsePresets(raw: unknown): PresetMessages | Issue {

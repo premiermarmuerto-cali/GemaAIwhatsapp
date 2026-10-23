@@ -97,6 +97,12 @@ export function Agenda() {
           ))}
         </div>
 
+        <div className={styles.legend} aria-label="Colores de las citas">
+          <span data-source="bot">Gema</span>
+          <span data-source="operator">Equipo</span>
+          <span data-status="pending_payment">Falta anticipo</span>
+        </div>
+
         <button className="btn btn-secondary" onClick={() => setAside({ mode: 'advisors' })} title="Editar o quitar nombres de asesores">Asesores</button>
         <button className="btn btn-primary" onClick={() => setAside({ mode: 'new', day: today, start: '', location })}><PlusIcon />Nueva cita</button>
       </div>

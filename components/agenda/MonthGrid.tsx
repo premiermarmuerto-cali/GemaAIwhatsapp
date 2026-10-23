@@ -52,6 +52,7 @@ export function MonthGrid({ week, location, activeId, onSelect, onPickDay }: Pro
                     className={styles.monthEvent}
                     data-status={booking.status}
                     data-kind={booking.kind}
+                    data-source={booking.source}
                     data-active={booking.id === activeId || undefined}
                     onClick={() => onSelect(booking)}
                     title={`${booking.start} · ${booking.name || booking.notes || 'Bloqueo'} · ${booking.serviceLabel} · ${STATUS_LABEL[booking.status]}${booking.advisor ? ` · Asesor: ${booking.advisor}` : ''}`}

@@ -67,6 +67,23 @@ export const DEFAULT_PRESETS: PresetMessages = {
     'Hola {nombre}, paso por aquí una última vez antes de que se cierre nuestro chat ⏳ Si quieres darle un respiro real a tu rostro, con contorno de ojos y drenaje linfático incluidos, todavía estás a tiempo de {promo_corta}',
     '{cierre_sede}',
   ].join('|||'),
+
+  bookingConfirmed: [
+    '¡Listo, {nombre}! Tu cita quedó agendada 💛 Gracias por confiar en Premier Mar Muerto',
+    [
+      '📅 {fecha} a las {hora} {pareja}',
+      '✨ {servicio}',
+      '📍 {sede}: {direccion}',
+      '{pago}',
+    ].join('\n'),
+    [
+      'Para que aproveches al máximo tu sesión:',
+      '▪️ Llega 10 minutos antes',
+      '▪️ Ven con el rostro limpio, sin maquillaje',
+      '▪️ Los 2 días antes evita exfoliantes, ácidos o retinol',
+      'Cualquier cambio me escribes por aquí 🌿',
+    ].join('\n'),
+  ].join('|||'),
 }
 
 /**
@@ -92,6 +109,7 @@ export const PRESET_INFO: Record<PresetId, { label: string; when: string }> = {
   followUp45: { label: 'Seguimiento 45 min', when: '~45 min sin respuesta, sin cita. No sale si no hay ningún horario libre.' },
   followUp3h: { label: 'Seguimiento 3 h', when: '~3 h sin respuesta, sin cita.' },
   followUp22h: { label: 'Seguimiento 22 h', when: '~22 h sin respuesta: el último antes de que se cierre la ventana de 24 h.' },
+  bookingConfirmed: { label: 'Cita agendada', when: 'Cuando queda confirmada una cita de Gema: anticipo validado en el panel, pago por Bold o cita en efectivo. No sale en las citas que agenda el equipo.' },
 }
 
 /** Variables disponibles, con su explicación (se listan en el panel). */
@@ -114,4 +132,11 @@ export const PRESET_VARIABLES: Record<string, string> = {
   cierre_sede: '"escríbeme SEDE…" si no sabemos su sede; si ya la dijo, "escríbeme SÍ y te guardo un espacio en <su sede>"',
   cita: 'la cita apartada ("miércoles 22 oct a las 3:00 p.m. en Chipichape")',
   minutos: 'minutos que le quedan al apartado',
+  fecha: 'día de la cita ("martes 27 oct")',
+  hora: 'hora de la cita ("10:00 a.m.")',
+  pareja: 'en el 2x1 con una cabina, las dos horas: "(una después de la otra: 10:00 a.m. y 11:00 a.m.)"',
+  servicio: 'la limpieza agendada (con "· 2 personas" en el 2x1)',
+  sede: 'la sede de la cita',
+  direccion: 'la dirección de esa sede',
+  pago: 'lo que ya pagó y lo que falta ("Tu anticipo de $25.000 ya quedó abonado: en la sede pagas $105.000")',
 }

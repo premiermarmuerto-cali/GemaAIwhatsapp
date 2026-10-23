@@ -5,7 +5,9 @@ import { isClock, isDayKey } from '@/lib/calendar'
 import { isLocation } from '@/lib/clinic'
 import { amountOf, getConfig } from '@/lib/config'
 import { rememberAdvisor } from '@/lib/advisors'
+import { requestAgent } from '@/lib/chats'
 import { trackConversion } from '@/lib/conversions'
+import { notifyBookingConfirmed } from '@/lib/payments'
 import { HttpError, jsonBody, route } from '@/lib/http'
 import { HOLD_STATUSES, LIVE_STATUSES, type BookingStatus } from '@/lib/types'
 
@@ -92,6 +94,10 @@ export const PATCH = route(async (request: Request, context: Params) => {
     // Las que confirma Bold ya se reportan solas; las creadas a mano por el operador no tienen pago.
     if (status === 'confirmed' && before && HOLD_STATUSES.includes(before.status) && before.phone && !before.paymentRef) {
       await trackConversion({ name: 'Purchase', phone: before.phone, eventId: `pago_${before.phone}_${before.id}`, value: amountOf(before.deposit) })
+      // Y al cliente de Gema le llega el mensaje "Cita agendada" (gracias, datos e indicaciones).
+      await notifyBookingConfirmed(moved).catch(async (error) => {
+        await requestAgent(before.phone, `Cita confirmada, pero no se pudo enviar el mensaje "Cita agendada": ${error instanceof Error ? error.message : String(error)}`)
+      })
     }
     // La sesión se realizó: quien pagó todo en la sede (efectivo, o cita creada a mano) también es una
     // venta del anuncio. Mismo event_id que el anticipo: si ese ya se reportó, Meta no lo cuenta dos veces.

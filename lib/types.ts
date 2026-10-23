@@ -242,6 +242,8 @@ export type PresetMessages = {
   followUp3h: string
   /** ~22 h sin respuesta: último mensaje antes de que se cierre la ventana de 24 h. */
   followUp22h: string
+  /** La cita de Gema quedó confirmada (anticipo validado, pago por Bold o efectivo): gracias, datos e indicaciones. */
+  bookingConfirmed: string
 }
 
 export type PresetId = keyof PresetMessages

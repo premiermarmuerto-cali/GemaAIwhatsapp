@@ -10,10 +10,10 @@
  *   párrafo     si una variable de bloque queda vacía (no hay horarios, no hay cortesía…), se quita
  *               el párrafo entero (o el mensaje, si no tiene párrafos), para no dejar frases a medias
  */
-import { suggestStarts } from './booking'
+import { serviceText, suggestStarts } from './booking'
 import { getHistory } from './chats'
 import { preferencesFrom } from './preferences'
-import { addDays, clock12, dayKey, dayLabel } from './calendar'
+import { addDays, clock12, dayKey, dayLabel, toClock, toMinutes } from './calendar'
 import { LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
 import { amountOf, depositOf, pesos, serviceById, twoForOneApplies } from './config'
 import { SEPARATOR } from './reply-style'
@@ -25,7 +25,7 @@ export { PRESET_INFO, PRESET_VARIABLES }
 /** Si quedan vacías, se quita el párrafo (o el mensaje) que las contiene. */
 const BLOCK_VARIABLES = new Set(['promos', 'tratamientos', 'horarios', 'cortesia', 'sedes', 'promo_recordatorio'])
 /** Sin estas, el mensaje no tiene sentido y no se envía. */
-const REQUIRED: Partial<Record<PresetId, string[]>> = { followUp45: ['hora_sugerida'], followUpPayment: ['cita'] }
+const REQUIRED: Partial<Record<PresetId, string[]>> = { followUp45: ['hora_sugerida'], followUpPayment: ['cita'], bookingConfirmed: ['fecha'] }
 
 /**
  * Una línea por servicio para {tratamientos}, desde la base de conocimiento de Premier. Si el
@@ -173,6 +173,29 @@ const RESOLVERS: Record<string, Resolver> = {
   },
   cita: (_config, { booking }) => (booking ? `${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}` : ''),
   minutos: (_config, { booking, now }) => (booking?.holdUntil ? String(Math.max(5, Math.round((booking.holdUntil - now) / 60_000))) : ''),
+  // Los datos de una cita concreta (mensaje "Cita agendada").
+  fecha: (_config, { booking }) => (booking ? dayLabel(booking.day) : ''),
+  hora: (_config, { booking }) => (booking ? clock12(booking.start) : ''),
+  pareja: (_config, { booking }) => {
+    // 2x1 en una sede de una cabina: las dos sesiones van seguidas.
+    if (!booking?.sequential || booking.people < 2) return ''
+    const session = Math.round(booking.durationMin / booking.people)
+    const times = Array.from({ length: booking.people }, (_, index) => clock12(toClock(toMinutes(booking.start) + index * session)))
+    return `(una después de la otra: ${times.slice(0, -1).join(', ')} y ${times.at(-1)})`
+  },
+  servicio: (_config, { booking }) => (booking ? serviceText(booking) : ''),
+  sede: (_config, { booking }) => (booking ? LOCATION_LABEL[booking.location] : ''),
+  direccion: (config, { booking }) => (booking ? config.addresses[booking.location] ?? '' : ''),
+  pago: (_config, { booking }) => {
+    if (!booking) return ''
+    const total = amountOf(booking.price)
+    const paid = amountOf(booking.deposit)
+    if (booking.paymentPlan === 'courtesy') return 'Es de cortesía: no pagas nada 🎁'
+    if (booking.paymentPlan === 'cash') return `El pago${total ? ` de ${pesos(total)}` : ''} lo haces en la sede el día de tu cita, en efectivo o como prefieras`
+    if (!booking.paidAt && booking.status !== 'confirmed') return ''
+    if (booking.paymentPlan === 'full' || (total && paid >= total)) return 'Tu sesión ya quedó pagada completa'
+    return `Tu anticipo de ${booking.deposit} ya quedó abonado${total > paid ? `: en la sede pagas ${pesos(total - paid)}` : ''}`
+  },
 }
 
 // `anticipo` de una cita concreta: el que le corresponde a ESA cita (pareja, pago completo).
