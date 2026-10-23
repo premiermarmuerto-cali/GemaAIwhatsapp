@@ -45,8 +45,9 @@ export const DEFAULT_PRESETS: PresetMessages = {
     '{pregunta_cierre}',
   ].join('\n'),
 
+  // Sin plazos ni minutos (Premier, 23 oct): solo un recordatorio amable.
   followUpPayment: [
-    'Hola {nombre} 🌿 tu horario del {cita} sigue apartado {minutos} minutos más, pero todavía no me aparece el anticipo de {anticipo}',
+    'Hola {nombre} 🌿 te escribo para recordarte el anticipo de {anticipo} de tu cita del {cita}, así te la dejamos agendada',
     'es un pago seguro y se descuenta del valor de tu limpieza. {cortesia_frase}',
     'tuviste algún inconveniente con el link o prefieres que te mueva el cupo a otro día?',
   ].join('|||'),
@@ -84,7 +85,19 @@ export const DEFAULT_PRESETS: PresetMessages = {
       'Cualquier cambio me escribes por aquí 🌿',
     ].join('\n'),
   ].join('|||'),
+
+  holdReleased: [
+    'Hola {nombre} 🌿 como todavía no nos llegó el anticipo, por políticas internas liberamos el espacio que tenías reservado el {cita}',
+    'nos encantará atenderte: cuando quieras agendar tu sesión, escríbeme por aquí y con gusto te busco un espacio ✨',
+  ].join('|||'),
 }
+
+/** Texto de la v1.9 del aviso de anticipo sin pagar (decía los minutos que quedaban). Se reemplaza si nadie lo editó. */
+export const LEGACY_FOLLOW_UP_PAYMENT = [
+  'Hola {nombre} 🌿 tu horario del {cita} sigue apartado {minutos} minutos más, pero todavía no me aparece el anticipo de {anticipo}',
+  'es un pago seguro y se descuenta del valor de tu limpieza. {cortesia_frase}',
+  'tuviste algún inconveniente con el link o prefieres que te mueva el cupo a otro día?',
+].join('|||')
 
 /**
  * Textos de la v1.4 de los seguimientos de 45 min y 22 h. La migración de la configuración (lib/config.ts)
@@ -105,10 +118,11 @@ export const PRESET_INFO: Record<PresetId, { label: string; when: string }> = {
   welcomeCaption: { label: 'Bienvenida 1 · imagen del 2x1', when: 'Apenas escribe un cliente nuevo, con la imagen del bono. Máx. 1024 caracteres ya completo.' },
   welcomeValue: { label: 'Bienvenida 2 · el valor', when: 'Justo después de la imagen.' },
   welcomeClose: { label: 'Bienvenida 3 · cierre con horarios', when: 'Después del valor. Termina con una sola pregunta.' },
-  followUpPayment: { label: 'Anticipo sin pagar', when: '~30 min antes de que se libere un horario apartado sin pago.' },
+  followUpPayment: { label: 'Anticipo sin pagar', when: 'Unas 4 h antes de que se libere una reserva sin anticipo (si cae de noche, antes de las 9 p.m.). No menciona plazos.' },
   followUp45: { label: 'Seguimiento 45 min', when: '~45 min sin respuesta, sin cita. No sale si no hay ningún horario libre.' },
   followUp3h: { label: 'Seguimiento 3 h', when: '~3 h sin respuesta, sin cita.' },
   followUp22h: { label: 'Seguimiento 22 h', when: '~22 h sin respuesta: el último antes de que se cierre la ventana de 24 h.' },
+  holdReleased: { label: 'Reserva liberada', when: 'Cuando se libera una reserva sin anticipo: unos minutos antes de que se cierre la ventana de WhatsApp (o al terminar su renovación), o si otro cliente tomó el horario mientras estaba renovada.' },
   bookingConfirmed: { label: 'Cita agendada', when: 'Cuando queda confirmada una cita de Gema: anticipo validado en el panel, pago por Bold o cita en efectivo. No sale en las citas que agenda el equipo.' },
 }
 

@@ -3,7 +3,8 @@
  * Los dispara app/api/cron cada 10–15 minutos. Reglas acordadas con Premier (oct 2026):
  *
  * Texto libre (gratis, solo con la ventana de 24 h abierta):
- *   seguimiento_pago   ~30 min antes de que se libere un horario apartado sin pago
+ *   seguimiento_pago   ~4 h antes de que se libere una reserva sin anticipo (antes de las 9 p.m. si cae de noche)
+ *   reserva_liberada   al liberarse una reserva sin anticipo (venció, o otro cliente tomó el horario renovado)
  *   seguimiento_45m    ~45 min sin respuesta tras la respuesta de Gema, sin cita: dos horas concretas
  *   seguimiento_3h     ~3 h sin respuesta, sin cita: el 2x1 vigente y la pregunta de sede
  *   seguimiento_22h    ~22 h después del último mensaje del cliente, si quedó sin responder y sin cita
@@ -34,8 +35,8 @@
  * persona. 20 oct: cinco chats del 18 y 19 recibieron la primera respuesta más de un día después.
  */
 import { autoReply, markPendingReply } from './autoreply'
-import { bookingsOfPhone, getBookings, liveBookingOf, markBookingAuto, serviceText, suggestStarts, sweepExpiredHolds, teamBookingOf } from './booking'
-import { clock12, dayKey, fullDayLabel, isQuietHours, NIGHT_REPLY_MAX_AGE_MS, nextHumanWindow } from './calendar'
+import { bookingsOfPhone, getBookings, HOLD_EXPIRED_REASON, HOLD_TAKEN_REASON, liveBookingOf, markBookingAuto, releaseHold, serviceText, suggestStarts, sweepExpiredHolds, teamBookingOf } from './booking'
+import { beforeQuiet, clock12, dayKey, fullDayLabel, isQuietHours, NIGHT_REPLY_MAX_AGE_MS, nextHumanWindow } from './calendar'
 import { ensureChatForBooking, getHistory, getSummary, listChats, markChatAuto, recordOutbound, requestAgent, updateChat } from './chats'
 import { ESCALATION_HOURS, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
 import { depositOf, getConfig, pesos, serviceById } from './config'
@@ -173,14 +174,63 @@ async function bookingsBetween(key: string, from: number, to: number): Promise<B
 
 /** ~30 min antes de que se libere un horario apartado sin pago: aviso y ayuda (ventana abierta). */
 async function holdNudges(run: Run, chats: Map<string, ChatSummary>) {
-  for (const booking of await bookingsBetween(keys.holds, run.now, run.now + 30 * MINUTE)) {
-    if (!HOLD_STATUSES.includes(booking.status) || booking.paidAt || booking.autoSent.seguimiento_pago || !booking.phone) continue
+  // Las reservas que vencen en las próximas ~17 h: el aviso de una que vence a las 9 a.m. sale la noche anterior.
+  for (const booking of await bookingsBetween(keys.holds, run.now, run.now + 17 * HOUR)) {
+    if (!HOLD_STATUSES.includes(booking.status) || booking.paidAt || !booking.phone || booking.source !== 'bot') continue
+    // Unas 4 h antes de que se libere (Premier, 23 oct); si eso cae de noche, antes de las 9 p.m.
+    if (run.now < beforeQuiet(booking.holdUntil - REMINDER_BEFORE_MS) || booking.holdUntil - run.now < RELEASE_AHEAD_MS) continue
     const chat = chats.get(booking.phone)
-    if (!chat || humanHandling(chat) || !isWindowOpen(chat, run.now)) continue
+    // Uno solo por cada plazo: si el cliente volvió a escribir (y la reserva se renovó), puede salir otro.
+    if (!chat || (booking.autoSent.seguimiento_pago ?? 0) > chat.lastInboundAt) continue
+    if (humanHandling(chat) || !isWindowOpen(chat, run.now)) continue
     // Un asesor ya le agendó la cita (y el cobro lo maneja el equipo): un apartado viejo de Gema no se cobra.
     if (await teamBookingOf(booking.phone)) continue
     const body = await renderPreset(run.config, 'followUpPayment', { chat, booking, now: run.now })
     if (body) await run.text(chat, 'seguimiento_pago', body, booking)
+  }
+}
+
+/** El aviso del anticipo sale unas 4 h antes de que se libere la reserva. */
+const REMINDER_BEFORE_MS = 4 * HOUR
+/**
+ * Una reserva se libera hasta 15 min antes de su plazo: el programador corre cada 10–15 min y el plazo es
+ * 5 min antes de que se cierre la ventana de WhatsApp; así siempre alcanza a salir el aviso de liberación.
+ */
+const RELEASE_AHEAD_MS = 15 * MINUTE
+
+/** Reservas sin anticipo que vencen antes de la próxima corrida: se liberan ya (el aviso lo manda releaseNotices). */
+async function releaseDueHolds(run: Run) {
+  if (run.dryRun) return
+  for (const booking of await bookingsBetween(keys.holds, 0, run.now + RELEASE_AHEAD_MS)) {
+    if (!HOLD_STATUSES.includes(booking.status) || booking.paidAt) continue
+    await releaseHold(booking, HOLD_EXPIRED_REASON)
+  }
+}
+
+/**
+ * "Reserva liberada" (mensaje prediseñado): a quien se le liberó la reserva sin anticipo, porque venció o
+ * porque otro cliente tomó el horario mientras estaba renovada. Una vez por reserva, con la ventana abierta.
+ */
+async function releaseNotices(run: Run, chats: Map<string, ChatSummary>) {
+  // Las canceladas están indexadas por fecha de la sesión: se miran las sesiones futuras.
+  const cancelled = await bookingsBetween(keys.byStatus('cancelled'), run.now, run.now + run.config.horizonDays * DAY)
+  if (!cancelled.length) return
+  const pipe = redis().pipeline()
+  cancelled.forEach((booking) => pipe.hmget(keys.booking(booking.id), 'cancelReason', 'releasedAt'))
+  // En un pipeline, Upstash devuelve hmget como lista ([motivo, momento]), no como objeto.
+  const rows = await pipe.exec<Array<Array<string | null> | Record<string, string | null> | null>>()
+  for (const [index, booking] of cancelled.entries()) {
+    const row = rows[index]
+    const [reason, released] = Array.isArray(row) ? row : [row?.cancelReason, row?.releasedAt]
+    const releasedAt = Number(released ?? 0)
+    if (reason !== HOLD_EXPIRED_REASON && reason !== HOLD_TAKEN_REASON) continue
+    if (!releasedAt || run.now - releasedAt > DAY || booking.autoSent.reserva_liberada || booking.source !== 'bot' || !booking.phone) continue
+    const chat = chats.get(booking.phone)
+    if (!chat || chat.optedOut || !chat.botActive || !isWindowOpen(chat, run.now)) continue
+    // Ya agendó otra cita (o pagó y se la recrearon): no hay nada que avisar.
+    if (await liveBookingOf(booking.phone)) continue
+    const body = await renderPreset(run.config, 'holdReleased', { chat, booking, now: run.now })
+    if (body) await run.text(chat, 'reserva_liberada', body, booking)
   }
 }
 
@@ -536,12 +586,16 @@ export async function runAutomations({ now = Date.now(), dryRun = false } = {}):
   }
   try {
     // Libera los apartados vencidos aunque nadie haya escrito (normalmente lo hace el tráfico).
-    if (!dryRun) await sweepExpiredHolds(now, { force: true })
     const run = new Run(await getConfig(), now, dryRun)
+    // Las reservas sin anticipo que vencen antes de la próxima corrida se liberan ya, con la ventana todavía
+    // abierta para avisarle al cliente (releaseNotices, más abajo).
+    await releaseDueHolds(run)
+    if (!dryRun) await sweepExpiredHolds(now, { force: true })
     // La bandeja se lee UNA vez por corrida (~40 comandos) y la usan todas las automatizaciones.
     const lists = await listChats()
     const chats = new Map([...lists.inbox, ...lists.archived].map((chat) => [chat.phone, chat]))
     // Primero lo más urgente (pagos y citas), al final el marketing: si se llega al tope, cae lo menos importante.
+    await releaseNotices(run, chats)
     await holdNudges(run, chats)
     await cashRetakes(run, chats)
     await dayBeforeReminders(run, chats)

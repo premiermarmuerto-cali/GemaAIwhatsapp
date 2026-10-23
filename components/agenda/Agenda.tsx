@@ -100,7 +100,7 @@ export function Agenda() {
         <div className={styles.legend} aria-label="Colores de las citas">
           <span data-source="bot">Gema</span>
           <span data-source="operator">Equipo</span>
-          <span data-status="pending_payment">Falta anticipo</span>
+          <span data-status="pending_payment">Reserva (falta anticipo)</span>
         </div>
 
         <button className="btn btn-secondary" onClick={() => setAside({ mode: 'advisors' })} title="Editar o quitar nombres de asesores">Asesores</button>
@@ -109,7 +109,7 @@ export function Agenda() {
 
       {awaiting.length > 0 && (
         <div className={styles.queue}>
-          <span className="eyebrow"><ClockIcon /> Esperando validación del anticipo</span>
+          <span className="eyebrow"><ClockIcon /> Reservas sin anticipo confirmado</span>
           <ul>
             {awaiting.map((booking) => (
               <li key={booking.id}>

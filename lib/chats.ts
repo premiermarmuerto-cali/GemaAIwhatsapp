@@ -1,4 +1,4 @@
-import { parseAutoSent } from './booking'
+import { parseAutoSent, renewReservation } from './booking'
 import { dayKey } from './calendar'
 import { isLocation } from './clinic'
 import { attachMediaInfo } from './media'
@@ -140,6 +140,8 @@ export async function recordInbound(phone: string, message: Message, name?: stri
   // Queda esperando respuesta hasta que Gema o una persona le escriba (vigilante de lib/automations.ts).
   tx.zadd(keys.awaiting, { score: message.at, member: phone })
   await tx.exec()
+  // Volvió a escribir: su reserva sin anticipo, si tiene una, se renueva (lib/booking.ts).
+  await renewReservation(phone, message.at).catch((error) => console.warn(`[chats] ${phone}: no se pudo renovar la reserva:`, error instanceof Error ? error.message : error))
 }
 
 /**

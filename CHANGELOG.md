@@ -3,6 +3,21 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.10 · 23 de octubre de 2026
+
+**Reservas sin anticipo (acordado con Premier)**
+- Apenas el cliente acepta día, hora y limpieza, Gema crea una **Reserva** en la agenda (borde punteado tan) y le manda los medios de pago. Si todavía no dio su nombre, la reserva queda con uno provisional y Gema se lo pide; cuando lo da, se corrige en la misma reserva.
+- La reserva dura lo que la ventana de 24 h de WhatsApp desde su último mensaje: se libera 5 minutos antes de que se cierre (en la práctica, entre 5 y 20 minutos antes, por cómo corre el programador). Gema nunca menciona plazos ni minutos.
+- Si el cliente vuelve a escribir antes de que venza, la reserva se renueva 12 h desde ese mensaje, hasta 32 h en total. Durante esa renovación el horario se ofrece a otros clientes y, si otro lo reserva, se queda con él.
+- Un solo recordatorio amable del anticipo, unas 4 h antes de que se libere (antes de las 9 p.m. si cae de noche).
+- Al liberarse (venció o la tomó otro cliente), Gema le escribe que por políticas internas liberamos el espacio y que nos encantará atenderle cuando quiera agendar. Mensaje prediseñado nuevo "Reserva liberada", editable en el panel.
+- Con comprobante recibido, la reserva ya no se libera sola: espera a que el equipo lo valide. Además el comprobante protege la reserva apenas se analiza, aunque Gema no alcance a responder (lo que le pasó a María Angélica).
+- Efectivo y citas del equipo, sin cambios. La plantilla "Anticipo pendiente" sigue igual.
+- Panel: "Pendiente de pago" pasa a llamarse "Reserva"; se quitó el ajuste "Apartado (min)", que ya no se usa.
+
+**Fechas bien leídas**
+- La lectura automática de la conversación (con la que Gema crea la cita cuando la da por hecha sin crearla) convertía mal los días de la semana: "el sábado" salía jueves 29 en 2 de 3 lecturas. Ahora la fecha tiene que haberse nombrado en la conversación; si no, gana el día que dijo el cliente, y si no dijo ninguno, no se reserva.
+
 ## 1.9.1 · 23 de octubre de 2026
 
 **Gema ya no niega horarios libres ni da por hecha una cita que no existe**

@@ -1,6 +1,6 @@
 import { DEFAULT_ADDRESSES, DEFAULT_CABINS, DEFAULT_HOURS, DEFAULT_SERVICES, LOCATIONS } from './clinic'
 import { amountOf, pesos } from './money'
-import { DEFAULT_PRESETS, LEGACY_FOLLOW_UP_22H, LEGACY_FOLLOW_UP_45, PRESET_VARIABLES } from './preset-defaults'
+import { DEFAULT_PRESETS, LEGACY_FOLLOW_UP_22H, LEGACY_FOLLOW_UP_45, LEGACY_FOLLOW_UP_PAYMENT, PRESET_VARIABLES } from './preset-defaults'
 import { keys, redis } from './redis'
 import type { AppConfig, Location, PresetMessages, Region, Service } from './types'
 
@@ -99,7 +99,7 @@ export const DEFAULT_DEPOSIT_PERK = 'una exfoliación de manos con la sal del Ma
  *     textos de 45 min y 22 h por los nuevos si no fueron editados.
  *   3 (v1.6): con una sola cabina el 2x1 va en sesiones seguidas: la bienvenida ya no dice "a la misma hora".
  */
-export const CONFIG_REVISION = 5
+export const CONFIG_REVISION = 6
 
 export const DEFAULT_CONFIG: AppConfig = {
   revision: CONFIG_REVISION,
@@ -156,6 +156,10 @@ function migrate(config: AppConfig, from: number): AppConfig {
       followUp45: m.followUp45 === LEGACY_FOLLOW_UP_45 ? DEFAULT_PRESETS.followUp45 : m.followUp45,
       followUp22h: m.followUp22h === LEGACY_FOLLOW_UP_22H ? DEFAULT_PRESETS.followUp22h : m.followUp22h,
     } }
+  }
+  if (from < 6 && next.messages.followUpPayment === LEGACY_FOLLOW_UP_PAYMENT) {
+    // v1.10: el aviso de anticipo ya no dice los minutos que quedan (reservas por la ventana de WhatsApp).
+    next = { ...next, messages: { ...next.messages, followUpPayment: DEFAULT_PRESETS.followUpPayment } }
   }
   return { ...next, revision: CONFIG_REVISION }
 }
@@ -293,6 +297,7 @@ const PRESET_LIMITS: Record<keyof PresetMessages, number> = {
   followUp3h: 1000,
   followUp22h: 1000,
   bookingConfirmed: 1500,
+  holdReleased: 1000,
 }
 
 function parsePresets(raw: unknown): PresetMessages | Issue {

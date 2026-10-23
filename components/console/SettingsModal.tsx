@@ -16,7 +16,6 @@ const NUMBERS: Array<{ key: 'depositPercent' | 'depositFixed' | 'slotMinutes' | 
   { key: 'slotMinutes', label: 'Grilla (min)', min: 5, max: 60, hint: 'Cada duración de servicio debe ser múltiplo de este número.' },
   { key: 'leadTimeHours', label: 'Antelación (h)', min: 0, max: 72, hint: 'Lo mínimo que debe faltar para poder agendar.' },
   { key: 'horizonDays', label: 'Horizonte (días)', min: 1, max: 90, hint: 'Hasta cuándo se puede agendar hacia adelante.' },
-  { key: 'holdMinutes', label: 'Apartado (min)', min: 15, max: 2880, hint: 'Cuánto aguanta un horario sin anticipo pagado.' },
 ]
 
 export function SettingsModal({ onClose, toast }: { onClose: () => void; toast: ShowToast }) {

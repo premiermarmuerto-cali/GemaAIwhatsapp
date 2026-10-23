@@ -3,7 +3,7 @@ import type { Booking, BookingStatus } from '@/lib/types'
 
 export const STATUS_LABEL: Record<BookingStatus, string> = {
   hold: 'Apartada',
-  pending_payment: 'Pendiente de pago',
+  pending_payment: 'Reserva',
   confirmed: 'Confirmada',
   done: 'Realizada',
   no_show: 'No asistió',

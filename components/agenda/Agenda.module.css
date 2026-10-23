@@ -268,7 +268,7 @@
 .monthEvent:hover { border-color: var(--primary); }
 .monthEvent[data-active] { box-shadow: 0 0 0 2px var(--primary); }
 .monthEvent[data-status='confirmed'] { border-color: var(--secondary); background: color-mix(in srgb, var(--secondary) 12%, var(--surface)); }
-.monthEvent[data-status='pending_payment'] { border-color: var(--primary); background: color-mix(in srgb, var(--primary-bright) 16%, var(--surface)); }
+.monthEvent[data-status='pending_payment'] { border-color: var(--primary); border-style: dashed; background: color-mix(in srgb, var(--primary-bright) 16%, var(--surface)); }
 .monthEvent[data-status='hold'] { border-style: dashed; border-color: var(--faint); }
 .monthEvent[data-status='done'] { opacity: .7; }
 .monthEvent[data-status='no_show'] { border-color: var(--danger); background: var(--danger-soft); }
@@ -279,7 +279,7 @@
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend span::before { content: ''; width: 10px; height: 10px; border: 1px solid var(--secondary); background: color-mix(in srgb, var(--secondary) 12%, var(--surface)); }
 .legend span[data-source='operator']::before { border-color: var(--team); background: color-mix(in srgb, var(--team) 12%, var(--surface)); }
-.legend span[data-status='pending_payment']::before { border-color: var(--primary); background: color-mix(in srgb, var(--primary-bright) 16%, var(--surface)); }
+.legend span[data-status='pending_payment']::before { border-color: var(--primary); border-style: dashed; background: color-mix(in srgb, var(--primary-bright) 16%, var(--surface)); }
 .monthEvent[data-kind='block'] { background: repeating-linear-gradient(135deg, var(--surface-2) 0 6px, var(--surface-3) 6px 12px); }
 .monthMore { padding: 2px 5px; border: 0; background: transparent; color: var(--primary); font: 600 10px var(--font-sans); text-align: left; }
 .monthMore:hover { text-decoration: underline; }
@@ -344,7 +344,7 @@
 /* El color del bloque dice el estado sin tener que abrirlo:
    musgo = confirmada (todo en orden), tan = falta validar el anticipo. */
 .event[data-status='confirmed'] { border-color: var(--secondary); background: color-mix(in srgb, var(--secondary) 12%, var(--surface)); }
-.event[data-status='pending_payment'] { border-color: var(--primary); background: color-mix(in srgb, var(--primary-bright) 16%, var(--surface)); }
+.event[data-status='pending_payment'] { border-color: var(--primary); border-style: dashed; background: color-mix(in srgb, var(--primary-bright) 16%, var(--surface)); }
 .event[data-status='hold'] { border-color: var(--faint); border-style: dashed; }
 .event[data-status='done'] { border-color: var(--line); opacity: .7; }
 .event[data-status='no_show'] { border-color: var(--danger); background: var(--danger-soft); }

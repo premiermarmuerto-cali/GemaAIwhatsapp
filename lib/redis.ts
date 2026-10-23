@@ -83,6 +83,8 @@ export const keys = {
   byStatus: (status: BookingStatus) => `${prefix()}bookings:status:${status}`,
   byPhone: (phone: string) => `${prefix()}bookings:phone:${phone}`,
   get holds() { return `${prefix()}holds` },
+  /** Reservas renovadas que ya pueden tomar otros clientes, por el momento desde el que se pueden tomar. */
+  get softHolds() { return `${prefix()}holds:soft` },
   closed: (day: string) => `${prefix()}closed:${day}`,
 
   /** Candado de una corrida de lib/automations.ts (no corren dos a la vez). */

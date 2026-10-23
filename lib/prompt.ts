@@ -10,7 +10,7 @@
 import { addDays, clock12, dayKey, dayLabel, nextHumanWindow, startWindows, type Occupancy } from './calendar'
 import { LOCATION_LABEL, LOCATIONS, WEEKDAY_LABEL } from './clinic'
 import { amountOf, bookingPrice, depositOf, LEGACY_SERVICE_IDS, paymentFor, pesos, twoForOneApplies, twoForOneLive } from './config'
-import { chargeText, liveBookingOf, serviceText, sweepExpiredHolds, teamBookingOf } from './booking'
+import { chargeText, liveBookingOf, serviceText, softHoldIds, sweepExpiredHolds, teamBookingOf, withoutSoftHolds } from './booking'
 import { createHash } from 'node:crypto'
 import { keys, redis, toHash } from './redis'
 import { formatPhone, countryOf, regionOf } from './phone'
@@ -193,7 +193,7 @@ function cobroBlock(config: AppConfig, phone: string): string {
         `- Si dice que quiere pagar en efectivo, "pagar allá" o en el local: nunca le digas que no se puede ni cierres la conversación. Dile que el resto lo paga en la sede el día de la cita, en efectivo o como prefiera, y que solo el anticipo se paga antes porque separa su cupo y se descuenta del valor de su limpieza (no es un costo adicional). Una sola idea y una sola pregunta, por ejemplo si le envías el link para separarlo.`,
         `- Si después de eso insiste en no pagar nada antes, no le discutas ni repitas el argumento: dile que lo confirmas con la sede y que le respondes ${nextHumanWindow() === 'ahora' ? 'en unos minutos' : nextHumanWindow()}, y usa la marca [[EFECTIVO]]. Es la única vez en que sí puedes decir que le escribes después.`,
       ]),
-    `- El horario queda apartado ${config.holdMinutes} minutos. Si no se paga en ese tiempo, se libera solo. Dilo con amabilidad, no como amenaza.`,
+    '- La reserva queda guardada mientras paga el anticipo. NUNCA le digas cuánto tiempo dura ni que se libera: no menciones plazos, horas ni minutos.',
     '- Los métodos y la moneda son los de "Cobro de esta conversación", arriba. No ofrezcas ningún otro.',
     '- No escribas el monto ni los datos de pago en el mensaje de la reserva: el sistema los añade al final. Nunca digas "aquí va el link" o "te envío los datos" sin la marca que corresponde: sin la marca no se envía nada.',
   ]
@@ -252,8 +252,10 @@ async function computeAgendaBlock(config: AppConfig, now: number): Promise<strin
   LOCATIONS.forEach((location) => days.forEach((day) => pipe.hgetall(keys.slots(location, day))))
   const rows = await pipe.exec<unknown[]>()
   const closedFlags = rows.slice(0, days.length).map((value) => (value ? String(value) : null))
+  // Las reservas renovadas que otro cliente puede tomar se ofrecen como libres (lib/booking.ts).
+  const soft = await softHoldIds(now)
   const occupancies = LOCATIONS.map((_, locationIndex) => days.map((_, dayIndex) =>
-    (toHash(rows[days.length + locationIndex * days.length + dayIndex]) ?? {}) as Occupancy))
+    withoutSoftHolds((toHash(rows[days.length + locationIndex * days.length + dayIndex]) ?? {}) as Occupancy, soft)))
 
   const ranges = (windows: Array<{ from: string; to: string }>) => windows.map((window) => (window.from === window.to ? window.from : `${window.from}–${window.to}`)).join(', ')
 
@@ -304,6 +306,7 @@ function bookingBlock(booking: Booking | null): string {
     '- No crees otra cita. Si quiere cambiarla de día, hora o sede (o toca "Reagendar"), ofrécele de una vez dos o tres horas concretas de la disponibilidad de abajo, en su misma sede, y, cuando acepte una, usa [[REPROGRAMAR]]: el pago que ya hizo se conserva. Si dice que no podrá asistir, ofrécele primero cambiarla de fecha (su pago se conserva); si prefiere cancelar, usa [[CANCELAR]].',
     ...(booking.status === 'confirmed' && !booking.attendanceConfirmedAt ? ['- Si confirma que asiste ("confirmo", "sí voy"), agradécele y usa [[ASISTE]].'] : []),
     ...(booking.status !== 'confirmed' && !booking.paidAt && !team ? ['- Si pide el link de pago otra vez, usa [[LINK]]; si prefiere transferir, [[TRANSFERENCIA]].'] : []),
+    ...(booking.nameProvisional ? [`- La reserva está a un nombre provisional: todavía no te dio su nombre completo${booking.people > 1 ? ' ni el de su acompañante' : ''}. Pídeselo, y cuando te lo dé usa [[NOMBRE: su nombre completo]]${booking.people > 1 ? ' y [[PAREJA: nombre completo del acompañante]]' : ''}. No crees otra reserva.`] : []),
   ].join('\n')
 }
 
@@ -529,6 +532,7 @@ Van siempre al final del mensaje, después del texto.
 - \`[[CANCELAR: motivo breve]]\` — el cliente pidió cancelar su cita (después de ofrecerle cambiarla de fecha). El sistema la cancela y libera el cupo. Si ya había pagado, una asesora le gestiona el reembolso: tú no prometas montos ni plazos de devolución.
 
 - \`[[ASISTE]]\` — el cliente confirmó que asiste a su cita.
+- \`[[NOMBRE: nombre completo]]\` — solo cuando su reserva está a un nombre provisional (lo dice "Estado de este cliente") y el cliente acaba de darte su nombre completo.
 
 - \`[[COMPLETO]]\` — va junto con [[RESERVA]] cuando el cliente eligió pagar la sesión completa en vez del anticipo. El sistema cobra el valor total. Sin esta marca se cobra el anticipo.
 

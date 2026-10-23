@@ -31,6 +31,18 @@ export function isQuietHours(now = Date.now()): boolean {
   const minute = minuteOfDay(now)
   return minute >= QUIET_FROM_MIN || minute < QUIET_TO_MIN
 }
+/**
+ * Un momento que cae en la franja de silencio se adelanta a las 8:45 p.m. de esa noche (o de la anterior,
+ * si es de madrugada): lo que debe enviarse "a esa hora" (aviso o liberación de una reserva) sale antes
+ * de que empiece el silencio. Fuera de la franja, se devuelve igual.
+ */
+export function beforeQuiet(at: number): number {
+  const minute = minuteOfDay(at)
+  const target = QUIET_FROM_MIN - 15
+  if (minute >= QUIET_FROM_MIN) return at - (minute - target) * 60_000
+  if (minute < QUIET_TO_MIN) return at - (minute + 24 * 60 - target) * 60_000
+  return at
+}
 /** De noche Gema solo contesta mensajes recientes: uno que se quedó sin responder (o que Meta entregó tarde) espera a las 8 a.m. */
 export const NIGHT_REPLY_MAX_AGE_MS = 60 * 60_000
 

@@ -1,5 +1,5 @@
 import { extractReserva, generateReply, type ExtractedReserva } from './ai'
-import { annotateBooking, bookingsOfPhone, chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
+import { annotateBooking, bookingsOfPhone, reservationDeadline, chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
 import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow, toClock, toMinutes } from './calendar'
 import { isLocation, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
 import { attachBooking, getHistory, getSummary, markChatAuto, noteForTeam, recordOutbound, requestAgent, saveContactPhone, saveLead, setObjection, updateChat } from './chats'
@@ -15,7 +15,7 @@ import { insertAfter, SEPARATOR, styleModelText, toMessages } from './reply-styl
 import { keys, redis } from './redis'
 import { sendWhatsAppImage, sendWhatsAppText } from './whatsapp'
 import { buildWelcome, needsAnswerAfterWelcome, WELCOME_KIND, type Welcome } from './welcome'
-import { askedSlot, availabilityNote } from './availability-note'
+import { askedDay, askedSlot, availabilityNote } from './availability-note'
 import { isOptOut } from './optout'
 import { preferencesFrom } from './preferences'
 import { renderPreset } from './presets'
@@ -64,7 +64,7 @@ const GLOBAL_LIMIT = Number(process.env.AI_MAX_REPLIES_PER_HOUR) || 300
  *           (si nadie responde en 30 min, Gema retoma: ver cashRetakes en lib/automations.ts)
  *   ASESOR  todo lo demás que necesita una persona
  */
-const MARKERS = /\[\[\s*(ASESOR|PAGO|EFECTIVO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO|REPROGRAMAR|CANCELAR|ASISTE)\s*(?::([^\]]*))?\]\]/gi
+const MARKERS = /\[\[\s*(ASESOR|PAGO|EFECTIVO|RESERVA|FICHA|LINK|TRANSFERENCIA|PAREJA|COMPLETO|REPROGRAMAR|CANCELAR|ASISTE|NOMBRE)\s*(?::([^\]]*))?\]\]/gi
 
 // El cliente quiere pagar en efectivo o en la sede: la objeción que más frena la venta (VIRAND, 19 oct).
 // 20 oct: una clienta escribió "pago cuando llegue" y no se reconoció; ahora cubre "al llegar",
@@ -151,6 +151,20 @@ function hoursIn(text: string): string[] {
  * hora que nadie eligió. Solo se reserva si el nombre lo escribió el cliente y la hora la dijo él,
  * o fue la única hora que Gema le ofreció justo antes de que siguiera adelante (aceptación implícita).
  */
+/**
+ * La fecha que leyó el modelo, comprobada contra lo que se habló: gpt-4o-mini convierte mal los días de
+ * la semana (23 oct: "el sábado" salió jueves 29 en 2 de 3 lecturas). Si esa fecha se nombró en la
+ * conversación (por el cliente o en una oferta de Gema), vale; si no, gana el último día que nombró el
+ * cliente; si no nombró ninguno, null (no se reserva).
+ */
+export function dayInChat(fecha: string, history: Message[], today: string, horizonDays: number): string | null {
+  const daysIn = (text: string) => text.split(/[,;\n]|\s+o\s+|\s+y\s+/).map((part) => askedDay(part, today, horizonDays)).filter((day): day is string => Boolean(day))
+  const recent = history.slice(-12)
+  if (recent.some((message) => daysIn(message.text).includes(fecha))) return fecha
+  const said = recent.filter((message) => message.sender === 'user').flatMap((message) => daysIn(message.text))
+  return said.at(-1) ?? null
+}
+
 export function groundedInChat(extracted: ExtractedReserva, history: Message[]): boolean {
   const clientText = fold(history.filter((message) => message.sender === 'user').map((message) => message.text).join(' \n '))
   const firstName = fold(extracted.nombre.split(/\s+/)[0] ?? '')
@@ -645,10 +659,6 @@ export function humanWhen(): string {
   return when === 'ahora' ? 'en este momento' : `${when}`
 }
 
-/** Minutos que le quedan al apartado, para decírselo al cliente al reenviar datos de pago. */
-function holdMinutesLeft(booking: Booking): number {
-  return Math.max(0, Math.round((booking.holdUntil - Date.now()) / 60_000))
-}
 
 /**
  * " de $65.000, que se descuenta del valor de tu limpieza ($65.000 ahora y $65.000 en la sede, total
@@ -677,7 +687,7 @@ function transferAppend(config: AppConfig, booking: Booking): Applied {
   }
   const deposit = amountLine(booking)
   return {
-    append: `\n\nPuedes transferir ${chargeText(booking)}${deposit} a:\n${data}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos. Cuando transfieras, mándame aquí la captura del comprobante y una asesora lo revisa`,
+    append: `\n\nPuedes transferir ${chargeText(booking)}${deposit} a:\n${data}\nCuando transfieras, mándame aquí la captura del comprobante y una asesora lo revisa`,
   }
 }
 
@@ -717,6 +727,15 @@ function missingPromo(config: AppConfig, text: string): { price: string; line: s
 
 type PayMethod = 'transfer' | 'link'
 
+/** Palabras que no son nombres, para no tomar "sí, dale" o "ok gracias" por el nombre del cliente. */
+const NOT_NAME_WORDS = /\b(si|no|ok|okey|dale|gracias|listo|perfecto|bueno|buenas?|hola|claro|vale|quiero|para|link|nequi|daviplata|transferencia|pago|efectivo|cita|hora|manana|tarde|noche|lunes|martes|miercoles|jueves|viernes|sabado|domingo|unicentro|chipichape|yo|mi|me|soy|es|el|la|con|y|de)\b/
+/** Un mensaje que es solo un nombre completo ("Adriana Tamara"): 2 a 5 palabras, solo letras. */
+function looksLikeFullName(text: string): boolean {
+  const clean = fold(text.trim().replace(/[.!]+$/, ''))
+  const words = clean.split(/\s+/)
+  return words.length >= 2 && words.length <= 5 && /^[a-zñ' -]+$/.test(clean) && !NOT_NAME_WORDS.test(clean)
+}
+
 /** Un nombre de verdad: con letras, no "-", "cliente", "nombre" ni similares. */
 function isRealName(name: string): boolean {
   const clean = fold(name.trim())
@@ -733,7 +752,7 @@ async function boldLinkFor(booking: Booking): Promise<string> {
   const amount = amountOf(booking.deposit)
   if (!amount) return ''
   const concept = `${booking.paymentPlan === 'full' ? 'Pago' : 'Anticipo'} ${serviceText(booking)}`
-  return (await generarLinkPagoBold(amount, concept, booking.id, { timeoutMs: BOLD_TIMEOUT_MS, expiraEn: booking.holdUntil })) || ''
+  return (await generarLinkPagoBold(amount, concept, booking.id, { timeoutMs: BOLD_TIMEOUT_MS, expiraEn: booking.createdAt + 32 * 3_600_000 })) || ''
 }
 
 /**
@@ -798,7 +817,24 @@ async function resendLink(config: AppConfig, phone: string, { implicit = false }
   }
   const deposit = amountLine(booking)
   const what = booking.paymentPlan === 'full' ? 'pagar la sesión completa' : 'pagar el anticipo'
-  return { append: `\n\nAquí tienes el link para ${what}${deposit} ${linkMethods(phone)}:\n${url}\nTu horario sigue apartado ${holdMinutesLeft(booking)} minutos y apenas se confirme el pago te aviso por aquí` }
+  return { append: `\n\nAquí tienes el link para ${what}${deposit} ${linkMethods(phone)}:\n${url}\nApenas se confirme el pago te aviso por aquí` }
+}
+
+/**
+ * El cliente dio su nombre completo para una reserva que se creó antes con uno provisional: se corrige
+ * en la misma reserva (y el del acompañante, si vino) en vez de crear otra.
+ */
+async function completeProvisional(booking: Booking, name: string, companion: string | null): Promise<Applied> {
+  await updateBookingDetails(booking.id, { name, ...(companion && isRealName(companion) && booking.people > 1 ? { companion } : {}) })
+  const first = name.trim().split(/\s+/)[0]
+  const missingCompanion = booking.people > 1 && !booking.companion && !(companion && isRealName(companion))
+  return {
+    append: '',
+    replaceText: [
+      `Gracias, ${first} ✨ tu reserva del ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]} quedó a tu nombre`,
+      missingCompanion ? 'me regalas también el nombre completo de la persona que viene contigo?' : isPaid(booking) ? '' : 'apenas pagues el anticipo te la confirmo',
+    ].filter(Boolean).join('\n\n'),
+  }
 }
 
 /** Pareja: `companion` es el nombre del acompañante ('' si no lo dio). null = cita individual. */
@@ -806,7 +842,7 @@ export async function applyReserva(
   config: AppConfig,
   phone: string,
   payload: string,
-  { method = null as PayMethod | null, companion = null as string | null, payFull = false, cash = false } = {},
+  { method = null as PayMethod | null, companion = null as string | null, payFull = false, cash = false, provisional = false } = {},
 ): Promise<Applied> {
   const parsed = parseReserva(payload)
   if (!parsed) {
@@ -823,6 +859,8 @@ export async function applyReserva(
   // agendó una segunda (con su segundo link de cobro) pese a la instrucción. El mensaje de Gema
   // dio la reserva por hecha, así que se reemplaza entero en vez de añadirle una corrección.
   const existing = await liveBookingOf(phone)
+  // La reserva se creó con un nombre provisional y ahora llega el de verdad: se corrige en la misma.
+  if (existing?.nameProvisional && !provisional && isRealName(parsed.name)) return completeProvisional(existing, parsed.name, companion)
   if (existing) {
     const state = existing.status === 'confirmed' ? 'confirmada' : 'apartada'
     return {
@@ -834,11 +872,12 @@ export async function applyReserva(
 
   // Sin nombre no se reserva: el modelo a veces pone "-" o "Cliente" antes de que el cliente lo dé
   // (salió "Listo, -: tu cita…"). Se le pide y la reserva se hace en el siguiente mensaje.
-  if (!isRealName(parsed.name)) {
+  // Reserva provisional (ver replyOnce): se crea igual y Gema le pide el nombre en el mismo mensaje.
+  if (!isRealName(parsed.name) && !provisional) {
     return { append: '', replaceText: 'me das tu nombre completo para dejar la cita apartada?' }
   }
   // Premier agenda cada sesión con el nombre de quien se la hace: una pareja del 2x1 lleva los dos.
-  if (companion !== null && !isRealName(companion)) {
+  if (companion !== null && !isRealName(companion) && !provisional) {
     return { append: '', replaceText: 'me das el nombre completo de la persona que viene contigo? así quedan las dos en la cita' }
   }
 
@@ -863,6 +902,9 @@ export async function applyReserva(
     payFull,
     cash,
     companion: pair ? companion : '',
+    nameProvisional: provisional,
+    // La reserva dura lo que la ventana de WhatsApp, que se abrió con su último mensaje.
+    ...(chat?.lastInboundAt ? { holdUntil: reservationDeadline(chat.lastInboundAt) } : {}),
   })
 
   if (!result.ok) {
@@ -920,7 +962,7 @@ export async function applyReserva(
   if (!method && payment.bold && payment.instructions) {
     return {
       append: '',
-      replaceText: `${bookedLine(booking)}\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Lo puedes pagar de dos formas:\nCon el link de Bold, que acepta PSE, tarjeta débito o crédito, Nequi y Daviplata, y la cita se confirma sola apenas pagas.\nO por transferencia directa a Nequi, Daviplata o a la cuenta de ahorros Bancolombia, y me mandas el comprobante.\nTu horario queda apartado ${config.holdMinutes} minutos${perkLine(config, booking)}\n\ncómo prefieres pagar, con el link o por transferencia?`,
+      replaceText: `${bookedLine(booking)}\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Lo puedes pagar de dos formas:\nCon el link de Bold, que acepta PSE, tarjeta débito o crédito, Nequi y Daviplata, y la cita se confirma sola apenas pagas.\nO por transferencia directa a Nequi, Daviplata o a la cuenta de ahorros Bancolombia, y me mandas el comprobante.${perkLine(config, booking)}\n\ncómo prefieres pagar, con el link o por transferencia?`,
     }
   }
 
@@ -934,7 +976,7 @@ export async function applyReserva(
     await setPaymentLink(booking.id, boldUrl)
     return {
       summary: bookedLine(booking),
-      append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Puedes pagarlo aquí ${linkMethods(phone)}:\n${boldUrl}\nTu horario queda apartado ${config.holdMinutes} minutos y apenas se confirme el pago te aviso por aquí${perkLine(config, booking)}`,
+      append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}. Puedes pagarlo aquí ${linkMethods(phone)}:\n${boldUrl}\nApenas se confirme el pago te aviso por aquí${perkLine(config, booking)}`,
     }
   }
 
@@ -951,7 +993,7 @@ export async function applyReserva(
   }
   return {
     summary: bookedLine(booking),
-    append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}.\n${how}\nTu horario queda apartado ${config.holdMinutes} minutos. Cuando pagues, mándame el comprobante por aquí${perkLine(config, booking)}`,
+    append: `\n\nPara dejarla reservada necesitamos ${chargeText(booking)}${deposit}.\n${how}\nCuando pagues, mándame el comprobante por aquí${perkLine(config, booking)}`,
   }
 }
 
@@ -1020,7 +1062,7 @@ export async function applyReprogram(config: AppConfig, phone: string, payload: 
     ? 'El pago lo sigues haciendo en la sede el día de la cita.'
     : paid
     ? `Tu ${moved.paymentPlan === 'full' ? 'pago de la sesión completa' : 'anticipo'} queda para la nueva fecha.`
-    : `Tu horario sigue apartado ${holdMinutesLeft(moved)} minutos mientras pagas.`
+    : 'Apenas pagues el anticipo te la confirmo.'
   return {
     append: '',
     replaceText: `Listo, ${copied ? 'te agendé tu cita' : 'cambié tu cita'} de *${serviceText(moved)}* para el ${dayLabel(moved.day)} a las ${clock12(moved.start)} en ${LOCATION_LABEL[moved.location]}.${payment ? ` ${payment}` : ''}`,
@@ -1188,7 +1230,9 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     // Sin el borrador del modelo (que pudo negar la hora) y con lo que ya se sabe de la cita.
     const known: Message = { id: 'cita', sender: 'user', text: `Soy ${teamBooking.name || 'el cliente'}, es para mi cita de ${teamBooking.serviceLabel} en ${LOCATION_LABEL[teamBooking.location]}`, at: 0 }
     const picked = await extractReserva([known, ...history], extractOptions).catch(() => null)
-    if (picked && isLocation(picked.sede) && isDayKey(picked.fecha) && isClock(picked.hora) && history.some((message) => message.sender === 'user' && message.text.includes(String(Number(picked.hora.slice(0, 2)) % 12 || 12)))) {
+    const pickedDay = picked ? dayInChat(picked.fecha, history, today, config.horizonDays) : null
+    if (picked && pickedDay) picked.fecha = pickedDay
+    if (picked && pickedDay && isLocation(picked.sede) && isDayKey(picked.fecha) && isClock(picked.hora) && history.some((message) => message.sender === 'user' && message.text.includes(String(Number(picked.hora.slice(0, 2)) % 12 || 12)))) {
       console.warn(`[autoreply] ${phone}: cita del equipo ${teamBooking.id}: el cliente eligió ${picked.fecha} ${picked.hora} y el modelo no reprogramó; se reprograma`)
       reply = `${reply}\n[[REPROGRAMAR: ${picked.sede} · ${picked.fecha} · ${picked.hora}]]`
     }
@@ -1205,12 +1249,34 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
       reply = `sí, el ${dayLabel(slot.day)} a las ${clock12(slot.start)} en ${LOCATION_LABEL[slot.location]} está libre ✨${SEPARATOR}te lo separo?`
     }
   }
-  if (!teamBooking && forgotReserva(reply, liveAtStart?.id, config.cashBooking)) {
+  // El cliente ya aceptó día, hora y limpieza y Gema le está pidiendo el nombre: la reserva se crea YA
+  // (en la agenda desde este momento) con un nombre provisional, y el nombre completo se corrige cuando
+  // llegue (Premier, 23 oct: lo acordado entre Gema y el cliente aparece en el calendario).
+  let provisional = false
+  if (!teamBooking && !liveAtStart && !/\[\[\s*(RESERVA|REPROGRAMAR|CANCELAR|ASESOR|PAGO|EFECTIVO)\b/i.test(reply) && (ASKS_FOR_NAME.test(reply) || ASKS_COMPANION_NAME.test(reply))) {
+    const pending: Message = { id: 'nombre', sender: 'user', text: 'Me llamo Nombre Pendiente', at: 0 }
+    const withName = [pending, ...history]
+    const picked = await extractReserva(withName, extractOptions).catch(() => null)
+    const fecha = picked ? dayInChat(picked.fecha, history, today, config.horizonDays) : null
+    if (picked && fecha && groundedInChat(picked, withName) && isLocation(picked.sede) && isClock(picked.hora)) {
+      const placeholder = isRealName(chat.name) ? chat.name.trim().slice(0, 80) : ''
+      console.warn(`[autoreply] ${phone}: aceptó ${fecha} ${picked.hora} en ${picked.sede} y falta el nombre: reserva provisional${fecha !== picked.fecha ? ` (se leyó ${picked.fecha})` : ''}`)
+      reply = `${reply}\n[[RESERVA: ${picked.servicio} · ${picked.sede} · ${fecha} · ${picked.hora} · ${placeholder}]]`
+      provisional = true
+      // El mensaje lo compone el servidor: la reserva, cómo pagar y la pregunta del nombre.
+      recoveredReserva = true
+    }
+  }
+  if (!teamBooking && !provisional && forgotReserva(reply, liveAtStart?.id, config.cashBooking)) {
     const extracted = await extractReserva([...history, { id: 'draft', sender: 'gem', text: reply.replace(MARKERS, ''), at: Date.now() }], extractOptions).catch((error) => {
       console.warn(`[autoreply] ${phone}: no se pudo leer la reserva de la conversación:`, error instanceof Error ? error.message : error)
       return null
     })
-    const grounded = extracted !== null && groundedInChat(extracted, history)
+    // La fecha, comprobada contra lo que se habló (el modelo convierte mal "el sábado" a fecha).
+    const fecha = extracted ? dayInChat(extracted.fecha, history, today, config.horizonDays) : null
+    if (extracted && fecha && fecha !== extracted.fecha) console.warn(`[autoreply] ${phone}: la lectura dio ${extracted.fecha}; en la conversación es ${fecha}`)
+    if (extracted && fecha) extracted.fecha = fecha
+    const grounded = extracted !== null && fecha !== null && groundedInChat(extracted, history)
     console.warn(`[autoreply] ${phone}: el modelo dio la cita por hecha sin [[RESERVA]]; datos leídos: ${extracted ? JSON.stringify(extracted) : 'incompletos'}${extracted && !grounded ? ' (descartados: nombre u hora no los dio el cliente)' : ''}`)
     if (extracted && grounded) {
       const companion = extracted.acompanante && isRealName(extracted.acompanante) && fold(history.filter((message) => message.sender === 'user').map((message) => message.text).join(' ')).includes(fold(extracted.acompanante.split(/\s+/)[0]))
@@ -1285,6 +1351,9 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     if (promo) text = insertAfter(text, promo.price, promo.line)
   }
   const pareja = markers.find((marker) => marker.kind === 'PAREJA')
+  // Nombre completo para una reserva provisional: la marca, o el mensaje del cliente si es solo un nombre.
+  const nombreMarker = markers.find((marker) => marker.kind === 'NOMBRE')?.payload ?? ''
+  const nombre = isRealName(nombreMarker) ? nombreMarker.slice(0, 80) : liveAtStart?.nameProvisional && looksLikeFullName(lastClientText) ? lastClientText.trim().slice(0, 80) : ''
   const reprogramar = markers.find((marker) => marker.kind === 'REPROGRAMAR')
   const cancelar = markers.find((marker) => marker.kind === 'CANCELAR')
   const payFull = planChoice ? planChoice === 'full' : markers.some((marker) => marker.kind === 'COMPLETO')
@@ -1305,7 +1374,14 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     if ((companion !== null) !== Boolean(pareja) || payFull !== markers.some((marker) => marker.kind === 'COMPLETO') || transfer !== transferMarker) {
       console.warn(`[autoreply] ${phone}: reserva ajustada a lo que dijo el cliente (pareja ${companion !== null}, completo ${payFull}, transferencia ${transfer})`)
     }
-    applied = await applyReserva(config, phone, reserva.payload, { method: methodChoice, companion, payFull: payFull && !payCash, cash: payCash })
+    applied = await applyReserva(config, phone, reserva.payload, { method: methodChoice, companion, payFull: payFull && !payCash, cash: payCash, provisional })
+    // Reserva provisional ya creada: en el mismo mensaje se le pide el nombre (y el del acompañante).
+    if (provisional && !applied.escalate && (await liveBookingOf(phone))?.nameProvisional) {
+      const question = companion !== null ? 'me regalas tu nombre completo y el de la persona que viene contigo? así queda la reserva a nombre de las dos' : 'me regalas tu nombre completo? así queda la reserva a tu nombre'
+      applied = applied.replaceText !== undefined ? { ...applied, replaceText: `${applied.replaceText}\n\n${question}` } : { ...applied, append: `${applied.append}\n\n${question}` }
+    }
+  } else if (nombre && liveAtStart?.nameProvisional) {
+    applied = await completeProvisional(liveAtStart, nombre, pareja && pareja.payload !== '-' ? pareja.payload : null)
   } else if (reprogramar) {
     applied = await applyReprogram(config, phone, reprogramar.payload)
   } else if (cancelar) {
@@ -1378,7 +1454,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   }
 
   // El cliente dice que pagó: el horario no se puede caer mientras el operador revisa.
-  if (escalation?.kind === 'PAGO' && liveAtStart) await markDepositClaimed(liveAtStart.id, config)
+  if (escalation?.kind === 'PAGO' && liveAtStart) await markDepositClaimed(liveAtStart.id)
 
   // Cada mensaje sale por separado, con una pausa corta entre uno y otro como si alguien escribiera.
   // Todos van dentro de la ventana de 24 h (la respuesta a un mensaje del cliente), así que no cuestan más.

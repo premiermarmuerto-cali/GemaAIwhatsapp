@@ -4,7 +4,7 @@
  * esos campos solo si ninguno existe, y eso se hace con un script Lua para que sea atómico:
  * dos clientes que aceptan el mismo horario a la vez no pueden quedar los dos.
  */
-import { addDays, cabinPlan, dayKey, freeStarts, longestService, slotsOf, timestampOf, toMinutes, type Occupancy } from './calendar'
+import { addDays, beforeQuiet, cabinPlan, dayKey, freeStarts, longestService, slotsOf, timestampOf, toMinutes, type Occupancy } from './calendar'
 import { amountOf, bookingPrice, depositOf, pesos, serviceById } from './config'
 import { keys, redis, toHash } from './redis'
 import { bumpRev, queueRev } from './revision'
@@ -85,6 +85,8 @@ function toBooking(id: string, raw: Record<string, string>): Booking {
     advisor: raw.advisor ?? (raw.source === 'operator' ? '' : 'Gema'),
     createdAt: Number(raw.createdAt ?? 0),
     holdUntil: Number(raw.holdUntil ?? 0),
+    holdSoftFrom: Number(raw.holdSoftFrom ?? 0),
+    nameProvisional: raw.nameProvisional === '1' || raw.nameProvisional === 'true',
     paidAt: Number(raw.paidAt ?? 0),
     confirmedAt: Number(raw.confirmedAt ?? 0),
     paymentMethod: raw.paymentMethod ?? '',
@@ -168,14 +170,7 @@ export async function sweepExpiredHolds(now = Date.now(), { force = false } = {}
       await db.zrem(keys.holds, booking.id)
       continue
     }
-    await releaseSlots(booking)
-    await db.multi()
-      .hset(keys.booking(booking.id), { status: 'cancelled', holdUntil: '0', cancelReason: 'Anticipo no pagado a tiempo' })
-      .zrem(keys.byStatus(booking.status), booking.id)
-      .zadd(keys.byStatus('cancelled'), { score: booking.startTs, member: booking.id })
-      .zrem(keys.day(booking.day), booking.id)
-      .zrem(keys.holds, booking.id)
-      .exec()
+    await releaseHold(booking, HOLD_EXPIRED_REASON, { bump: false })
     released++
   }
   // Ids huérfanos (la cita ya no existe) salen del índice para no revisarlos cada vez.
@@ -186,14 +181,89 @@ export async function sweepExpiredHolds(now = Date.now(), { force = false } = {}
   return released
 }
 
+/** Motivo con el que se cancela una reserva que venció sin anticipo (lo leen las plantillas de lib/automations.ts). */
+export const HOLD_EXPIRED_REASON = 'Anticipo no pagado a tiempo'
+/** Motivo con el que se cancela una reserva renovada cuando otro cliente toma su horario. */
+export const HOLD_TAKEN_REASON = 'Liberada: otro cliente tomó el horario'
+
+/** Cancela una reserva sin pago y suelta su cabina. */
+export async function releaseHold(booking: Booking, reason: string, { bump = true } = {}): Promise<void> {
+  await releaseSlots(booking)
+  await redis().multi()
+    // releasedAt: el programador (lib/automations.ts) le avisa al cliente con el mensaje "Reserva liberada".
+    .hset(keys.booking(booking.id), { status: 'cancelled', holdUntil: '0', cancelReason: reason, releasedAt: String(Date.now()) })
+    .zrem(keys.byStatus(booking.status), booking.id)
+    .zadd(keys.byStatus('cancelled'), { score: booking.startTs, member: booking.id })
+    .zrem(keys.day(booking.day), booking.id)
+    .zrem(keys.holds, booking.id)
+    .zrem(keys.softHolds, booking.id)
+    .exec()
+  if (bump) await bumpRev('agenda')
+}
+
 /**
- * Ocupación cruda de una sede en un día, ya sin holds vencidos.
+ * Reservas renovadas que ya puede tomar otro cliente (ver renewReservation). Su cabina sigue marcada
+ * en el hash de slots, pero para ofrecer horarios cuentan como libres.
+ */
+export async function softHoldIds(now = Date.now()): Promise<Set<string>> {
+  return new Set(await redis().zrange<string[]>(keys.softHolds, 0, now, { byScore: true }))
+}
+
+/** La ocupación sin las reservas renovadas que otro cliente puede tomar. */
+export function withoutSoftHolds(occupancy: Occupancy, soft: Set<string>): Occupancy {
+  if (!soft.size) return occupancy
+  return Object.fromEntries(Object.entries(occupancy).filter(([, id]) => !soft.has(String(id))))
+}
+
+/**
+ * Ocupación de una sede en un día, ya sin holds vencidos y sin las reservas renovadas que otro cliente
+ * puede tomar (`includeSoft` las deja: es la ocupación real del hash).
  * `force` salta el acelerador del barrido: hay que usarlo antes de reservar, porque un hold
  * vencido sin barrer todavía ocupa el campo del hash y haría fallar la reserva sin motivo.
  */
-export async function occupancyOf(location: Location, day: string, { force = false } = {}): Promise<Occupancy> {
+export async function occupancyOf(location: Location, day: string, { force = false, includeSoft = false } = {}): Promise<Occupancy> {
   await sweepExpiredHolds(Date.now(), { force })
-  return toHash(await redis().hgetall(keys.slots(location, day))) ?? {}
+  const occupancy = toHash(await redis().hgetall(keys.slots(location, day))) ?? {}
+  return includeSoft ? occupancy : withoutSoftHolds(occupancy, await softHoldIds())
+}
+
+// ───────────────────────── Reservas sin anticipo ─────────────────────────
+//
+// Acordado con Premier (23 oct 2026). Una reserva de Gema sin anticipo dura lo que la ventana de 24 h
+// de WhatsApp (se libera 5 min antes de que se cierre, para poder avisarle). En ese tiempo el horario
+// está ocupado para todos. Si el cliente vuelve a escribir antes de que venza, se renueva 12 h desde
+// ese mensaje, hasta 32 h en total; en esa renovación el horario se ofrece a otros clientes y, si otro
+// lo reserva, se queda con él. Nada de esto aplica a efectivo ni a las citas del equipo (confirmadas).
+
+const HOUR_MS = 3_600_000
+/** La ventana de WhatsApp menos 5 minutos: a tiempo para enviarle el aviso de liberación. */
+const RESERVATION_MS = 24 * HOUR_MS - 5 * 60_000
+const RENEWAL_MS = 12 * HOUR_MS
+const RESERVATION_MAX_MS = 32 * HOUR_MS
+
+/** Hasta cuándo dura una reserva hecha con el último mensaje del cliente en `lastInboundAt`. */
+export function reservationDeadline(lastInboundAt: number): number {
+  return beforeQuiet(lastInboundAt + RESERVATION_MS)
+}
+
+/**
+ * El cliente volvió a escribir: su reserva sin pagar se renueva 12 h desde este mensaje (hasta 32 h desde
+ * que se creó) y pasa a ser "tomable" por otro cliente desde donde vencía antes. Si la renovación no
+ * alarga el plazo (escribió poco después de reservar), no cambia nada.
+ */
+export async function renewReservation(phone: string, at: number): Promise<void> {
+  for (const booking of await bookingsOfPhone(phone, 3)) {
+    if (!HOLD_STATUSES.includes(booking.status) || booking.source !== 'bot' || booking.paidAt || booking.holdUntil <= at) continue
+    const next = beforeQuiet(Math.min(at + RENEWAL_MS, booking.createdAt + RESERVATION_MAX_MS))
+    if (next <= booking.holdUntil) continue
+    const softFrom = booking.holdSoftFrom || booking.holdUntil
+    await redis().multi()
+      .hset(keys.booking(booking.id), { holdUntil: String(next), holdSoftFrom: String(softFrom) })
+      .zadd(keys.holds, { score: next, member: booking.id })
+      .zadd(keys.softHolds, { score: softFrom, member: booking.id })
+      .incr(keys.rev('agenda'))
+      .exec()
+  }
 }
 
 /**
@@ -274,10 +344,14 @@ export type NewBooking = {
   courtesy?: boolean
   /** Ya pagó lo que dice `paymentPlan` (cita creada a mano por un asesor que recibió el anticipo o el total). */
   paid?: boolean
+  /** Hasta cuándo dura la reserva sin anticipo. Por defecto, la ventana de WhatsApp desde ahora. */
+  holdUntil?: number
+  /** El cliente todavía no dio su nombre completo: la reserva lleva uno provisional. */
+  nameProvisional?: boolean
 }
 
 export type BookingResult =
-  | { ok: true; booking: Booking }
+  | { ok: true; booking: Booking; bumped?: Booking[] }
   | { ok: false; reason: 'service' | 'closed' | 'taken' | 'cabins'; alternatives: string[] }
 
 /**
@@ -306,7 +380,23 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
   const id = crypto.randomUUID().slice(0, 8)
   const startMin = toMinutes(input.start)
   const slots = slotsOf(config, startMin, durationMin)
-  const cabin = Number(await db.eval(CLAIM, [keys.slots(input.location, input.day)], [id, String(cabins), String(plan.lanes), ...slots]))
+  const claim = () => db.eval(CLAIM, [keys.slots(input.location, input.day)], [id, String(cabins), String(plan.lanes), ...slots]).then(Number)
+  let cabin = await claim()
+  // El horario estaba libre salvo por reservas renovadas de otros clientes: este se queda con él y a
+  // ellos se les libera (acordado con Premier: prima quien reserva durante la renovación).
+  const bumped: Booking[] = []
+  if (!cabin && input.kind !== 'block') {
+    const soft = await softHoldIds()
+    const raw = await occupancyOf(input.location, input.day, { includeSoft: true })
+    const wanted = new Set(slots)
+    const holders = [...new Set(Object.entries(raw).filter(([field, holder]) => wanted.has(field.split('#')[0]) && soft.has(String(holder))).map(([, holder]) => String(holder)))]
+    for (const holder of await getBookings(holders)) {
+      if (!HOLD_STATUSES.includes(holder.status) || holder.paidAt) continue
+      await releaseHold(holder, HOLD_TAKEN_REASON)
+      bumped.push(holder)
+    }
+    if (bumped.length) cabin = await claim()
+  }
   // La carrera real se pierde aquí, no en la comprobación de arriba.
   if (!cabin) return { ok: false, reason: 'taken', alternatives: freeStarts(config, input.location, input.day, sessionMin, await occupancyOf(input.location, input.day), { people }) }
 
@@ -341,7 +431,9 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
     source: input.source ?? 'bot',
     advisor: (input.advisor ?? (input.source === 'operator' ? '' : 'Gema')).trim().slice(0, 60),
     createdAt: now,
-    holdUntil: HOLD_STATUSES.includes(status) ? now + config.holdMinutes * 60_000 : 0,
+    holdUntil: HOLD_STATUSES.includes(status) ? input.holdUntil ?? reservationDeadline(now) : 0,
+    holdSoftFrom: 0,
+    nameProvisional: Boolean(input.nameProvisional),
     paidAt: input.paid && paymentPlan !== 'cash' && paymentPlan !== 'courtesy' ? now : 0,
     confirmedAt: status === 'confirmed' ? now : 0,
     paymentMethod: '',
@@ -365,7 +457,7 @@ export async function createBooking(config: AppConfig, input: NewBooking): Promi
   queueRev(tx, 'agenda')
   await tx.exec()
 
-  return { ok: true, booking }
+  return { ok: true, booking, ...(bumped.length ? { bumped } : {}) }
 }
 
 const TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
@@ -400,7 +492,7 @@ export async function moveBooking(id: string, status: BookingStatus): Promise<Bo
   tx.hset(keys.booking(id), patch)
   tx.zrem(keys.byStatus(booking.status), id)
   tx.zadd(keys.byStatus(status), { score: booking.startTs, member: id })
-  if (patch.holdUntil === '0') tx.zrem(keys.holds, id)
+  if (patch.holdUntil === '0') tx.zrem(keys.holds, id).zrem(keys.softHolds, id)
   // Una cita cancelada sale de la grilla del día, pero sigue existiendo para auditoría.
   if (status === 'cancelled') tx.zrem(keys.day(booking.day), id)
   queueRev(tx, 'agenda')
@@ -504,7 +596,10 @@ export async function updateBookingDetails(id: string, patch: { name?: string; c
   const booking = await getBooking(id)
   if (!booking) return null
   const fields: Record<string, string> = {}
-  if (patch.name !== undefined) fields.name = patch.name.trim().slice(0, 80)
+  if (patch.name !== undefined) {
+    fields.name = patch.name.trim().slice(0, 80)
+    fields.nameProvisional = '0'
+  }
   if (patch.companion !== undefined) fields.companion = patch.companion.trim().slice(0, 80)
   if (patch.contactPhone !== undefined) fields.contactPhone = patch.contactPhone.trim().slice(0, 20)
   const tx = redis().multi()
@@ -517,7 +612,7 @@ export async function updateBookingDetails(id: string, patch: { name?: string; c
   tx.hset(keys.booking(id), fields)
   queueRev(tx, 'agenda')
   await tx.exec()
-  return { ...booking, ...fields } as Booking
+  return { ...booking, ...fields, nameProvisional: patch.name !== undefined ? false : booking.nameProvisional } as Booking
 }
 
 /** Cómo paga una cita creada o editada en el panel. */
@@ -646,15 +741,19 @@ export async function confirmPaidByBold(id: string, payment: { method: string; p
   return { ...moved, paymentMethod: payment.method, paymentRef: payment.paymentRef }
 }
 
-/** Marca que el cliente dice haber pagado. No confirma nada: eso lo hace el operador. */
-export async function markDepositClaimed(id: string, config: AppConfig): Promise<void> {
+/**
+ * Marca que el cliente dice haber pagado (mandó el comprobante). No confirma nada: eso lo hace el
+ * operador. Mientras tanto la reserva no se libera sola ni la puede tomar otro cliente: solo vence a la
+ * hora de la sesión, si nadie la validó.
+ */
+export async function markDepositClaimed(id: string): Promise<void> {
   const booking = await getBooking(id)
   if (!booking || !HOLD_STATUSES.includes(booking.status)) return
-  // Se amplía el apartado para que el horario no se caiga mientras el operador revisa el comprobante.
-  const holdUntil = Math.max(booking.holdUntil, Date.now() + config.holdMinutes * 60_000)
+  const holdUntil = Math.max(booking.holdUntil, booking.startTs)
   await redis().multi()
-    .hset(keys.booking(id), { paidAt: String(Date.now()), holdUntil: String(holdUntil) })
+    .hset(keys.booking(id), { paidAt: String(booking.paidAt || Date.now()), holdUntil: String(holdUntil) })
     .zadd(keys.holds, { score: holdUntil, member: id })
+    .zrem(keys.softHolds, id)
     .incr(keys.rev('agenda'))
     .exec()
 }

@@ -148,7 +148,7 @@ async function seedOne(config: AppConfig, seed: Seed) {
   if (!seed.skipChat) await attachBooking(seed.phone, booking.id, { name: seed.name, serviceId: seed.serviceId, location: seed.location })
 
   if (seed.claimedPayment) {
-    await markDepositClaimed(booking.id, config)
+    await markDepositClaimed(booking.id)
     if (!seed.skipChat) await requestAgent(seed.phone, 'Comprobante recibido (dato de ejemplo)', 'payment')
   }
 

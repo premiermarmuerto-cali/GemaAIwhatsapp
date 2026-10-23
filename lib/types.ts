@@ -194,6 +194,13 @@ export type Booking = {
   createdAt: number
   /** Epoch ms hasta el que el horario sigue apartado sin pago. 0 si ya no aplica. */
   holdUntil: number
+  /**
+   * Reserva renovada (el cliente volvió a escribir): desde este momento el horario se ofrece a otros
+   * clientes y, si otro lo reserva, se le libera a este (lib/booking.ts, renewReservation). 0 = nunca.
+   */
+  holdSoftFrom: number
+  /** Reserva creada apenas el cliente aceptó el horario, antes de que diera su nombre completo. */
+  nameProvisional: boolean
   paidAt: number
   confirmedAt: number
   /** Medio con el que se pagó el anticipo por Bold (PSE, CREDIT_CARD, NEQUI). Vacío si lo validó un operador. */
@@ -244,6 +251,8 @@ export type PresetMessages = {
   followUp22h: string
   /** La cita de Gema quedó confirmada (anticipo validado, pago por Bold o efectivo): gracias, datos e indicaciones. */
   bookingConfirmed: string
+  /** La reserva se liberó sin anticipo (venció o la tomó otro cliente): aviso amable e invitación a volver. */
+  holdReleased: string
 }
 
 export type PresetId = keyof PresetMessages

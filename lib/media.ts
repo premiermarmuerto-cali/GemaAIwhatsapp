@@ -1,6 +1,7 @@
 import { describeImage, transcribeAudio } from './ai'
+import { liveBookingOf, markDepositClaimed } from './booking'
 import { keys, redis } from './redis'
-import type { Message, MessageMedia } from './types'
+import { HOLD_STATUSES, type Message, type MessageMedia } from './types'
 import { downloadMedia } from './whatsapp'
 
 const DAY = 24 * 60 * 60
@@ -36,6 +37,12 @@ export async function processMedia(phone: string, media: MessageMedia & { kind: 
     await db.set(keys.mediaBin(media.id), file.bytes.toString('base64'), { ex: ttl })
     const note = media.kind === 'image' ? await describeImage(file.bytes, mime) : await transcribeAudio(file.bytes, mime)
     await db.set(keys.mediaInfo(media.id), JSON.stringify({ status: 'ready', mime, note } satisfies MediaInfo), { ex: ttl })
+    // Un comprobante protege la reserva en cuanto llega, responda Gema o no: el 23 oct María Angélica
+    // mandó el suyo 2 minutos antes de que venciera, Gema no alcanzó a contestar y la cita se canceló.
+    if (media.kind === 'image' && /^\s*comprobante de pago/i.test(note ?? '')) {
+      const live = await liveBookingOf(phone)
+      if (live && HOLD_STATUSES.includes(live.status)) await markDepositClaimed(live.id)
+    }
     return true
   } catch (error) {
     console.error(`[media] no se pudo procesar ${media.kind} ${media.id} de ${phone}:`, error)
