@@ -300,7 +300,7 @@ function bookingBlock(booking: Booking | null): string {
   return [
     `El cliente YA tiene una cita ${state}:`,
     `- ${serviceText(booking)} · ${LOCATION_LABEL[booking.location]} · ${dayLabel(booking.day)} a las ${clock12(booking.start)}`,
-    ...(missed ? ['- Esa hora ya pasó y no alcanzó a venir. Si quiere venir otro día, ofrécele dos o tres horas concretas y, cuando acepte una, usa [[REPROGRAMAR]]: es la misma cita del equipo, no una nueva, y no paga anticipo. No le hagas el saludo de venta ni le expliques la promoción como a un cliente nuevo.'] : []),
+    ...(missed ? [`- Esa hora ya pasó${booking.status === 'no_show' ? ' y no alcanzó a venir' : ' (no sabes si vino: no lo afirmes ni se lo preguntes)'}. Si quiere venir otro día, ofrécele dos o tres horas concretas y, cuando acepte una, usa [[REPROGRAMAR]]: es la misma cita del equipo, no una nueva, y no paga anticipo. No le hagas el saludo de venta ni le expliques la promoción como a un cliente nuevo.`] : []),
     '- No crees otra cita. Si quiere cambiarla de día, hora o sede (o toca "Reagendar"), ofrécele de una vez dos o tres horas concretas de la disponibilidad de abajo, en su misma sede, y, cuando acepte una, usa [[REPROGRAMAR]]: el pago que ya hizo se conserva. Si dice que no podrá asistir, ofrécele primero cambiarla de fecha (su pago se conserva); si prefiere cancelar, usa [[CANCELAR]].',
     ...(booking.status === 'confirmed' && !booking.attendanceConfirmedAt ? ['- Si confirma que asiste ("confirmo", "sí voy"), agradécele y usa [[ASISTE]].'] : []),
     ...(booking.status !== 'confirmed' && !booking.paidAt && !team ? ['- Si pide el link de pago otra vez, usa [[LINK]]; si prefiere transferir, [[TRANSFERENCIA]].'] : []),

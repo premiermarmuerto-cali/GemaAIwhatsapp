@@ -586,29 +586,38 @@ export async function liveBookingOf(phone: string): Promise<Booking | null> {
 }
 
 /**
- * Cita que agendó un asesor en el panel: por venir, o de los últimos días si no alcanzó a venir (la hora
- * pasó o quedó como "no asistió"). A ese cliente lo atiende el equipo por fuera de Gema y el cobro
- * también: Gema nunca le pide anticipo, link ni comprobante, no le manda seguimientos de venta, y si
- * quiere otra fecha se le reprograma esa misma cita. 22 oct: Shereek tocó "Reagendar" 20 min antes
- * de su cita; al pasar la hora el sistema la tomó por prospecto nuevo, le llegó el seguimiento de 45 min
- * y Gema le agendó otra cita cobrándole el anticipo.
+ * Cita que agendó un asesor en el panel: por venir, recién pasada (la hora pasó hace menos de 6 h y nadie
+ * la marcó) o marcada "no asistió" en los últimos 3 días. A ese cliente lo atiende el equipo por fuera de
+ * Gema y el cobro también: Gema nunca le pide anticipo, link ni comprobante, no le manda seguimientos de
+ * venta, y si quiere otra fecha se le reprograma. 22 oct: Shereek tocó "Reagendar" 20 min antes de su
+ * cita; al pasar la hora el sistema la tomó por prospecto nuevo, le llegó el seguimiento de 45 min y Gema
+ * le agendó otra cita cobrándole el anticipo.
+ *
+ * Una cita "confirmada" ya pasada cuenta solo unas horas: el equipo no marca "asistió", y quien sí vino y
+ * escribe días después para otra cita no es alguien que "no alcanzó a venir".
  */
 export async function teamBookingOf(phone: string): Promise<Booking | null> {
-  const since = Date.now() - TEAM_RESCHEDULE_DAYS * 24 * 3_600_000
+  const now = Date.now()
   const recent = await bookingsOfPhone(phone, 5)
-  return recent.find((booking) => booking.source === 'operator' && booking.kind !== 'block'
-    && [...LIVE_STATUSES, 'no_show'].includes(booking.status) && booking.startTs > since) ?? null
+  return recent.find((booking) => booking.source === 'operator' && booking.kind !== 'block' && (
+    (LIVE_STATUSES.includes(booking.status) && booking.startTs > now - TEAM_PASSED_HOURS * 3_600_000)
+    || (booking.status === 'no_show' && booking.startTs > now - TEAM_NO_SHOW_DAYS * 24 * 3_600_000)
+  )) ?? null
 }
 
-/** Días después de una cita del equipo a la que no vino en que se le sigue tratando como cliente del equipo. */
-const TEAM_RESCHEDULE_DAYS = 3
+/** Horas después de la hora de una cita del equipo (sin marcar) en que se le sigue tratando como cliente del equipo. */
+const TEAM_PASSED_HOURS = 6
+/** Días después de una cita del equipo marcada "no asistió" en que se le sigue tratando como cliente del equipo. */
+const TEAM_NO_SHOW_DAYS = 3
 
 /**
- * Otra fecha para una cita del equipo. Si sigue viva se mueve (rescheduleBooking); si ya quedó como "no
- * asistió" se crea una nueva igual (mismo asesor, misma forma de pago, confirmada): sigue siendo del equipo.
+ * Otra fecha para una cita del equipo. Si todavía no llega su hora, se mueve la misma cita
+ * (rescheduleBooking). Si la hora ya pasó (no asistió, o nadie la marcó y no se sabe si vino), esa cita
+ * NO se toca, para que el equipo la marque, y se crea una nueva igual: mismo asesor, misma forma de
+ * pago, confirmada. Moverla borraba de la agenda una sesión que quizá sí se hizo.
  */
 export async function rescheduleTeamBooking(config: AppConfig, booking: Booking, day: string, start: string, location: Location): Promise<BookingResult | null> {
-  if (booking.status !== 'no_show') return rescheduleBooking(config, booking.id, day, start, location)
+  if (booking.status !== 'no_show' && booking.startTs > Date.now()) return rescheduleBooking(config, booking.id, day, start, location)
   return createBooking(config, {
     phone: booking.phone, name: booking.name, location, serviceId: booking.serviceId, day, start,
     concern: booking.concern, notes: booking.notes, source: 'operator', advisor: booking.advisor, status: 'confirmed',

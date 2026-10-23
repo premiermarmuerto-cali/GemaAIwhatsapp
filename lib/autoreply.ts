@@ -370,9 +370,10 @@ export function returnNote(history: Message[], now = Date.now()): string | undef
  * bien" el modelo le pedía el nombre completo como a un cliente nuevo en vez de reprogramar (prueba del 23 oct).
  */
 export function teamNote(booking: Booking, now = Date.now()): string {
-  const missed = booking.status === 'no_show' || booking.startTs <= now
+  // "No alcanzó a venir" solo si el equipo la marcó así; si la hora pasó sin marcar, no se sabe si vino.
+  const state = booking.status === 'no_show' ? ', y no alcanzó a venir' : booking.startTs <= now ? ', y la hora de esa cita ya pasó (no sabes si vino: no lo afirmes)' : ''
   return [
-    `Nota del sistema: este cliente tiene la cita que le agendó ${booking.advisor || 'un asesor del equipo'} (${serviceText(booking)}, ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]})${missed ? ', y no alcanzó a venir' : ''}.`,
+    `Nota del sistema: este cliente tiene la cita que le agendó ${booking.advisor || 'un asesor del equipo'} (${serviceText(booking)}, ${dayLabel(booking.day)} a las ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]})${state}.`,
     `Si quiere otra fecha, cuando acepte una hora concreta usa YA [[REPROGRAMAR: sede · YYYY-MM-DD · HH:MM]]: es la misma cita, ya tienes su nombre (${booking.name || 'está en la cita'}) y no se le pide nada más, ni pago ni anticipo.`,
   ].join(' ')
 }
@@ -985,14 +986,23 @@ export async function applyReprogram(config: AppConfig, phone: string, payload: 
     }
   }
   const moved = result.booking
-  // Si no vino a la anterior, la nueva es otra cita: queda enlazada al chat.
-  if (moved.id !== booking.id) await attachBooking(phone, moved.id, { name: moved.name, serviceId: moved.serviceId, location: moved.location })
+  // La hora de la anterior ya había pasado: la nueva es otra cita (la anterior queda para que el equipo
+  // la marque) y queda enlazada al chat.
+  const copied = moved.id !== booking.id
+  if (copied) await attachBooking(phone, moved.id, { name: moved.name, serviceId: moved.serviceId, location: moved.location })
   // Cita del equipo: su asesor se entera por el panel y por la nota de la cita, sin pausar a Gema.
   if (moved.source === 'operator') {
     const before = `${dayLabel(booking.day)} ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}`
     const after = `${dayLabel(moved.day)} ${clock12(moved.start)} en ${LOCATION_LABEL[moved.location]}`
-    await annotateBooking(moved.id, `Reprogramada por el cliente por WhatsApp (antes: ${before}).${moved.notes ? `\n${moved.notes}` : ''}`)
-    await noteForTeam(phone, `${moved.name || 'El cliente'} reprogramó su cita${moved.advisor ? ` con ${moved.advisor}` : ''}: ${before} → ${after}`)
+    // Si la anterior decía "ya pagó", ese pago pudo usarse en la sesión anterior: que el equipo lo revise.
+    const checkPayment = copied && moved.paidAt > 0 ? ` Revisar forma de pago: viene de la cita del ${before}.` : ''
+    const note = copied
+      ? `Agendada por el cliente por WhatsApp; viene de la cita del ${before} (esa queda para marcar asistió o no asistió).${checkPayment}`
+      : `Reprogramada por el cliente por WhatsApp (antes: ${before}).`
+    await annotateBooking(moved.id, `${note}${moved.notes ? `\n${moved.notes}` : ''}`)
+    await noteForTeam(phone, copied
+      ? `${moved.name || 'El cliente'} agendó otra cita${moved.advisor ? ` con ${moved.advisor}` : ''}: ${after} (la del ${before} queda para marcar).${checkPayment}`
+      : `${moved.name || 'El cliente'} reprogramó su cita${moved.advisor ? ` con ${moved.advisor}` : ''}: ${before} → ${after}`)
   }
   const paid = isPaid(moved)
   // Cita del equipo: el pago lo maneja su asesor por fuera, Gema no lo menciona.
@@ -1007,7 +1017,7 @@ export async function applyReprogram(config: AppConfig, phone: string, payload: 
     : `Tu horario sigue apartado ${holdMinutesLeft(moved)} minutos mientras pagas.`
   return {
     append: '',
-    replaceText: `Listo, cambié tu cita de *${serviceText(moved)}* para el ${dayLabel(moved.day)} a las ${clock12(moved.start)} en ${LOCATION_LABEL[moved.location]}.${payment ? ` ${payment}` : ''}`,
+    replaceText: `Listo, ${copied ? 'te agendé tu cita' : 'cambié tu cita'} de *${serviceText(moved)}* para el ${dayLabel(moved.day)} a las ${clock12(moved.start)} en ${LOCATION_LABEL[moved.location]}.${payment ? ` ${payment}` : ''}`,
   }
 }
 
@@ -1051,11 +1061,14 @@ export async function applyCancel(phone: string, reason: string): Promise<Applie
 // `config`: solo para pruebas (probar un interruptor del panel sin encenderlo en producción).
 export async function replyOnce(phone: string, { send = sendWhatsAppText, sendImage, config: testConfig }: { send?: SendFn; sendImage?: SendImageFn; config?: AppConfig } = {}) {
   const chat = await getSummary(phone)
-  if (!chat?.botActive) return
+  if (!chat) return
 
   // Botón "Confirmo mi cita" del recordatorio: se agradece en una línea y listo. Sin modelo (no puede
-  // inventar nada ni soltar la bienvenida) y sin repetirle al cliente lo que ya sabe.
+  // inventar nada ni soltar la bienvenida) y sin repetirle al cliente lo que ya sabe. Va aunque Gema esté
+  // en pausa: el recordatorio sale igual y la confirmación quedaba sin respuesta ni registro (Lina María y
+  // Xiomary, 22 oct, en chats que el equipo había atendido el día anterior).
   if (await answerAttendanceButton(chat, send)) return
+  if (!chat.botActive) return
 
   // Con un envío simulado (pruebas) la imagen tampoco sale a Meta: va como texto por el mismo envío.
   const image = sendImage ?? (send === sendWhatsAppText ? sendWhatsAppImage : (to: string, _link: string, caption: string) => send(to, caption))

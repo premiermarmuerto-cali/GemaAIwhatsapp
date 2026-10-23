@@ -3,6 +3,16 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.8.1 · 23 de octubre de 2026
+
+**Citas del equipo ya pasadas: no se pierde la sesión que sí se hizo**
+- El equipo no marca "asistió": una cita confirmada cuya hora ya pasó cuenta como cita del equipo solo 6 horas (lo de Shereek ocurrió a los 30 minutos); una marcada "no asistió", 3 días. Antes eran 3 días para todas, y a quien sí vino y escribía para otra cita Gema le habría dicho que no alcanzó a venir.
+- Si la hora de la cita ya pasó y el cliente pide otra fecha, la anterior NO se mueve (queda para marcar asistió o no asistió) y se crea una nueva con el mismo asesor y la misma forma de pago. Si la anterior decía "ya pagó", el aviso al equipo y la nota de la cita piden revisar la forma de pago. Gema no afirma si el cliente vino o no.
+- Una cita del equipo que todavía no llega se sigue moviendo como siempre.
+
+**"Confirmo mi cita" siempre queda registrado**
+- El botón del recordatorio se contesta y marca la asistencia aunque Gema esté en pausa en ese chat (lo atendió alguien del equipo). Gema sigue en pausa para lo demás. Caso real: Lina María y Xiomary tocaron "Confirmo mi cita" el 22 y nadie les respondió.
+
 ## 1.8 · 23 de octubre de 2026
 
 Reúne lo publicado como 1.7.1, 1.7.2 y 1.7.3.
