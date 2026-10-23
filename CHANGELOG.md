@@ -3,6 +3,10 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 2.0.1 · 23 de octubre de 2026
+
+- Los filtros de la lista de chats ya no se salen de la barra: van en dos filas, Todas · IA · Humano arriba y Reservados · Agendados abajo.
+
 ## 2.0 · 23 de octubre de 2026
 
 Versión 2: las reservas sin anticipo (1.10) y su estado en el chat (1.10.1), ya corregidas.

@@ -82,21 +82,30 @@
 .search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font-size: 13px; }
 .search input::placeholder { color: var(--faint); }
 
+/* Cinco filtros no caben en una fila del ancho de la barra (desde que existe "Reservados"): van en dos,
+   Todas · IA · Humano arriba y Reservados · Agendados abajo, siempre dentro de la barra. */
 .filters {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   padding: 0 16px 12px;
   border-bottom: 1px solid var(--line-soft);
 }
 .filter {
+  grid-column: span 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   height: 26px;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
   font: 500 11px var(--font-sans);
 }
+.filter:nth-child(n + 4) { grid-column: span 3; }
 .filter:hover { color: var(--text); }
 .filter[aria-pressed='true'] { border-color: var(--primary); background: var(--primary); color: var(--primary-ink); }
 
