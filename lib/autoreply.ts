@@ -18,7 +18,7 @@ import { buildWelcome, needsAnswerAfterWelcome, WELCOME_KIND, type Welcome } fro
 import { askedDay, askedSlot, availabilityNote } from './availability-note'
 import { isOptOut } from './optout'
 import { preferencesFrom } from './preferences'
-import { renderPreset } from './presets'
+import { dateText, renderPreset } from './presets'
 import { bumpRev } from './revision'
 import { HOLD_STATUSES, type AppConfig, type Booking, type ChatSummary, type Location, type Message } from './types'
 
@@ -205,7 +205,9 @@ function forgotReserva(reply: string, bookingId: string | undefined, cashBooking
 const SAYS_FULL = /\b(complet[oa]s?|todo de una( vez)?|pag(o|ar|amos|ar[ií]a)\s+(el\s+)?(total|todo))\b/i
 const SAYS_DEPOSIT = /\b(anticipo|abono|la mitad|50 ?%)\b/i
 const SAYS_LINK = /\b(link|enlace|tarjeta|pse|bold|cr[eé]dito|d[eé]bito)\b/i
-const SAYS_PAIR = /\b(con|y)\s+(mi|una|un)\s+(herman[oa]|novi[oa]|espos[oa]|amig[oa]|mam[aá]|madre|pap[aá]|padre|hij[oa]|prim[oa]|pareja|compañer[oa]|soci[oa]|t[ií][oa]|cuñad[oa]|suegr[oa]|sobrin[oa]|vecin[oa])\b|\b(dos personas|las dos|los dos|ambas|ambos|vamos dos|somos dos|para dos)\b/i
+// "Ambas" o "las dos" solas no son dos personas: Marie dijo "las 2 promos… ¿ambas expirarían?" y Gema le
+// pidió el nombre de su acompañante, y vive sola (23 oct). Cuentan solo junto a vamos/venimos o "personas".
+const SAYS_PAIR = /\b(con|y)\s+(mi|una|un)\s+(herman[oa]|novi[oa]|espos[oa]|amig[oa]|mam[aá]|madre|pap[aá]|padre|hij[oa]|prim[oa]|pareja|compañer[oa]|soci[oa]|t[ií][oa]|cuñad[oa]|suegr[oa]|sobrin[oa]|vecin[oa])\b|\b(dos personas|vamos dos|somos dos|venimos dos|para dos personas|(vamos|venimos|iremos|ir[ií]amos|vendr[ií]amos|queremos ir) (las|los) dos|(las|los) dos (vamos|venimos|iremos|ir[ií]amos|vendr[ií]amos|queremos))\b/i
 // "ya pagué", "listo ya transferí": no está eligiendo medio, está avisando que pagó.
 const SAYS_PAID = /\b(ya\s+(te\s+)?(pagu[eé]|transfer[ií]|consign[eé]|envi[eé])|listo,?\s+(ya\s+)?(pagu|transfer|consign))/i
 const SAYS_ALONE =/\b(solo yo|yo sol[oa]|solo para m[ií]|nada m[aá]s yo|una persona|para m[ií] sol[oa]|voy sol[oa])\b/i
@@ -352,7 +354,8 @@ const RETURN_GAP_MS = 6 * 3_600_000
 /** Al volver, Gema lee más mensajes de la conversación anterior. */
 const HISTORY_ON_RETURN = 50
 // Quedó en confirmar algo: "te confirmo", "le pregunto a mi amiga", "tengo que cuadrar con mi hermana".
-const SAYS_WILL_CONFIRM = /\b(te\s+(confirmo|aviso|escribo|cuento|digo)|le\s+(pregunto|consulto|confirmo|digo|aviso)|(confirmo|cuadro|hablo|pregunto|consulto|miro)\s+con\b|(voy a|tengo que|debo|necesito)\s+(confirmar|preguntar|cuadrar|consultar|mirar|revisar))/i
+// También lo usa lib/automations.ts: a quien dijo que avisa no le salen los seguimientos de 45 min y 3 h.
+export const SAYS_WILL_CONFIRM = /\b(te\s+(confirmo|aviso|escribo|cuento|digo)|le\s+(pregunto|consulto|confirmo|digo|aviso)|(confirmo|cuadro|hablo|pregunto|consulto|miro)\s+con\b|(voy a|tengo que|debo|necesito)\s+(confirmar|preguntar|cuadrar|consultar|mirar|revisar|pensar)|yo\s+te\s+(aviso|confirmo|escribo)|(d[eé]j[ae]me|deme|dame)\s+(unos?|un)\s+(minutos?|momento|rato)|lo\s+pienso|m[aá]s\s+tarde\s+te|luego\s+te)/i
 
 /**
  * El cliente vuelve a escribir horas o días después (lo normal en el 2x1: queda en confirmar el día con
@@ -419,6 +422,53 @@ const DENIES = /\b(no|sin|tampoco|solo|solamente|unicamente)\b|no aplica|no tien
  * Se quita la frase que nombra el 2x1 junto a un servicio sin 2x1, salvo que lo niegue ("en esa no
  * hay 2x1") o que en la misma frase nombre también uno que sí lo tiene ("sí lo tiene la de peeling").
  */
+/** Los 2x1 vigentes hoy con su fecha de cierre ('' = sin fecha), en el orden del catálogo. */
+function liveTwoForOne(config: AppConfig, today: string): Array<{ label: string; until: string }> {
+  return config.services.filter((service) => twoForOneApplies(config, service.id, today)).map((service) => ({ label: service.label, until: config.twoForOne[service.id] ?? '' }))
+}
+
+/** "el 2x1 de la Limpieza Peeling y Hidratación va hasta el 31 de octubre y el de … hasta el 30 de noviembre". */
+function twoForOneDatesText(config: AppConfig, today: string): string {
+  const promos = liveTwoForOne(config, today)
+  return promos.map((promo, index) => `${index ? 'el de la' : 'el 2x1 de la'} ${promo.label} ${promo.until ? `${index ? '' : 'va '}hasta el ${dateText(promo.until)}` : 'no tiene fecha de cierre por ahora'}`).join(' y ')
+}
+
+// El cliente pregunta por fechas o vigencia de la promoción.
+const ASKS_PROMO_DATES = /\b(vence|vencen|vigen|expir|termina|hasta\s+cu[aá]ndo|despu[eé]s\s+del|fecha|promo|2\s?[x×*]\s?1|31)/i
+
+/**
+ * Las fechas reales de cada 2x1, justo antes de responder si el cliente pregunta por fechas: con solo el
+ * prompt, Gema le dijo a Marie que ambos 2x1 vencían el 31 y a Marina que después del 31 no había 2x1
+ * (el de Líneas de Expresión sigue; 23 oct).
+ */
+export function promoDatesNote(config: AppConfig, history: Message[]): string | undefined {
+  const last = history.at(-1)
+  const today = dayKey()
+  if (last?.sender !== 'user' || !ASKS_PROMO_DATES.test(last.text) || liveTwoForOne(config, today).length < 2) return undefined
+  return `Nota del sistema: fechas REALES del 2x1, cada uno con la suya: ${twoForOneDatesText(config, today)}. Nunca digas que todos vencen el mismo día ni que después de una fecha ya no hay 2x1 si otro sigue. Si viene una sola persona, paga la sesión normal (el 2x1 es para dos).`
+}
+
+// Frases que dan a todos los 2x1 la misma fecha, o dicen que después de una fecha ya no hay ninguno.
+const SAME_END_CLAIM = /\b(ambas|ambos|las dos|los dos|todas las|las)\s+(promos?|promociones|2\s?x\s?1)\b[^.!?\n]{0,40}\b(expiran|vencen|terminan|van hasta|son hasta|aplican hasta|valen hasta)\b|\bambas\s+(expiran|vencen|terminan|van hasta)\b|\bdespu[eé]s del\s+\d{1,2}[^.!?\n]{0,80}\b(no|ya no)\s+(aplica|aplican|hay|tenemos|habr[aá]|est[aá]n)\b[^.!?\n]{0,40}\b(promos?|promociones|2\s?x\s?1|descuentos?)\b/i
+
+/** Corrige lo que contradiga las fechas reales de los 2x1 (ver promoDatesNote): quita la frase y dice las fechas. */
+export function fixPromoDates(config: AppConfig, phone: string, text: string): string {
+  const today = dayKey()
+  const promos = liveTwoForOne(config, today)
+  if (new Set(promos.map((promo) => promo.until)).size < 2 || !SAME_END_CLAIM.test(text)) return text
+  // Con la frase equivocada se va la que se apoya en ella ("así que tienes hasta ese día").
+  const parts = text.split(SEPARATOR).map((part) => {
+    let dropped = false
+    return part.split(/(?<=[.!?])\s+/).filter((sentence) => {
+      const wrong = SAME_END_CLAIM.test(sentence) || (dropped && /\b(ese d[ií]a|esa fecha)\b/i.test(sentence))
+      if (wrong) dropped = true
+      return !wrong
+    }).join(' ').trim()
+  })
+  console.warn(`[autoreply] ${phone}: el modelo dio una fecha equivocada del 2x1; se corrige`)
+  return [...parts.filter(Boolean), `ojo: ${twoForOneDatesText(config, today)}`].join(SEPARATOR)
+}
+
 export function stripWrongPromo(config: AppConfig, phone: string, text: string): string {
   if (!PROMO_WORD.test(text)) return text
   const today = dayKey()
@@ -734,6 +784,14 @@ function looksLikeFullName(text: string): boolean {
   const clean = fold(text.trim().replace(/[.!]+$/, ''))
   const words = clean.split(/\s+/)
   return words.length >= 2 && words.length <= 5 && /^[a-zñ' -]+$/.test(clean) && !NOT_NAME_WORDS.test(clean)
+}
+
+/** Nombres completos en un mensaje que solo trae nombres: uno, o dos unidos por "y" (el suyo y el de su acompañante). */
+function namesIn(text: string): string[] {
+  const clean = text.trim().replace(/[.!]+$/, '')
+  if (looksLikeFullName(clean)) return [clean.slice(0, 80)]
+  const parts = clean.split(/\s+y\s+|\s*,\s*/i).map((part) => part.trim())
+  return parts.length === 2 && parts.every(looksLikeFullName) ? parts.map((part) => part.slice(0, 80)) : []
 }
 
 /** Un nombre de verdad: con letras, no "-", "cliente", "nombre" ni similares. */
@@ -1180,6 +1238,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
       hidden && !contactPhone ? HIDDEN_NUMBER_NOTE : '',
       serviceHint(config, history),
       serviceChoiceNote(config, history),
+      promoDatesNote(config, history),
       teamBooking ? '' : paymentNote(history, config.cashBooking, config.depositPerk.trim()),
       // La agenda real del día y la sede que pregunta (20 oct: dijo "no hay espacio" en Chipichape y sí había).
       await availabilityNote(config, history, chat.lead).catch((error) => {
@@ -1293,7 +1352,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   // se unen con el mismo separador y viajan enteros.
   // Con [[EFECTIVO]] el "lo confirmo con la sede y te escribo" es verdad: no se quita como relleno.
   const keepLater = markers.some((marker) => marker.kind === 'EFECTIVO')
-  let text = stripWrongPromo(config, phone, styleModelText(stripInventedPaymentData(phone, reply.replace(MARKERS, '').trim()), { keepLater }))
+  let text = fixPromoDates(config, phone, stripWrongPromo(config, phone, styleModelText(stripInventedPaymentData(phone, reply.replace(MARKERS, '').trim()), { keepLater })))
 
   // FICHA es silenciosa: solo enriquece el panel y el prompt de la próxima vuelta.
   const ficha = markers.find((marker) => marker.kind === 'FICHA')
@@ -1353,7 +1412,9 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
   const pareja = markers.find((marker) => marker.kind === 'PAREJA')
   // Nombre completo para una reserva provisional: la marca, o el mensaje del cliente si es solo un nombre.
   const nombreMarker = markers.find((marker) => marker.kind === 'NOMBRE')?.payload ?? ''
-  const nombre = isRealName(nombreMarker) ? nombreMarker.slice(0, 80) : liveAtStart?.nameProvisional && looksLikeFullName(lastClientText) ? lastClientText.trim().slice(0, 80) : ''
+  // "Laura Gómez y Sofía Gómez": el suyo y el de su acompañante.
+  const [ownName, otherName] = liveAtStart?.nameProvisional ? namesIn(lastClientText) : []
+  const nombre = isRealName(nombreMarker) ? nombreMarker.slice(0, 80) : ownName ?? ''
   const reprogramar = markers.find((marker) => marker.kind === 'REPROGRAMAR')
   const cancelar = markers.find((marker) => marker.kind === 'CANCELAR')
   const payFull = planChoice ? planChoice === 'full' : markers.some((marker) => marker.kind === 'COMPLETO')
@@ -1381,7 +1442,7 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
       applied = applied.replaceText !== undefined ? { ...applied, replaceText: `${applied.replaceText}\n\n${question}` } : { ...applied, append: `${applied.append}\n\n${question}` }
     }
   } else if (nombre && liveAtStart?.nameProvisional) {
-    applied = await completeProvisional(liveAtStart, nombre, pareja && pareja.payload !== '-' ? pareja.payload : null)
+    applied = await completeProvisional(liveAtStart, nombre, pareja && pareja.payload !== '-' ? pareja.payload : otherName ?? null)
   } else if (reprogramar) {
     applied = await applyReprogram(config, phone, reprogramar.payload)
   } else if (cancelar) {

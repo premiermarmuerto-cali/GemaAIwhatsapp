@@ -3,6 +3,22 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 2.1 · 23 de octubre de 2026
+
+Ajustes de la revisión de las 11 a.m. a las 3 p.m. del 23 oct.
+
+**Fechas del 2x1**
+- Gema le dijo a Marie que los dos 2x1 vencían el 31 de octubre y a Marina que después del 31 no había 2x1 (el de Líneas de Expresión va hasta el 30 de noviembre). Ahora, cuando el cliente pregunta por fechas, Gema recibe antes de responder la fecha real de cada 2x1. Y si aun así dice que todos vencen el mismo día o que después de una fecha ya no hay 2x1, el servidor quita esa frase y dice las fechas correctas.
+- El texto de la promoción en la configuración contradecía al sistema: decía "a la misma hora, cada una en su cabina" (cada sede tiene una cabina: van seguidas) y que Líneas de Expresión no tenía fecha límite. Se corrigió: las fechas salen solo de la vigencia configurada de cada 2x1.
+
+**Menos mensajes a quien pidió tiempo**
+- Si el cliente dice que consulta y avisa ("le pregunto a mi acompañante y te aviso", "deme unos minutos", "te confirmo más tarde"), no le salen los seguimientos de 45 min ni de 3 h: solo el de 22 h.
+- La plantilla de Meta "retomar" sale al menos 20 h después del último seguimiento automático (a L. Ruiz le llegaron con dos horas de diferencia).
+
+**Acompañante**
+- "Las 2 promos" o "¿ambas expiran?" ya no se toman como que viene con alguien (a Marie le pidieron el nombre de su acompañante y vive sola).
+- En una reserva provisional, si el cliente responde "Laura Gómez y Sofía Gómez", queda a nombre de la primera con la segunda como acompañante.
+
 ## 2.0.1 · 23 de octubre de 2026
 
 - Los filtros de la lista de chats ya no se salen de la barra: van en dos filas, Todas · IA · Humano arriba y Reservados · Agendados abajo.

@@ -99,7 +99,7 @@ export const DEFAULT_DEPOSIT_PERK = 'una exfoliación de manos con la sal del Ma
  *     textos de 45 min y 22 h por los nuevos si no fueron editados.
  *   3 (v1.6): con una sola cabina el 2x1 va en sesiones seguidas: la bienvenida ya no dice "a la misma hora".
  */
-export const CONFIG_REVISION = 6
+export const CONFIG_REVISION = 7
 
 export const DEFAULT_CONFIG: AppConfig = {
   revision: CONFIG_REVISION,
@@ -160,6 +160,14 @@ function migrate(config: AppConfig, from: number): AppConfig {
   if (from < 6 && next.messages.followUpPayment === LEGACY_FOLLOW_UP_PAYMENT) {
     // v1.10: el aviso de anticipo ya no dice los minutos que quedan (reservas por la ventana de WhatsApp).
     next = { ...next, messages: { ...next.messages, followUpPayment: DEFAULT_PRESETS.followUpPayment } }
+  }
+  if (from < 7) {
+    // v2.1: el texto de la promoción contradecía la agenda y el cobro. Decía "a la misma hora (cada una en
+    // su cabina)" (cada sede tiene una cabina: van seguidas) y "Líneas de Expresión no tiene fecha límite"
+    // (la vigencia real es la del 2x1 configurado). Gema dijo que ambos 2x1 vencían el 31 (23 oct).
+    next = { ...next, promo: next.promo
+      .replace('el mismo día y a la misma hora (cada una en su cabina)', 'el mismo día (con una cabina por sede, una después de la otra)')
+      .replace('En la Limpieza Peeling y Hidratación es válido para sesiones hasta el 31 de octubre de 2026; en la de Líneas de Expresión, por ahora no tiene fecha límite. ', 'Cada 2x1 tiene su propia fecha límite: la de la lista de abajo. ') }
   }
   return { ...next, revision: CONFIG_REVISION }
 }

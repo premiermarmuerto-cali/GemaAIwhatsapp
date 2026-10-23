@@ -34,7 +34,7 @@
  * tardía de Meta, una caída del servidor) se vuelven a responder; si ya pasaron 24 h, pasan a una
  * persona. 20 oct: cinco chats del 18 y 19 recibieron la primera respuesta más de un día después.
  */
-import { autoReply, markPendingReply } from './autoreply'
+import { autoReply, markPendingReply, SAYS_WILL_CONFIRM } from './autoreply'
 import { bookingsOfPhone, getBookings, HOLD_EXPIRED_REASON, HOLD_TAKEN_REASON, liveBookingOf, markBookingAuto, releaseHold, serviceText, suggestStarts, sweepExpiredHolds, teamBookingOf } from './booking'
 import { beforeQuiet, clock12, dayKey, fullDayLabel, isQuietHours, NIGHT_REPLY_MAX_AGE_MS, nextHumanWindow } from './calendar'
 import { ensureChatForBooking, getHistory, getSummary, listChats, markChatAuto, recordOutbound, requestAgent, updateChat } from './chats'
@@ -375,16 +375,21 @@ async function waitingProspect(chat: ChatSummary, run: Run, kind: string, fromMs
  */
 async function earlyFollowUps(run: Run, chats: Map<string, ChatSummary>) {
   for (const chat of chats.values()) {
-    if (await waitingProspect(chat, run, 'seguimiento_45m', 40 * MINUTE, 3 * HOUR)) {
+    const due45 = await waitingProspect(chat, run, 'seguimiento_45m', 40 * MINUTE, 3 * HOUR)
+    const due3h = !due45 && await waitingProspect(chat, run, 'seguimiento_3h', 3 * HOUR, 22 * HOUR)
+    if (!due45 && !due3h) continue
+    // Dijo que consulta y avisa ("le pregunto a mi acompañante y te aviso", "deme unos minutos"): solo le
+    // queda el de 22 h (Premier, 23 oct; a Marina le llegó el de 45 min a los 49 minutos de decirlo).
+    const [lastClient] = (await getHistory(chat.phone, 12)).filter((message) => message.sender === 'user').slice(-1)
+    if (lastClient && SAYS_WILL_CONFIRM.test(lastClient.text)) continue
+    if (due45) {
       // Sin ninguna hora libre que ofrecer, este seguimiento no sale (renderPreset devuelve null).
       const body = await renderPreset(run.config, 'followUp45', { chat, now: run.now })
       if (body) await run.text(chat, 'seguimiento_45m', body)
       continue
     }
-    if (await waitingProspect(chat, run, 'seguimiento_3h', 3 * HOUR, 22 * HOUR)) {
-      const body = await renderPreset(run.config, 'followUp3h', { chat, now: run.now })
-      if (body) await run.text(chat, 'seguimiento_3h', body)
-    }
+    const body = await renderPreset(run.config, 'followUp3h', { chat, now: run.now })
+    if (body) await run.text(chat, 'seguimiento_3h', body)
   }
 }
 
@@ -422,6 +427,9 @@ async function cashRetakes(run: Run, chats: Map<string, ChatSummary>) {
   }
 }
 
+/** La plantilla de retomar sale al menos 20 h después del último seguimiento automático. */
+const TEMPLATE_AFTER_FOLLOW_UP_MS = 20 * HOUR
+
 /** Alertas que puso el propio sistema por un mensaje sin responder: la plantilla las resuelve, no hay que esperar a una persona. */
 const UNANSWERED_REASON = /^Mensaje (sin responder|que llegó con más de 24 h)/
 
@@ -441,6 +449,10 @@ async function reengageTemplates(run: Run, chats: Map<string, ChatSummary>) {
     // Una alerta del propio sistema pausa a Gema (requestAgent): eso no debe frenar esta plantilla, que es
     // justo lo que la alerta pide. Una pausa que puso una persona, sí.
     if (chat.noMarketing || chat.optedOut || (!chat.botActive && !systemFlag) || (chat.needsAgent && !systemFlag) || (chat.autoSent.retomar_cita_limpieza ?? 0) > chat.lastInboundAt) continue
+    // Al menos 20 h después del último seguimiento: a L. Ruiz le llegaron el de 22 h y esta plantilla con
+    // dos horas de diferencia (23 oct), tres mensajes sin respuesta en menos de un día.
+    const lastFollowUp = Math.max(0, ...Object.entries(chat.autoSent).filter(([kind]) => kind.startsWith('seguimiento_')).map(([, at]) => at))
+    if (run.now - lastFollowUp < TEMPLATE_AFTER_FOLLOW_UP_MS) continue
     // A quien se le venció un horario sin pagar le corresponde anticipo_pendiente, no esta.
     const [last] = await bookingsOfPhone(chat.phone, 1)
     if (last && (last.status !== 'cancelled' || last.createdAt > chat.lastInboundAt - DAY)) continue
