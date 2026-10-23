@@ -8,17 +8,18 @@ import { formatPhone } from '@/lib/phone'
 import type { AgentKind, Box, ChatLists, ChatSummary } from '@/lib/types'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { APP_VERSION } from '@/lib/version'
-import { AGENT_LABEL, avatarLabel, PREVIEW_PREFIX } from './labels'
+import { AGENT_LABEL, avatarLabel, bookingBadge, PREVIEW_PREFIX } from './labels'
 import styles from './Sidebar.module.css'
 
-type Filter = 'all' | AgentKind | 'ai' | 'human' | 'booked'
+type Filter = 'all' | AgentKind | 'ai' | 'human' | 'reserved' | 'booked'
 type Test = (chat: ChatSummary) => boolean
 
 const FILTERS: Array<{ id: Filter; label: string; test: Test }> = [
   { id: 'all', label: 'Todas', test: () => true },
   { id: 'ai', label: 'IA', test: (chat) => chat.botActive },
   { id: 'human', label: 'Humano', test: (chat) => !chat.botActive },
-  { id: 'booked', label: 'Agendados', test: (chat) => chat.stage === 'booked' },
+  { id: 'reserved', label: 'Reservados', test: (chat) => bookingBadge(chat)?.state === 'reserved' },
+  { id: 'booked', label: 'Agendados', test: (chat) => bookingBadge(chat)?.state === 'booked' },
 ]
 const alertOf = (kind: AgentKind): Test => (chat) => chat.needsAgent && chat.agentKind === kind
 // Los anticipos por validar van primero: son citas esperando confirmación.
@@ -144,9 +145,10 @@ export function Sidebar({ lists, box, onBoxChange, activePhone, onSelect, loaded
 }
 
 function ChatRow({ chat, active, onSelect }: { chat: ChatSummary; active: boolean; onSelect: (phone: string) => void }) {
+  const badge = bookingBadge(chat)
   return (
     <button className={styles.row} aria-current={active || undefined} data-agent={chat.needsAgent ? chat.agentKind : undefined} onClick={() => onSelect(chat.phone)}>
-      <span className={styles.avatar} data-booked={chat.stage === 'booked' || undefined}>{avatarLabel(chat)}</span>
+      <span className={styles.avatar} data-booked={badge?.state === 'booked' || undefined} data-reserved={badge?.state === 'reserved' || undefined}>{avatarLabel(chat)}</span>
       <span className={styles.rowBody}>
         <span className={styles.rowTop}>
           <strong>{chat.name || formatPhone(chat.phone)}</strong>
@@ -160,7 +162,7 @@ function ChatRow({ chat, active, onSelect }: { chat: ChatSummary; active: boolea
           <span className={`dot ${chat.needsAgent ? `dot-agent dot-${chat.agentKind}` : chat.botActive ? 'dot-ai' : 'dot-human'}`} />
           {chat.needsAgent ? <span className={styles.agentLabel} data-kind={chat.agentKind}>{AGENT_LABEL[chat.agentKind]}</span> : chat.botActive ? 'Gema' : 'Humano'}
           {chat.lead.concern && <span className={styles.rowName}>· {chat.lead.concern}</span>}
-          {chat.stage === 'booked' && <span className="badge badge-booked">Agendado</span>}
+          {badge && <span className={badge.className}>{badge.label}</span>}
         </span>
       </span>
     </button>

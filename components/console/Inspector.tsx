@@ -9,7 +9,7 @@ import { formatPhone } from '@/lib/phone'
 import type { ChatSummary, Stats } from '@/lib/types'
 import { windowRemainingMs } from '@/lib/window'
 import { TemplatePanel } from './TemplatePanel'
-import { AGENT_LABEL, AUTO_LABEL, capiLabel, leadSummary, OBJECTION_LABEL, paymentMethods, regionLabel } from './labels'
+import { AGENT_LABEL, AUTO_LABEL, bookingBadge, capiLabel, leadSummary, OBJECTION_LABEL, paymentMethods, regionLabel } from './labels'
 import styles from './Inspector.module.css'
 
 type Props = {
@@ -77,7 +77,7 @@ export function Inspector({ stats, chat, onOpenSettings, onClose, onSendPreset, 
             {leadSummary(chat) && <div data-stack><dt>Ficha de Gema</dt><dd>{leadSummary(chat)}</dd></div>}
             <div><dt>Cobro</dt><dd>{regionLabel(chat)}</dd></div>
             <div data-stack><dt>Métodos</dt><dd>{paymentMethods(chat)}</dd></div>
-            <div><dt>Estado</dt><dd>{chat.stage === 'booked' ? <span className="badge badge-booked">Agendado</span> : 'En conversación'}</dd></div>
+            <div><dt>Estado</dt><dd>{bookingBadge(chat) ? <span className={bookingBadge(chat)!.className}>{bookingBadge(chat)!.label}</span> : 'En conversación'}</dd></div>
             <div><dt>Atiende</dt><dd><span className={`dot ${chat.needsAgent ? `dot-agent dot-${chat.agentKind}` : chat.botActive ? 'dot-ai' : 'dot-human'}`} />{chat.needsAgent ? AGENT_LABEL[chat.agentKind] : chat.botActive ? 'Gema (IA)' : 'Operador'}</dd></div>
             {chat.needsAgent && <div data-stack><dt>{chat.agentKind === 'payment' ? 'Anticipo' : 'Motivo'}</dt><dd>{chat.agentReason}</dd></div>}
             <div><dt>Ventana 24 h</dt><dd data-closed={!remaining || undefined}>{remaining ? `${formatDuration(remaining)} restantes` : 'Cerrada'}</dd></div>

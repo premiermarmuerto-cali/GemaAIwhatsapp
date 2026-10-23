@@ -69,6 +69,11 @@ export type ChatSummary = {
   lead: Lead
   /** Cita viva de este chat (hold, pendiente de pago o confirmada), si existe. */
   bookingId: string
+  /**
+   * En qué va esa cita, como la pinta la agenda: reservada sin anticipo, reservada con comprobante por
+   * validar, agendada (confirmada o realizada) o liberada/cancelada. '' si no se consultó o no tiene cita.
+   */
+  bookingState: BookingState
   /** Último pago confirmado por Bold, para el aviso emergente del panel. */
   paymentNotice: string
   paymentNoticeAt: number
@@ -103,6 +108,8 @@ export type ChatSummary = {
   /** Último evento de conversión enviado a Meta (JSON: evento, ok, motivo, momento). '' si ninguno. */
   capiStatus: string
 }
+
+export type BookingState = '' | 'reserved' | 'validating' | 'booked' | 'released'
 
 export type ChatDetail = ChatSummary & { messages: Message[] }
 

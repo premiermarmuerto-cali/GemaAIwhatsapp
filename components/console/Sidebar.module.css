@@ -193,6 +193,7 @@
   font: 600 11px var(--font-sans);
 }
 .avatar[data-booked] { background: var(--primary); color: var(--primary-ink); }
+.avatar[data-reserved] { outline: 1px dashed var(--primary); outline-offset: 2px; }
 
 .rowBody { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; }
 .rowTop { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }

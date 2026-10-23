@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { ArchiveIcon, BackIcon, BoltIcon, CalendarIcon, InboxIcon, PanelIcon, TrashIcon, UserIcon } from '@/components/icons'
 import { formatPhone } from '@/lib/phone'
 import type { ChatSummary, Stage } from '@/lib/types'
-import { AGENT_LABEL, avatarLabel, leadSummary, regionLabel } from './labels'
+import { AGENT_LABEL, avatarLabel, bookingBadge, leadSummary, regionLabel } from './labels'
 import styles from './ChatView.module.css'
 
 type Props = {
@@ -20,6 +20,7 @@ type Props = {
 export function ChatHeader({ chat, onBack, onToggleBot, onStageChange, onArchiveChange, onDelete, onOpenPanel }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const booked = chat.stage === 'booked'
+  const badge = bookingBadge(chat)
   const lead = leadSummary(chat)
 
   // La confirmación de borrado caduca sola para no dejar el botón "armado".
@@ -34,7 +35,7 @@ export function ChatHeader({ chat, onBack, onToggleBot, onStageChange, onArchive
       <button className={`btn btn-ghost btn-icon ${styles.back}`} onClick={onBack} aria-label="Volver a la lista"><BackIcon /></button>
 
       <div className={styles.person}>
-        <span className={styles.avatar} data-booked={booked || undefined}>{avatarLabel(chat)}</span>
+        <span className={styles.avatar} data-booked={badge?.state === 'booked' || undefined} data-reserved={badge?.state === 'reserved' || undefined}>{avatarLabel(chat)}</span>
         <div className={styles.personCopy}>
           <h1>{chat.name || formatPhone(chat.phone)}</h1>
           <div className={styles.personMeta}>
@@ -42,7 +43,7 @@ export function ChatHeader({ chat, onBack, onToggleBot, onStageChange, onArchive
             {lead && <span>{lead}</span>}
             <span className="badge badge-region">{regionLabel(chat)}</span>
             {chat.needsAgent && <span className={`badge ${chat.agentKind === 'payment' ? 'badge-payment' : 'badge-agent'}`}>{AGENT_LABEL[chat.agentKind]}</span>}
-            {booked && <span className="badge badge-booked">Agendado</span>}
+            {badge && <span className={badge.className}>{badge.label}</span>}
             {chat.archived && <span className="badge badge-archived">Archivado</span>}
           </div>
         </div>

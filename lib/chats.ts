@@ -7,7 +7,7 @@ import { countryOf, regionOf } from './phone'
 import { keys, redis, toHash } from './redis'
 import { bumpRev, queueRev } from './revision'
 import { queueStat } from './stats'
-import type { AgentKind, Box, ChatDetail, ChatLists, ChatPatch, ChatSummary, Lead, Location, Message, Sender } from './types'
+import type { AgentKind, BookingState, Box, ChatDetail, ChatLists, ChatPatch, ChatSummary, Lead, Location, Message, Sender } from './types'
 
 const HISTORY_LIMIT = 500
 const DETAIL_MESSAGES = 200
@@ -42,6 +42,7 @@ function toSummary(phone: string, raw: Record<string, string>): ChatSummary {
       part: raw.leadPart ?? '',
     },
     bookingId: raw.bookingId ?? '',
+    bookingState: '',
     paymentNotice: raw.paymentNotice ?? '',
     paymentNoticeAt: Number(raw.paymentNoticeAt ?? 0),
     teamNotice: raw.teamNotice ?? '',
@@ -80,12 +81,38 @@ export async function listChats(): Promise<ChatLists> {
     const pipe = db.pipeline()
     phones.forEach((phone) => pipe.hgetall(keys.chat(phone)))
     const rows = await pipe.exec<unknown[]>()
-    return phones.flatMap((phone, index) => {
+    return withBookingState(phones.flatMap((phone, index) => {
       const hash = toHash(rows[index])
       return hash ? [toSummary(phone, hash)] : []
-    })
+    }))
   }))
   return { inbox, archived }
+}
+
+/**
+ * En qué va la cita de cada chat, para que el panel diga lo mismo que la agenda: "Reservado" mientras
+ * falta el anticipo y "Agendado" cuando está confirmada (23 oct: los chats con reserva salían como
+ * agendados). Una sola petición a Upstash para todos los chats con cita.
+ */
+async function withBookingState(chats: ChatSummary[]): Promise<ChatSummary[]> {
+  const withBooking = chats.filter((chat) => chat.bookingId)
+  if (!withBooking.length) return chats
+  const pipe = redis().pipeline()
+  withBooking.forEach((chat) => pipe.hmget(keys.booking(chat.bookingId), 'status', 'paidAt'))
+  // En un pipeline, Upstash devuelve hmget como lista ([estado, pagado]), no como objeto.
+  const rows = await pipe.exec<Array<Array<string | null> | Record<string, string | null> | null>>()
+  const states = new Map(withBooking.map((chat, index) => {
+    const row = rows[index]
+    const [status, paidAt] = Array.isArray(row) ? row : [row?.status, row?.paidAt]
+    return [chat.phone, bookingStateOf(String(status ?? ''), Number(paidAt ?? 0))] as const
+  }))
+  return chats.map((chat) => (states.has(chat.phone) ? { ...chat, bookingState: states.get(chat.phone)! } : chat))
+}
+
+function bookingStateOf(status: string, paidAt: number): BookingState {
+  if (status === 'hold' || status === 'pending_payment') return paidAt ? 'validating' : 'reserved'
+  if (status === 'confirmed' || status === 'done') return 'booked'
+  return status ? 'released' : ''
 }
 
 /** Devuelve el chat con sus últimos mensajes y lo marca como leído. */
@@ -97,7 +124,8 @@ export async function getChat(phone: string): Promise<ChatDetail | null> {
     db.lrange<string>(keys.messages(phone), -DETAIL_MESSAGES, -1),
     summary.unread ? db.hset(keys.chat(phone), { unread: '0' }) : null,
   ])
-  return { ...summary, unread: 0, messages: await attachMediaInfo(parseMessages(items)) }
+  const [withState] = await withBookingState([summary])
+  return { ...withState, unread: 0, messages: await attachMediaInfo(parseMessages(items)) }
 }
 
 export async function getHistory(phone: string, count: number): Promise<Message[]> {

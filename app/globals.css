@@ -250,6 +250,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   white-space: nowrap;
 }
 .badge-booked { background: var(--primary); color: var(--primary-ink); }
+/* Reserva sin anticipo confirmado: el mismo borde punteado tan que en la agenda. */
+.badge-reserved { border: 1px dashed var(--primary); color: var(--primary); background: var(--primary-soft); }
 .badge-archived { background: var(--surface-3); color: var(--muted); }
 /* El pais del cliente decide moneda y metodos de pago: se muestra siempre. */
 .badge-region { border: 1px solid var(--line); color: var(--muted); }

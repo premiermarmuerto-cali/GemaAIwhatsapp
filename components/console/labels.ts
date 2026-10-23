@@ -19,6 +19,18 @@ export function leadSummary(chat: Pick<ChatSummary, 'lead'>): string {
   return parts.join(' · ')
 }
 
+/**
+ * Cómo va la cita del chat, con las mismas palabras que la agenda: "Reservado" mientras falta el anticipo
+ * (o el equipo valida el comprobante) y "Agendado" cuando está confirmada. Una reserva liberada no lleva
+ * etiqueta. Sin cita consultada, vale la marca de "agendado" del chat (la que pone un operador a mano).
+ */
+export function bookingBadge(chat: Pick<ChatSummary, 'stage' | 'bookingState'>): { label: string; className: string; state: 'reserved' | 'booked' } | null {
+  if (chat.bookingState === 'reserved') return { label: 'Reservado', className: 'badge badge-reserved', state: 'reserved' }
+  if (chat.bookingState === 'validating') return { label: 'Reservado · comprobante', className: 'badge badge-reserved', state: 'reserved' }
+  if (chat.bookingState === 'booked' || (!chat.bookingState && chat.stage === 'booked')) return { label: 'Agendado', className: 'badge badge-booked', state: 'booked' }
+  return null
+}
+
 export function avatarLabel(chat: Pick<ChatSummary, 'name' | 'phone'>) {
   const initial = chat.name.trim()[0]
   return (initial ?? chat.phone.slice(-2)).toUpperCase()

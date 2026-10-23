@@ -25,6 +25,7 @@
   font: 600 12px var(--font-sans);
 }
 .avatar[data-booked] { background: var(--primary); color: var(--primary-ink); }
+.avatar[data-reserved] { outline: 1px dashed var(--primary); outline-offset: 2px; }
 .personCopy { min-width: 0; }
 .personCopy h1 { margin: 0 0 6px; overflow: hidden; font: 600 16px var(--font-sans); letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
 .personMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; }

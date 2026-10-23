@@ -3,6 +3,13 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.10.1 · 23 de octubre de 2026
+
+**El chat dice lo mismo que la agenda**
+- En la lista de chats, el encabezado y la ficha, un chat con reserva sin anticipo dice **"Reservado"** (borde punteado tan, como en la agenda), o **"Reservado · comprobante"** si el equipo tiene que validar el pago. Solo dice **"Agendado"** cuando la cita está confirmada. Antes todos salían como "Agendado".
+- Si la reserva se liberó, el chat deja de verse como agendado.
+- Nuevo filtro "Reservados" en la lista de chats; "Agendados" muestra solo las citas confirmadas.
+
 ## 1.10 · 23 de octubre de 2026
 
 **Reservas sin anticipo (acordado con Premier)**
