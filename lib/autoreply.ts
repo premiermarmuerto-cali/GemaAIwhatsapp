@@ -15,7 +15,7 @@ import { insertAfter, SEPARATOR, styleModelText, toMessages } from './reply-styl
 import { keys, redis } from './redis'
 import { sendWhatsAppImage, sendWhatsAppText } from './whatsapp'
 import { buildWelcome, needsAnswerAfterWelcome, WELCOME_KIND, type Welcome } from './welcome'
-import { availabilityNote } from './availability-note'
+import { askedSlot, availabilityNote } from './availability-note'
 import { isOptOut } from './optout'
 import { preferencesFrom } from './preferences'
 import { renderPreset } from './presets'
@@ -84,7 +84,11 @@ const PICKS_TIME = /\b\d{1,2}(:\d{2})?\s*(a\.?\s?m\.?|p\.?\s?m\.?|am|pm|h)?\b|\b
 export const CASH_REASON ='Pago en efectivo: quiere pagar todo en la sede, sin anticipo'
 
 // Frases con las que el modelo a veces da una cita por hecha sin haber emitido [[RESERVA]].
-const SOUNDS_BOOKED = /\b(te (agend|reserv)[eoé]|(entonces,? )?(agend|reserv)(emos|amos|ar[eé]|o)\b|voy a (reservar|agendar|apartar)|aqu[ií] (va|est[aá]) tu (reserva|cita)|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad)/i
+// "Te dejo agendada", "te tengo agendada", "queda separada" (Nana, 23 oct: Gema se lo dijo dos veces, la
+// cita nunca se creó y nadie se enteró).
+const SOUNDS_BOOKED = /\b(te (agend|reserv)[eoé]|(entonces,? )?(agend|reserv)(emos|amos|ar[eé]|o)\b|voy a (reservar|agendar|apartar)|aqu[ií] (va|est[aá]) tu (reserva|cita)|qued[oóa]s?\s+agendad|cita\s+qued[oó]|confirmo\s+tu\s+cita|ya\s+(est[aá]s?|qued[oó])\s+reservad|te (dejo|tengo|qued[oó]) (agendad|separad|apartad|reservad)[oa]s?|qued[aoó]s?\s+(separad|apartad)[oa]s?)/i
+/** El modelo dice que no hay espacio (se verifica contra la agenda: ver askedSlot). */
+const DENIES_SPACE = /\bno (hay|tengo|me queda|queda|nos queda)\s+(espacio|cupo|disponibilidad|agenda)|\bno (est[aá]|se encuentra) disponible|\bya (est[aá]|fue) (ocupad|tomad)|\bsin (espacio|cupo)\b/i
 // Frases con las que promete un link sin emitir [[LINK]] (pasó en una prueba real: "Aquí va el
 // link" y el mensaje salía sin link). Si hay una cita apartada, el sistema lo reenvía igual.
 // Frases con las que el modelo "entrega" datos de pago escritos por él, sin la marca [[TRANSFERENCIA]]
@@ -1187,6 +1191,18 @@ export async function replyOnce(phone: string, { send = sendWhatsAppText, sendIm
     if (picked && isLocation(picked.sede) && isDayKey(picked.fecha) && isClock(picked.hora) && history.some((message) => message.sender === 'user' && message.text.includes(String(Number(picked.hora.slice(0, 2)) % 12 || 12)))) {
       console.warn(`[autoreply] ${phone}: cita del equipo ${teamBooking.id}: el cliente eligió ${picked.fecha} ${picked.hora} y el modelo no reprogramó; se reprograma`)
       reply = `${reply}\n[[REPROGRAMAR: ${picked.sede} · ${picked.fecha} · ${picked.hora}]]`
+    }
+  }
+  // El cliente pidió un día, hora y sede concretos, la agenda dice que están libres y el modelo dijo que
+  // no había espacio (Nana, 23 oct: miércoles 28 a las 3 p.m. en Chipichape, con la agenda vacía, aunque la
+  // nota del servidor decía "SÍ hay espacio"). El servidor lo comprueba y responde con la verdad.
+  if (!teamBooking && DENIES_SPACE.test(reply)) {
+    const clientSaid = history.filter((message) => message.sender === 'user').slice(-8).map((message) => message.text)
+    const pair = latestOf(clientSaid, [[SAYS_PAIR, 'pair'], [SAYS_ALONE, 'alone']] as Array<[RegExp, 'pair' | 'alone']>) === 'pair'
+    const slot = await askedSlot(config, history, lead, { people: pair ? 2 : 1 }).catch(() => null)
+    if (slot?.free) {
+      console.warn(`[autoreply] ${phone}: el modelo dijo que no había espacio el ${slot.day} a las ${slot.start} en ${slot.location} y sí hay; se corrige`)
+      reply = `sí, el ${dayLabel(slot.day)} a las ${clock12(slot.start)} en ${LOCATION_LABEL[slot.location]} está libre ✨${SEPARATOR}te lo separo?`
     }
   }
   if (!teamBooking && forgotReserva(reply, liveAtStart?.id, config.cashBooking)) {

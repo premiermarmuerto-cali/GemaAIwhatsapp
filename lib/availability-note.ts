@@ -65,6 +65,52 @@ export function askedPart(text: string): DayPart | null {
   return null
 }
 
+/**
+ * La hora concreta que pide el texto, en HH:MM: "3pm", "3:30 p.m.", "a las 4", "15:00", "3 de la tarde".
+ * Sin a.m./p.m., de 1 a 7 es de la tarde (las sedes atienden de 10 a.m. a 6:30 p.m.). null si no nombra una.
+ */
+export function askedHour(text: string): string | null {
+  const clean = fold(text).replace(/\./g, '')
+  const match = /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|a m|p m|de la manana|de la tarde|de la noche)\b/.exec(clean)
+    ?? /\ba las (\d{1,2})(?::(\d{2}))?\b()/.exec(clean)
+    ?? /\b(\d{1,2}):(\d{2})\b()/.exec(clean)
+  if (!match) return null
+  let hour = Number(match[1])
+  const minutes = Number(match[2] ?? 0)
+  const suffix = match[3] ?? ''
+  if (hour > 23 || minutes > 59) return null
+  if (/p ?m|tarde|noche/.test(suffix) && hour < 12) hour += 12
+  else if (/a ?m|manana/.test(suffix) && hour === 12) hour = 0
+  else if (!suffix && hour >= 1 && hour <= 7) hour += 12
+  return `${String(hour).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+/**
+ * El horario concreto que pidió el cliente en sus últimos mensajes (día, hora y sede) y si está libre
+ * de verdad. Sirve para corregir a Gema cuando dice que no hay espacio en una hora libre (Nana, 23 oct:
+ * pidió el miércoles 28 a las 3 p.m. en Chipichape, la agenda estaba vacía y Gema dijo que no había).
+ */
+export async function askedSlot(config: AppConfig, history: Message[], lead: Lead, { people = 1, now = Date.now() } = {}): Promise<{ day: string; start: string; location: Location; free: boolean } | null> {
+  if (history.at(-1)?.sender !== 'user') return null
+  const today = dayKey(now)
+  const recent = history.filter((message) => message.sender === 'user' && now - message.at < 90 * 60_000).slice(-3).reverse()
+  let day: string | null = null
+  let start: string | null = null
+  let asked: Location[] = []
+  for (const message of recent) {
+    day ??= askedDay(message.text, today, config.horizonDays)
+    start ??= askedHour(message.text)
+    if (!asked.length) asked = askedLocations(message.text)
+  }
+  const location = asked.length === 1 ? asked[0] : !asked.length && lead.location ? lead.location : null
+  if (!day || !start || !location) return null
+  if (await isClosed(day)) return { day, start, location, free: false }
+  const service = lead.serviceId ? serviceById(config, lead.serviceId) : undefined
+  const duration = service?.durationMin ?? longestService(config)
+  const free = freeStarts(config, location, day, duration, await occupancyOf(location, day), { now, people }).includes(start)
+  return { day, start, location, free }
+}
+
 /** "10:00 a.m. a 1:30 p.m. y 3:00 p.m. a 6:30 p.m.": inicios seguidos agrupados en rangos. */
 function rangesText(starts: string[], step: number): string {
   const groups: Array<[string, string]> = []

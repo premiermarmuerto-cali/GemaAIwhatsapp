@@ -3,6 +3,13 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.9.1 · 23 de octubre de 2026
+
+**Gema ya no niega horarios libres ni da por hecha una cita que no existe**
+- Caso real (Nana, 23 oct): pidió el miércoles 28 a las 3 p.m. en Chipichape. La agenda estaba vacía y el servidor se lo dijo a Gema ("SÍ hay espacio"), pero Gema respondió que no había. Ahora, si el cliente pide un día, hora y sede concretos y Gema dice que no hay espacio, el servidor lo comprueba en la agenda y, si está libre, responde "sí, está libre, te lo separo?".
+- En la misma conversación Gema le dijo "te dejo agendada" y "te tengo agendada" sin crear la cita, y la red de seguridad no reconocía esas frases: no se creó nada ni se avisó a nadie. Ahora las reconoce: el servidor lee la conversación y crea la cita (o, si faltan datos, avisa a una persona).
+- Probado con la conversación real de Nana en el espacio de pruebas: corrige el "no hay espacio" y crea la cita cuando da su nombre.
+
 ## 1.9 · 23 de octubre de 2026
 
 **Mensaje "Cita agendada"**
