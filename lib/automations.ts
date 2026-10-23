@@ -34,7 +34,7 @@
  * persona. 20 oct: cinco chats del 18 y 19 recibieron la primera respuesta más de un día después.
  */
 import { autoReply, markPendingReply } from './autoreply'
-import { bookingsOfPhone, getBookings, liveBookingOf, markBookingAuto, serviceText, suggestStarts, sweepExpiredHolds } from './booking'
+import { bookingsOfPhone, getBookings, liveBookingOf, markBookingAuto, serviceText, suggestStarts, sweepExpiredHolds, teamBookingOf } from './booking'
 import { clock12, dayKey, fullDayLabel, isQuietHours, NIGHT_REPLY_MAX_AGE_MS, nextHumanWindow } from './calendar'
 import { ensureChatForBooking, getHistory, getSummary, listChats, markChatAuto, recordOutbound, requestAgent, updateChat } from './chats'
 import { ESCALATION_HOURS, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
@@ -42,6 +42,8 @@ import { depositOf, getConfig, pesos, serviceById } from './config'
 import { firstName, renderPreset, whenText } from './presets'
 import { keys, redis } from './redis'
 import { SEPARATOR, toMessages } from './reply-style'
+import { TEMPLATES, type TemplateName } from './template-catalog'
+import { templateMessage } from './template-text'
 import { HOLD_STATUSES, type AppConfig, type Booking, type ChatSummary, type Location } from './types'
 import { sendWhatsAppTemplate, sendWhatsAppText } from './whatsapp'
 import { isWindowOpen, WHATSAPP_WINDOW_MS } from './window'
@@ -56,24 +58,8 @@ const DAY = 24 * HOUR
 const MAX_SENDS_PER_RUN = 25
 const MESSAGE_GAP_MS = 1_200
 
-/**
- * Plantillas aprobadas en Meta (WABA 1997545614294706), tal como están registradas el 18 oct 2026.
- * `language`: el idioma con el que se REGISTRARON, no el del texto. Tres quedaron como "English"
- * aunque están en español; si el código no coincide, Meta responde 132001.
- * `image`: archivo en public/plantillas/ para el encabezado de imagen.
- * Botones de cada una (llegan al webhook como mensaje de tipo "button" con su texto):
- *   recordatorio_cita      Confirmo mi cita / Reagendar / No podré asistir
- *   ultimos_dias_bono      Sí, agéndame / Tengo una duda / Ahora no
- *   anticipo_pendiente     Enviar link / Cambiar horario / Ahora no
- *   retomar_cita_limpieza  Sí, quiero agendar / Tengo una pregunta / Ahora no
- */
-export const TEMPLATES = {
-  retomar_cita_limpieza: { language: 'es_CO', image: 'plantilla_retomar_cita.jpg' },
-  anticipo_pendiente: { language: 'en' },
-  ultimos_dias_bono: { language: 'en', image: 'plantilla_ultimos_dias_bono.jpg' },
-  recordatorio_cita: { language: 'en' },
-} as const satisfies Record<string, { language: string; image?: string }>
-export type TemplateName = keyof typeof TEMPLATES
+// Las plantillas aprobadas (idioma, imagen, botones) están en lib/template-catalog.ts.
+export { TEMPLATES, type TemplateName }
 /** Plantillas de categoría Marketing (se cobran más y respetan "Ahora no"); recordatorio_cita es Utility. */
 const MARKETING = new Set<TemplateName>(['retomar_cita_limpieza', 'anticipo_pendiente', 'ultimos_dias_bono'])
 const MARKETING_GAP_MS = 3 * 24 * 60 * 60_000
@@ -151,7 +137,7 @@ class Run {
       // Un cliente agendado desde el panel no tiene chat: se crea para que el recordatorio quede registrado
       // y visible, y para que su respuesta no se tome por la de un cliente nuevo.
       if (!chat && booking?.phone) await ensureChatForBooking(phone, booking)
-      if (chat || booking?.phone) await recordOutbound(phone, { id: id ?? crypto.randomUUID(), sender: 'gem', text: summary, at: Date.now(), auto: kind })
+      if (chat || booking?.phone) await recordOutbound(phone, await templateMessage(name, params, { id: id ?? crypto.randomUUID(), auto: kind }))
       if (booking) await markBookingAuto(booking, kind)
       else if (chat) await markChatAuto(chat, kind)
       this.sends++
@@ -191,6 +177,8 @@ async function holdNudges(run: Run, chats: Map<string, ChatSummary>) {
     if (!HOLD_STATUSES.includes(booking.status) || booking.paidAt || booking.autoSent.seguimiento_pago || !booking.phone) continue
     const chat = chats.get(booking.phone)
     if (!chat || humanHandling(chat) || !isWindowOpen(chat, run.now)) continue
+    // Un asesor ya le agendó la cita (y el cobro lo maneja el equipo): un apartado viejo de Gema no se cobra.
+    if (await teamBookingOf(booking.phone)) continue
     const body = await renderPreset(run.config, 'followUpPayment', { chat, booking, now: run.now })
     if (body) await run.text(chat, 'seguimiento_pago', body, booking)
   }
@@ -286,7 +274,7 @@ async function silentProspects(run: Run, chats: Map<string, ChatSummary>) {
     const silence = run.now - chat.lastInboundAt
     if (!chat.lastInboundAt || silence < 22 * HOUR || silence > WHATSAPP_WINDOW_MS - 30 * MINUTE) continue
     if (chat.lastSender === 'user' || humanHandling(chat) || (chat.autoSent.seguimiento_22h ?? 0) > chat.lastInboundAt) continue
-    if (await liveBookingOf(chat.phone)) continue
+    if ((await liveBookingOf(chat.phone)) || (await teamBookingOf(chat.phone))) continue
     const body = await renderPreset(run.config, 'followUp22h', { chat, now: run.now })
     if (body) await run.text(chat, 'seguimiento_22h', body)
   }
@@ -325,7 +313,8 @@ async function waitingProspect(chat: ChatSummary, run: Run, kind: string, fromMs
   // Cada seguimiento, máximo una vez cada 20 h: en una conversación de ida y vuelta le llegaba el mismo
   // mensaje después de cada respuesta (a Luz Mina, el de 45 min tres veces el 21 oct).
   if (run.now - (chat.autoSent[kind] ?? 0) < FOLLOW_UP_REPEAT_MS) return false
-  return !(await liveBookingOf(chat.phone))
+  // Un cliente del equipo no es prospecto aunque ya haya pasado la hora de su cita (ver teamBookingOf).
+  return !(await liveBookingOf(chat.phone)) && !(await teamBookingOf(chat.phone))
 }
 
 /**
@@ -367,7 +356,7 @@ async function cashRetakes(run: Run, chats: Map<string, ChatSummary>) {
     if ((chat.autoSent.efectivo_retoma ?? 0) > chat.agentAt || !isWindowOpen(chat, run.now)) continue
     if (chat.lastSender === 'human' && chat.lastAt > chat.agentAt) continue // Johanna ya le escribió
     if (humanMinutesBetween(chat.agentAt, run.now) < 30) continue
-    if (await liveBookingOf(chat.phone)) continue
+    if ((await liveBookingOf(chat.phone)) || (await teamBookingOf(chat.phone))) continue
     const offer = await hoursOffer(run, chat.lead.location)
     if (!offer.text) continue
     const service = chat.lead.serviceId ? serviceById(run.config, chat.lead.serviceId) : undefined
@@ -454,7 +443,7 @@ async function lastDaysTemplates(run: Run, chats: Map<string, ChatSummary>) {
     // En los días finales va el aviso final; antes, el de los 5 días de silencio.
     const key = finalDays ? finalKey : silenceKey
     if (chat.autoSent[key] || (!finalDays && silence < BONUS_AFTER_SILENCE_DAYS * DAY)) continue
-    if (await liveBookingOf(chat.phone)) continue
+    if ((await liveBookingOf(chat.phone)) || (await teamBookingOf(chat.phone))) continue
     await run.template(chat.phone, chat, key, 'ultimos_dias_bono', { nombre_cliente: firstName(chat.name) || 'de nuevo', oferta })
   }
 }

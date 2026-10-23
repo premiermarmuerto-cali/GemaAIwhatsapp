@@ -176,7 +176,7 @@ export async function recordOutbound(phone: string, message: Message) {
   const chatKey = keys.chat(phone)
   const tx = db.multi()
   tx.hset(chatKey, {
-    lastMessage: message.text,
+    lastMessage: previewOf(message),
     lastSender: message.sender,
     lastAt: String(message.at),
     ...(message.sender === 'human' ? { botActive: '0', needsAgent: '0' } : {}),

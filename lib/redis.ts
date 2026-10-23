@@ -112,4 +112,6 @@ export const keys = {
   get advisors() { return `${prefix()}advisors` },
   /** Disponibilidad ya calculada para el prompt de Gema (lib/prompt.ts), por versión de agenda y config. */
   agendaCache: (id: string) => `${prefix()}cache:agenda:${id}`,
+  /** Texto aprobado de una plantilla de Meta (lib/template-text.ts), guardado un día. */
+  templateText: (name: string) => `${prefix()}cache:template:${name}`,
 }

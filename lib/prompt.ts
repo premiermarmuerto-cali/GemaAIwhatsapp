@@ -10,7 +10,7 @@
 import { addDays, clock12, dayKey, dayLabel, nextHumanWindow, startWindows, type Occupancy } from './calendar'
 import { LOCATION_LABEL, LOCATIONS, WEEKDAY_LABEL } from './clinic'
 import { amountOf, bookingPrice, depositOf, LEGACY_SERVICE_IDS, paymentFor, pesos, twoForOneApplies, twoForOneLive } from './config'
-import { chargeText, liveBookingOf, serviceText, sweepExpiredHolds } from './booking'
+import { chargeText, liveBookingOf, serviceText, sweepExpiredHolds, teamBookingOf } from './booking'
 import { createHash } from 'node:crypto'
 import { keys, redis, toHash } from './redis'
 import { formatPhone, countryOf, regionOf } from './phone'
@@ -276,13 +276,17 @@ async function computeAgendaBlock(config: AppConfig, now: number): Promise<strin
 }
 
 export async function buildPromptContext(config: AppConfig, phone: string, lead: Lead): Promise<PromptContext> {
-  const [agenda, booking] = await Promise.all([buildAgendaBlock(config), liveBookingOf(phone)])
-  return { agenda, booking, lead }
+  // La cita que agendó un asesor manda sobre un apartado de Gema que haya quedado vivo.
+  const [agenda, team, live] = await Promise.all([buildAgendaBlock(config), teamBookingOf(phone), liveBookingOf(phone)])
+  return { agenda, booking: team ?? live, lead }
 }
 
 function bookingBlock(booking: Booking | null): string {
   if (!booking) return 'El cliente no tiene ninguna cita activa. Si quiere agendar, es una cita nueva.'
-  const state = booking.paymentPlan === 'courtesy'
+  const team = booking.source === 'operator'
+  const state = team
+    ? `que agendó directamente ${booking.advisor ? `${booking.advisor}, del equipo` : 'un asesor del equipo'}. El pago de esta cita lo maneja el equipo por fuera de este chat: NUNCA le hables de anticipo, link, transferencia, montos por pagar ni comprobantes, aunque no sepas si pagó. Si pregunta algo del pago, dile que eso lo ve directamente con su asesor y usa [[ASESOR]]`
+    : booking.paymentPlan === 'courtesy'
     ? 'de cortesía: la sede se la regaló por una compra de productos (no paga nada; no le hables de anticipo ni de link)'
     : booking.paymentPlan === 'cash'
     ? 'agendada para pagar en efectivo en la sede (no pagó nada antes y no debe pagar nada antes; no le envíes link)'
@@ -291,12 +295,15 @@ function bookingBlock(booking: Booking | null): string {
     : booking.paidAt
       ? 'apartada: dice que ya transfirió y el equipo está validando el comprobante'
       : `apartada, esperando ${chargeText(booking)} (${booking.deposit})`
+  // Cita del equipo cuya hora ya pasó sin que viniera: se le busca otra fecha para ESA cita.
+  const missed = team && (booking.status === 'no_show' || booking.startTs <= Date.now())
   return [
     `El cliente YA tiene una cita ${state}:`,
     `- ${serviceText(booking)} · ${LOCATION_LABEL[booking.location]} · ${dayLabel(booking.day)} a las ${clock12(booking.start)}`,
-    '- No crees otra cita. Si quiere cambiarla de día, hora o sede, ofrécele horas libres y, cuando acepte una, usa [[REPROGRAMAR]]: el pago que ya hizo se conserva. Si dice que no podrá asistir, ofrécele primero cambiarla de fecha (su pago se conserva); si prefiere cancelar, usa [[CANCELAR]].',
+    ...(missed ? ['- Esa hora ya pasó y no alcanzó a venir. Si quiere venir otro día, ofrécele dos o tres horas concretas y, cuando acepte una, usa [[REPROGRAMAR]]: es la misma cita del equipo, no una nueva, y no paga anticipo. No le hagas el saludo de venta ni le expliques la promoción como a un cliente nuevo.'] : []),
+    '- No crees otra cita. Si quiere cambiarla de día, hora o sede (o toca "Reagendar"), ofrécele de una vez dos o tres horas concretas de la disponibilidad de abajo, en su misma sede, y, cuando acepte una, usa [[REPROGRAMAR]]: el pago que ya hizo se conserva. Si dice que no podrá asistir, ofrécele primero cambiarla de fecha (su pago se conserva); si prefiere cancelar, usa [[CANCELAR]].',
     ...(booking.status === 'confirmed' && !booking.attendanceConfirmedAt ? ['- Si confirma que asiste ("confirmo", "sí voy"), agradécele y usa [[ASISTE]].'] : []),
-    ...(booking.status !== 'confirmed' && !booking.paidAt ? ['- Si pide el link de pago otra vez, usa [[LINK]]; si prefiere transferir, [[TRANSFERENCIA]].'] : []),
+    ...(booking.status !== 'confirmed' && !booking.paidAt && !team ? ['- Si pide el link de pago otra vez, usa [[LINK]]; si prefiere transferir, [[TRANSFERENCIA]].'] : []),
   ].join('\n')
 }
 

@@ -14,7 +14,9 @@ import { LOCATION_LABEL } from './clinic'
 import { getConfig } from './config'
 import { keys, redis } from './redis'
 import { firstName } from './presets'
-import { offerText, PEELING_ID, templateClock, TEMPLATES, type TemplateName } from './automations'
+import { offerText, PEELING_ID, templateClock } from './automations'
+import { TEMPLATES, type TemplateName } from './template-catalog'
+import { templateMessage } from './template-text'
 import type { ChatSummary } from './types'
 import { sendWhatsAppTemplate } from './whatsapp'
 
@@ -54,11 +56,11 @@ async function paramsFor(name: TemplateName, chat: ChatSummary): Promise<{ param
   return { params: { nombre_cliente: firstName(last.name) || nombre } }
 }
 
-const INFO: Record<TemplateName, { label: string; hint: string }> = {
-  retomar_cita_limpieza: { label: 'Retomar la conversación', hint: 'Para quien escribió y no agendó (o no recibió respuesta). Trae los botones "Sí, quiero agendar" / "Tengo una pregunta" / "Ahora no".' },
-  ultimos_dias_bono: { label: 'Últimos días del 2x1', hint: 'Recuerda que el 2x1 del Peeling se termina, con la fecha.' },
-  anticipo_pendiente: { label: 'Anticipo pendiente', hint: 'A quien se le liberó el horario por no pagar el anticipo. Trae el botón "Enviar link".' },
-  recordatorio_cita: { label: 'Recordatorio de la cita', hint: 'Fecha, hora y sede de su cita confirmada, con "Confirmo mi cita".' },
+const HINT: Record<TemplateName, string> = {
+  retomar_cita_limpieza: 'Para quien escribió y no agendó (o no recibió respuesta). Trae los botones "Sí, quiero agendar" / "Tengo una pregunta" / "Ahora no".',
+  ultimos_dias_bono: 'Recuerda que el 2x1 del Peeling se termina, con la fecha.',
+  anticipo_pendiente: 'A quien se le liberó el horario por no pagar el anticipo. Trae el botón "Enviar link".',
+  recordatorio_cita: 'Fecha, hora y sede de su cita confirmada, con "Confirmo mi cita".',
 }
 
 const MARKETING_GAP_MS = 3 * 24 * 60 * 60_000
@@ -90,7 +92,7 @@ export async function templateOptions(chat: ChatSummary): Promise<TemplateOption
   const suggested: TemplateName = available('recordatorio_cita') ? 'recordatorio_cita' : available('anticipo_pendiente') ? 'anticipo_pendiente' : 'retomar_cita_limpieza'
   const options = checks.map(({ name, result }): TemplateOption => {
     const blocked = templateLock(chat) ?? ('error' in result ? result.error : null)
-    return { name, ...INFO[name], marketing: name !== 'recordatorio_cita', unavailable: blocked, suggested: name === suggested }
+    return { name, label: TEMPLATES[name].label, hint: HINT[name], marketing: name !== 'recordatorio_cita', unavailable: blocked, suggested: name === suggested }
   })
   return options.sort((a, b) => Number(b.suggested) - Number(a.suggested) || Number(Boolean(a.unavailable)) - Number(Boolean(b.unavailable)))
 }
@@ -103,8 +105,7 @@ export async function sendTemplate(chat: ChatSummary, name: TemplateName): Promi
   if ('error' in result) return { error: `Esta plantilla no aplica: ${result.error}.` }
   const { language, image } = TEMPLATES[name] as { language: string; image?: string }
   const id = await sendWhatsAppTemplate(chat.phone, { name, language, params: result.params, ...(image ? { headerImageUrl: `${publicUrl()}/plantillas/${image}` } : {}) })
-  const summary = `[Plantilla "${name}" enviada desde el panel · ${Object.entries(result.params).map(([key, value]) => `${key}: ${value}`).join(' · ')}]`
-  await recordOutbound(chat.phone, { id: id ?? crypto.randomUUID(), sender: 'gem', text: summary, at: Date.now(), auto: name })
+  await recordOutbound(chat.phone, await templateMessage(name, result.params, { id: id ?? crypto.randomUUID(), auto: name, manual: true }))
   await markChatAuto(chat, name)
   await updateChat(chat.phone, { needsAgent: false, botActive: true })
   return { ok: true }

@@ -3,6 +3,20 @@
 La versión se muestra en el panel y en la pantalla de inicio de sesión (sale de `package.json`).
 Para publicar una actualización: sube la versión en `package.json` (y `package-lock.json`) y anótala aquí.
 
+## 1.7.1 · 22 de octubre de 2026
+
+**Citas agendadas por el equipo: Gema no cobra**
+- Si la cita la agendó un asesor en el panel, Gema nunca le habla al cliente de anticipo, link, transferencia ni comprobante, aunque la cita no tenga pago registrado: a esos clientes los atiende el equipo por fuera. Si el cliente pregunta por el pago, Gema le dice que eso lo ve con su asesor y pasa el chat a una persona.
+- Caso real (Shereek, 22 oct): tocó "Reagendar" 20 min antes de su cita con Alejandro. Al pasar la hora, el sistema la tomó por prospecto nuevo: le llegó el seguimiento de venta de 45 min y Gema le agendó otra cita cobrándole el anticipo. Ahora, durante 3 días después de una cita del equipo a la que no vino (la hora pasó o quedó "no asistió"), sigue siendo cliente del equipo: no recibe seguimientos de venta, y si quiere otra fecha Gema le reprograma esa misma cita (mismo asesor, misma forma de pago, sin anticipo), aunque intente agendarla como nueva.
+- Ante "Reagendar", Gema ofrece de una vez dos o tres horas concretas en su sede.
+- Si un cliente tenía un horario apartado por Gema sin pagar y después un asesor le agendó la cita, ya no le llega el aviso de "tu horario se libera, paga el anticipo".
+- Al reprogramar, Gema no menciona el pago. Al cancelar, avisa a su asesor para revisar si pagó algo por fuera.
+
+**Plantillas más claras en el chat**
+- Cada plantilla se ve como una tarjeta: cuál fue, si salió sola o desde el panel, su imagen, el texto que le llegó al cliente (el aprobado en Meta, con su nombre, fecha y sede) y sus botones. Las plantillas que ya se habían enviado se ven igual, con sus datos.
+- En la bandeja, el último mensaje dice "Plantilla: Recordatorio de la cita" en vez del código.
+- Gema también ve qué plantilla salió y con qué botones, para entender la respuesta del cliente.
+
 ## 1.7 · 21 de octubre de 2026
 
 **Gema recuerda lo que el cliente ya dijo**

@@ -34,6 +34,11 @@ export type Message = {
   buttonPayload?: string
   /** Mensaje enviado por una automatización (seguimiento o plantilla), no por Gema en conversación. */
   auto?: string
+  /**
+   * Plantilla de Meta que salió (lib/template-text.ts): cuál, con qué variables y si la envió una persona
+   * desde el panel. `text` es el texto aprobado ya completo, o un resumen si Meta no lo entregó.
+   */
+  template?: { name: string; params: Record<string, string>; manual: boolean }
   /** Solo en el cliente: estado del envío optimista. */
   pending?: 'sending' | 'failed'
 }

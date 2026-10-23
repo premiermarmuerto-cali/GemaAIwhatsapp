@@ -140,6 +140,15 @@
 .mediaFile span { color: var(--faint); font-size: 12px; }
 .mediaCaption { margin: 0; }
 .mediaNote { margin: 0; padding-top: 8px; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: 12px; line-height: 1.5; }
+/* Plantillas de Meta: qué le llegó al cliente */
+.templateBubble { display: flex; flex-direction: column; gap: 10px; min-width: min(260px, 100%); border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent); }
+.templateHead { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.4; }
+.templateHead b { display: block; margin-bottom: 2px; color: var(--primary); font: 600 10px var(--font-sans); letter-spacing: .1em; text-transform: uppercase; }
+.templateParams { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; font-size: 13px; }
+.templateParams dt { color: var(--muted); }
+.templateParams dd { margin: 0; }
+.templateButtons { display: flex; flex-wrap: wrap; gap: 6px; white-space: normal; }
+.templateButtons span { padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--primary); font-size: 12px; }
 .mediaNote b { display: block; margin-bottom: 2px; color: var(--primary); font: 600 10px var(--font-sans); letter-spacing: .1em; text-transform: uppercase; }
 
 .agentBanner {

@@ -1,3 +1,4 @@
+import { isTemplateName, parseTemplateSummary, TEMPLATES } from './template-catalog'
 import type { MediaKind, Message } from './types'
 
 export const MEDIA_LABEL: Record<MediaKind, string> = {
@@ -8,7 +9,9 @@ export const MEDIA_LABEL: Record<MediaKind, string> = {
 }
 
 /** Texto corto para la lista de chats y las notificaciones. */
-export function previewOf(message: Pick<Message, 'text' | 'media'>): string {
+export function previewOf(message: Pick<Message, 'text' | 'media' | 'template'>): string {
+  const template = message.template && isTemplateName(message.template.name) ? TEMPLATES[message.template.name] : null
+  if (template) return `Plantilla: ${template.label}`
   if (!message.media) return message.text
   const label = MEDIA_LABEL[message.media.kind]
   return message.text ? `${label}: ${message.text}` : label
@@ -21,11 +24,19 @@ export function modelText(message: Message): string {
     ? `[El cliente llegó desde un anuncio. Título: "${ad.headline ?? ''}"${ad.body ? `. Texto del anuncio: "${ad.body}"` : ''}]\n`
     : ''
   // Botón de una plantilla: Gema sabe que no es texto libre y a qué corresponde.
-  // Textos de los botones de las plantillas aprobadas (ver TEMPLATES en lib/automations.ts).
+  // Textos de los botones de las plantillas aprobadas (ver TEMPLATES en lib/template-catalog.ts).
   const button = message.buttonPayload !== undefined || /^\s*(ahora no|confirmo mi cita|no podr[eé] asistir|reagendar|cambiar horario|(re)?enviar (el )?link|tengo una (pregunta|duda)|s[ií], ag[eé]ndame|s[ií], quiero agendar)\s*$/i.test(message.text)
     ? '[El cliente tocó un botón de un mensaje automático] '
     : ''
-  return origin + button + contentText(message)
+  return origin + button + templateText(message) + contentText(message)
+}
+
+/** Plantilla de Meta: Gema sabe cuál fue y qué botones traía (el cliente puede responder tocando uno). */
+function templateText(message: Message): string {
+  const name = message.template?.name ?? parseTemplateSummary(message.text)?.name
+  if (!name || !isTemplateName(name)) return ''
+  const template = TEMPLATES[name]
+  return `[Plantilla de WhatsApp "${template.label}", con los botones ${template.buttons.map((text) => `"${text}"`).join(', ')}] `
 }
 
 /** La imagen descrita, el audio transcrito y el resto sin abrir. */

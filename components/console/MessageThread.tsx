@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { formatClock, formatDayLabel, isSameDay } from '@/lib/format'
 import { MEDIA_LABEL } from '@/lib/media-text'
+import { isTemplateName, PARAM_LABEL, parseTemplateSummary, TEMPLATES } from '@/lib/template-catalog'
 import type { ChatSummary, Message } from '@/lib/types'
 import { SENDER_LABEL } from './labels'
 import styles from './ChatView.module.css'
@@ -40,11 +41,48 @@ export function MessageThread({ chat, messages }: { chat: ChatSummary; messages:
                   <time>{message.pending === 'sending' ? 'Enviando…' : formatClock(message.at)}</time>
                 </div>
                 {message.ad && <p className={styles.mediaNote}><b>Desde anuncio</b>{message.ad.headline || message.ad.body}</p>}
-                {message.media ? <MediaBubble message={message} /> : <div className={styles.bubble}>{message.text}</div>}
+                {message.media ? <MediaBubble message={message} /> : <TextBubble message={message} />}
               </div>
             </Fragment>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+/** Texto normal, o la tarjeta de una plantilla de Meta: cuál salió, con su imagen, el texto y los botones. */
+function TextBubble({ message }: { message: Message }) {
+  const legacy = message.template ? null : parseTemplateSummary(message.text)
+  const sent = message.template ?? legacy
+  if (!sent || !isTemplateName(sent.name)) return <div className={styles.bubble}>{message.text}</div>
+  const template: { label: string; image?: string; buttons: readonly string[] } = TEMPLATES[sent.name]
+  // Sin el texto aprobado (mensajes viejos, o Meta no lo entregó): las variables con que salió.
+  const body = legacy || message.text.startsWith('[Plantilla ') ? null : message.text
+  const params = Object.entries(sent.params)
+  return (
+    <div className={`${styles.bubble} ${styles.templateBubble}`}>
+      <p className={styles.templateHead}>
+        <b>Plantilla de Meta</b>
+        {template.label} · {sent.manual ? 'enviada desde el panel' : 'enviada automáticamente'}
+      </p>
+      {template.image && (
+        <a href={`/plantillas/${template.image}`} target="_blank" rel="noopener noreferrer" className={styles.mediaImage}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- imagen pública del encabezado de la plantilla */}
+          <img src={`/plantillas/${template.image}`} alt={`Imagen de la plantilla ${template.label}`} loading="lazy" />
+        </a>
+      )}
+      {body
+        ? <p className={styles.mediaCaption}>{body}</p>
+        : params.length > 0 && (
+          <dl className={styles.templateParams}>
+            {params.map(([key, value]) => (
+              <Fragment key={key}><dt>{PARAM_LABEL[key] ?? key}</dt><dd>{value}</dd></Fragment>
+            ))}
+          </dl>
+        )}
+      <div className={styles.templateButtons}>
+        {template.buttons.map((text) => <span key={text}>{text}</span>)}
       </div>
     </div>
   )

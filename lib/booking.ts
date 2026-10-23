@@ -585,6 +585,39 @@ export async function liveBookingOf(phone: string): Promise<Booking | null> {
     && !(HOLD_STATUSES.includes(booking.status) && booking.holdUntil > 0 && booking.holdUntil <= now)) ?? null
 }
 
+/**
+ * Cita que agendó un asesor en el panel: por venir, o de los últimos días si no alcanzó a venir (la hora
+ * pasó o quedó como "no asistió"). A ese cliente lo atiende el equipo por fuera de Gema y el cobro
+ * también: Gema nunca le pide anticipo, link ni comprobante, no le manda seguimientos de venta, y si
+ * quiere otra fecha se le reprograma esa misma cita. 22 oct: Shereek tocó "Reagendar" 20 min antes
+ * de su cita; al pasar la hora el sistema la tomó por prospecto nuevo, le llegó el seguimiento de 45 min
+ * y Gema le agendó otra cita cobrándole el anticipo.
+ */
+export async function teamBookingOf(phone: string): Promise<Booking | null> {
+  const since = Date.now() - TEAM_RESCHEDULE_DAYS * 24 * 3_600_000
+  const recent = await bookingsOfPhone(phone, 5)
+  return recent.find((booking) => booking.source === 'operator' && booking.kind !== 'block'
+    && [...LIVE_STATUSES, 'no_show'].includes(booking.status) && booking.startTs > since) ?? null
+}
+
+/** Días después de una cita del equipo a la que no vino en que se le sigue tratando como cliente del equipo. */
+const TEAM_RESCHEDULE_DAYS = 3
+
+/**
+ * Otra fecha para una cita del equipo. Si sigue viva se mueve (rescheduleBooking); si ya quedó como "no
+ * asistió" se crea una nueva igual (mismo asesor, misma forma de pago, confirmada): sigue siendo del equipo.
+ */
+export async function rescheduleTeamBooking(config: AppConfig, booking: Booking, day: string, start: string, location: Location): Promise<BookingResult | null> {
+  if (booking.status !== 'no_show') return rescheduleBooking(config, booking.id, day, start, location)
+  return createBooking(config, {
+    phone: booking.phone, name: booking.name, location, serviceId: booking.serviceId, day, start,
+    concern: booking.concern, notes: booking.notes, source: 'operator', advisor: booking.advisor, status: 'confirmed',
+    people: booking.people, companion: booking.companion, contactPhone: booking.contactPhone,
+    cash: booking.paymentPlan === 'cash', courtesy: booking.paymentPlan === 'courtesy',
+    payFull: booking.paymentPlan === 'full', paid: booking.paidAt > 0,
+  })
+}
+
 export async function setPaymentLink(id: string, url: string): Promise<void> {
   await redis().hset(keys.booking(id), { paymentLink: url })
   await bumpRev('agenda')
