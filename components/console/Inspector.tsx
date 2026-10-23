@@ -86,6 +86,7 @@ export function Inspector({ stats, chat, onOpenSettings, onClose, onSendPreset, 
               <div data-stack><dt>Anuncio</dt><dd>{chat.adHeadline || 'sin título'}{chat.adSourceId && <span className="mono"> · {chat.adSourceId}</span>}</dd></div>
             )}
             <div data-stack><dt>Conversión Meta</dt><dd>{capiLabel(chat)}</dd></div>
+            {chat.teamNotice && <div data-stack><dt>Aviso al equipo</dt><dd>{chat.teamNotice} ({formatDate(chat.teamNoticeAt)})</dd></div>}
             {chat.objection && <div><dt>Objeción</dt><dd>{OBJECTION_LABEL[chat.objection] ?? chat.objection}</dd></div>}
             {chat.optedOut ? (
               <div data-stack data-alert>

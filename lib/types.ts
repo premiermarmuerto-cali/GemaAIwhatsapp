@@ -72,6 +72,12 @@ export type ChatSummary = {
   /** Último pago confirmado por Bold, para el aviso emergente del panel. */
   paymentNotice: string
   paymentNoticeAt: number
+  /**
+   * Aviso para el equipo que no pausa a Gema (hoy: el cliente reprogramó por WhatsApp una cita que
+   * agendó un asesor). El panel lo muestra como aviso emergente y en la ficha.
+   */
+  teamNotice: string
+  teamNoticeAt: number
   /** Tocó "Ahora no" en una plantilla de marketing: no se le vuelven a enviar. */
   noMarketing: boolean
   /**

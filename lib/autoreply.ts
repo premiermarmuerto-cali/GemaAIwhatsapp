@@ -1,8 +1,8 @@
 import { extractReserva, generateReply, type ExtractedReserva } from './ai'
-import { bookingsOfPhone, chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
+import { annotateBooking, bookingsOfPhone, chargeText, confirmAttendance, createBooking, liveBookingOf, markDepositClaimed, moveBooking, rescheduleBooking, serviceText, setPaymentLink } from './booking'
 import { addDays, clock12, dayKey, dayLabel, isClock, isDayKey, nextHumanWindow, toClock, toMinutes } from './calendar'
 import { isLocation, LOCATION_LABEL, LOCATIONS, MONTH_NAME } from './clinic'
-import { attachBooking, getHistory, getSummary, markChatAuto, recordOutbound, requestAgent, saveContactPhone, saveLead, setObjection, updateChat } from './chats'
+import { attachBooking, getHistory, getSummary, markChatAuto, noteForTeam, recordOutbound, requestAgent, saveContactPhone, saveLead, setObjection, updateChat } from './chats'
 import { trackConversion } from './conversions'
 import { generarLinkPagoBold } from './bold'
 import { amountOf, getConfig, paymentFor, pesos, resolveService, twoForOneApplies } from './config'
@@ -972,6 +972,13 @@ export async function applyReprogram(config: AppConfig, phone: string, payload: 
   const moved = result.booking
   // Si no vino a la anterior, la nueva es otra cita: queda enlazada al chat.
   if (moved.id !== booking.id) await attachBooking(phone, moved.id, { name: moved.name, serviceId: moved.serviceId, location: moved.location })
+  // Cita del equipo: su asesor se entera por el panel y por la nota de la cita, sin pausar a Gema.
+  if (moved.source === 'operator') {
+    const before = `${dayLabel(booking.day)} ${clock12(booking.start)} en ${LOCATION_LABEL[booking.location]}`
+    const after = `${dayLabel(moved.day)} ${clock12(moved.start)} en ${LOCATION_LABEL[moved.location]}`
+    await annotateBooking(moved.id, `Reprogramada por el cliente por WhatsApp (antes: ${before}).${moved.notes ? `\n${moved.notes}` : ''}`)
+    await noteForTeam(phone, `${moved.name || 'El cliente'} reprogramó su cita${moved.advisor ? ` con ${moved.advisor}` : ''}: ${before} → ${after}`)
+  }
   const paid = isPaid(moved)
   // Cita del equipo: el pago lo maneja su asesor por fuera, Gema no lo menciona.
   const payment = moved.source === 'operator'

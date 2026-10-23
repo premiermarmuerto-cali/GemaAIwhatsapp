@@ -10,6 +10,9 @@ Para publicar una actualización: sube la versión en `package.json` (y `package
 - Si quedó en confirmar algo ("le pregunto a mi amiga y te confirmo"), Gema le pregunta primero si ya lo pudo confirmar; si viene con acompañante, ofrece horas para parejas y pide el nombre de la otra persona si falta.
 - Al volver, lee los últimos 50 mensajes en vez de 30.
 
+**Aviso al asesor cuando su cliente reprograma**
+- Si un cliente reprograma por WhatsApp una cita que agendó un asesor, el panel muestra un aviso emergente ("Shereek reprogramó su cita con Alejandro: jueves 22 oct 3:30 p.m. → sábado 25 oct 10:00 a.m.") con botón para abrir el chat, queda en la ficha como "Aviso al equipo" y en las notas de la cita. Gema no se pausa.
+
 ## 1.7.1 · 22 de octubre de 2026
 
 **Citas agendadas por el equipo: Gema no cobra**

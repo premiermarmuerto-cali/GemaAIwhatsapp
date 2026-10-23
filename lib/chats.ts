@@ -44,6 +44,8 @@ function toSummary(phone: string, raw: Record<string, string>): ChatSummary {
     bookingId: raw.bookingId ?? '',
     paymentNotice: raw.paymentNotice ?? '',
     paymentNoticeAt: Number(raw.paymentNoticeAt ?? 0),
+    teamNotice: raw.teamNotice ?? '',
+    teamNoticeAt: Number(raw.teamNoticeAt ?? 0),
     noMarketing: raw.noMarketing === '1',
     contactPhone: raw.contactPhone ?? '',
     optedOut: raw.optedOut === '1',
@@ -328,6 +330,12 @@ export async function notePayment(phone: string, notice: string) {
     paymentNoticeAt: String(Date.now()),
     ...(current.needsAgent && current.agentKind === 'payment' ? { needsAgent: '0' } : {}),
   })
+  await bumpRev('chats')
+}
+
+/** Aviso informativo para el equipo: sale en el panel sin pausar a Gema ni marcar "Requiere asesor". */
+export async function noteForTeam(phone: string, notice: string) {
+  await redis().hset(keys.chat(phone), { teamNotice: notice.slice(0, 200), teamNoticeAt: String(Date.now()) })
   await bumpRev('chats')
 }
 

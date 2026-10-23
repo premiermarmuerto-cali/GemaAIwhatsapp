@@ -50,7 +50,7 @@ export function useChats(toast: ShowToast) {
   const activeRef = useRef<string | null>(null)
   const busy = useRef(0)
   const epoch = useRef(0)
-  const seen = useRef<Map<string, { needsAgent: boolean; agentKind: string; lastImageAt: number; paymentNoticeAt: number }> | null>(null)
+  const seen = useRef<Map<string, { needsAgent: boolean; agentKind: string; lastImageAt: number; paymentNoticeAt: number; teamNoticeAt: number }> | null>(null)
   useEffect(() => { listsRef.current = lists }, [lists])
   useEffect(() => { detailRef.current = detail }, [detail])
 
@@ -71,17 +71,19 @@ export function useChats(toast: ShowToast) {
     }
   }, [])
 
-  /** Avisa de cada pago confirmado por Bold, de cada chat que pasa a "Requiere asesor" y de cada imagen nueva. No avisa en la carga inicial. */
+  /** Avisa de cada pago confirmado por Bold, de cada cita del equipo que el cliente reprogramó, de cada chat que pasa a "Requiere asesor" y de cada imagen nueva. No avisa en la carga inicial. */
   const announce = useCallback((data: ChatLists) => {
     const chats = [...data.inbox, ...data.archived]
     const known = seen.current
-    seen.current = new Map(chats.map((chat) => [chat.phone, { needsAgent: chat.needsAgent, agentKind: chat.agentKind, lastImageAt: chat.lastImageAt, paymentNoticeAt: chat.paymentNoticeAt }]))
+    seen.current = new Map(chats.map((chat) => [chat.phone, { needsAgent: chat.needsAgent, agentKind: chat.agentKind, lastImageAt: chat.lastImageAt, paymentNoticeAt: chat.paymentNoticeAt, teamNoticeAt: chat.teamNoticeAt }]))
     if (!known) return
     const open = (phone: string) => ({ label: 'Abrir', run: () => selectRef.current(phone) })
     for (const chat of chats) {
       const before = known.get(chat.phone)
       if (chat.paymentNoticeAt > (before?.paymentNoticeAt ?? 0)) {
         toast(`${chat.paymentNotice} · cita confirmada`, { duration: 15_000, action: open(chat.phone) })
+      } else if (chat.teamNoticeAt > (before?.teamNoticeAt ?? 0)) {
+        toast(chat.teamNotice, { duration: 15_000, action: open(chat.phone) })
       } else if (chat.needsAgent && (!before?.needsAgent || before.agentKind !== chat.agentKind)) {
         const label = chat.agentKind === 'payment' ? 'Anticipo por validar' : 'Requiere asesor'
         toast(`${label} · ${formatPhone(chat.phone)}: ${chat.agentReason}`, { duration: 12_000, action: open(chat.phone) })
